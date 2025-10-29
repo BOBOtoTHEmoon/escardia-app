@@ -1,0 +1,625 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+  Image,
+} from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { colors, typography, spacing, borderRadius } from '../constants';
+
+
+interface AddCarScreenProps {
+  onNavigateBack: () => void;
+  onCarAdded: () => void;
+}
+
+export interface CarData {
+  brand: string;
+  model: string;
+  year: string;
+  type: string;
+  pricePerDay: string;
+  pricePerHour: string;
+  seats: string;
+  doors: string;
+  transmission: string;
+  fuelType: string;
+  location: string;
+  description: string;
+  photos: string[];
+}
+
+export const AddCarScreen: React.FC<AddCarScreenProps> = ({
+  onNavigateBack,
+  onCarAdded,
+}) => {
+  const [brand, setBrand] = useState('');
+  const [model, setModel] = useState('');
+  const [year, setYear] = useState('');
+  const [carType, setCarType] = useState('sedan');
+  const [pricePerDay, setPricePerDay] = useState('');
+  const [pricePerHour, setPricePerHour] = useState('');
+  const [seats, setSeats] = useState('');
+  const [doors, setDoors] = useState('');
+  const [transmission, setTransmission] = useState('automatic');
+  const [fuelType, setFuelType] = useState('petrol');
+  const [location, setLocation] = useState('');
+  const [description, setDescription] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
+
+  const carTypes = ['sedan', 'suv', 'luxury', 'exotic', 'van', 'truck'];
+  const transmissionTypes = ['automatic', 'manual'];
+  const fuelTypes = ['petrol', 'diesel', 'electric', 'hybrid'];
+
+  const requestPermissions = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Camera permission is required');
+      return false;
+    }
+    return true;
+  };
+
+  const handleAddPhoto = async (type: 'camera' | 'gallery') => {
+    if (photos.length >= 5) {
+      Alert.alert('Limit reached', 'You can add up to 5 photos');
+      return;
+    }
+
+    let result;
+    if (type === 'camera') {
+      const hasPermission = await requestPermissions();
+      if (!hasPermission) return;
+
+      result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+      });
+    } else {
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+      });
+    }
+
+    if (!result.canceled && result.assets[0]) {
+      setPhotos([...photos, result.assets[0].uri]);
+    }
+  };
+
+  const showPhotoOptions = () => {
+    Alert.alert('Add Car Photo', 'Choose an option', [
+      { text: 'Take Photo', onPress: () => handleAddPhoto('camera') },
+      { text: 'Choose from Gallery', onPress: () => handleAddPhoto('gallery') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const handleRemovePhoto = (index: number) => {
+    const newPhotos = photos.filter((_, i) => i !== index);
+    setPhotos(newPhotos);
+  };
+
+  const validateForm = () => {
+    const newErrors: { [key: string]: string } = {};
+
+    if (!brand.trim()) newErrors.brand = 'Brand is required';
+    if (!model.trim()) newErrors.model = 'Model is required';
+    if (!year.trim()) newErrors.year = 'Year is required';
+    if (!pricePerDay.trim()) newErrors.pricePerDay = 'Price per day is required';
+    if (!pricePerHour.trim()) newErrors.pricePerHour = 'Price per hour is required';
+    if (!seats.trim()) newErrors.seats = 'Number of seats is required';
+    if (!doors.trim()) newErrors.doors = 'Number of doors is required';
+    if (!location.trim()) newErrors.location = 'Location is required';
+    if (photos.length === 0) newErrors.photos = 'At least one photo is required';
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+const handleSubmit = async () => {
+  if (!validateForm()) {
+    Alert.alert('Missing Information', 'Please fill in all required fields');
+    return;
+  }
+
+  console.log('🔵 Adding car to Firebase...');
+
+  try {
+    const { auth } = await import('../config/firebase');
+    const { uploadToCloudinary } = await import('../config/cloudinary');
+    
+    const vendorId = auth.currentUser?.uid;
+
+    if (!vendorId) {
+      Alert.alert('Error', 'You must be logged in to add a car');
+      return;
+    }
+
+    // Upload photos to Cloudinary
+    console.log('📸 Uploading photos to Cloudinary...');
+    const photoUrls: string[] = [];
+    
+    for (let i = 0; i < photos.length; i++) {
+      const photoUri = photos[i];
+      console.log(`Uploading photo ${i + 1}/${photos.length}...`);
+      
+      const cloudinaryUrl = await uploadToCloudinary(photoUri);
+      photoUrls.push(cloudinaryUrl);
+      console.log(`✅ Photo ${i + 1} uploaded:`, cloudinaryUrl);
+    }
+
+    console.log('✅ All photos uploaded to Cloudinary!');
+
+    const carData = {
+      brand,
+      model,
+      year,
+      type: carType,
+      pricePerDay: Number(pricePerDay),
+      pricePerHour: Number(pricePerHour),
+      seats: Number(seats),
+      doors: Number(doors),
+      transmission,
+      fuelType,
+      location,
+      description,
+      photos: photoUrls,
+    };
+
+    const { addCar } = await import('../services/carservice');
+    const result = await addCar(carData, vendorId);
+
+    if (result.success) {
+      console.log('✅ Car added! ID:', result.carId);
+      Alert.alert('Success', 'Car added to your fleet successfully!', [
+        { text: 'OK', onPress: onCarAdded },
+      ]);
+    } else {
+      Alert.alert('Error', result.error || 'Failed to add car');
+    }
+  } catch (error) {
+    console.error('❌ Error adding car:', error);
+    Alert.alert('Error', 'Failed to add car. Please try again.');
+  }
+};
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
+          <Text style={styles.backIcon}>←</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Add New Car</Text>
+        <View style={styles.placeholder} />
+      </View>
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Photos Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Car Photos *</Text>
+          <Text style={styles.sectionSubtitle}>Add up to 5 photos</Text>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photosScroll}>
+            {photos.map((photo, index) => (
+              <View key={index} style={styles.photoContainer}>
+                <Image source={{ uri: photo }} style={styles.photo} />
+                <TouchableOpacity
+                  style={styles.removePhotoButton}
+                  onPress={() => handleRemovePhoto(index)}
+                >
+                  <Text style={styles.removePhotoText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            {photos.length < 5 && (
+              <TouchableOpacity style={styles.addPhotoButton} onPress={showPhotoOptions}>
+                <Text style={styles.addPhotoIcon}>📷</Text>
+                <Text style={styles.addPhotoText}>Add Photo</Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+          {errors.photos && <Text style={styles.errorText}>{errors.photos}</Text>}
+        </View>
+
+        {/* Basic Information */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Basic Information</Text>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Brand *</Text>
+            <TextInput
+              style={[styles.input, errors.brand && styles.inputError]}
+              placeholder="e.g. Mercedes, Lexus, BMW"
+              placeholderTextColor={colors.textSecondary}
+              value={brand}
+              onChangeText={setBrand}
+            />
+            {errors.brand && <Text style={styles.errorText}>{errors.brand}</Text>}
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Model *</Text>
+            <TextInput
+              style={[styles.input, errors.model && styles.inputError]}
+              placeholder="e.g. S-Class, RX 350, X5"
+              placeholderTextColor={colors.textSecondary}
+              value={model}
+              onChangeText={setModel}
+            />
+            {errors.model && <Text style={styles.errorText}>{errors.model}</Text>}
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Year *</Text>
+            <TextInput
+              style={[styles.input, errors.year && styles.inputError]}
+              placeholder="e.g. 2024"
+              placeholderTextColor={colors.textSecondary}
+              value={year}
+              onChangeText={setYear}
+              keyboardType="number-pad"
+              maxLength={4}
+            />
+            {errors.year && <Text style={styles.errorText}>{errors.year}</Text>}
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Car Type *</Text>
+            <View style={styles.chipsContainer}>
+              {carTypes.map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[styles.chip, carType === type && styles.chipActive]}
+                  onPress={() => setCarType(type)}
+                >
+                  <Text style={[styles.chipText, carType === type && styles.chipTextActive]}>
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+
+        {/* Pricing */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Pricing</Text>
+
+          <View style={styles.row}>
+            <View style={[styles.inputGroup, styles.halfWidth]}>
+              <Text style={styles.label}>Price per Day (₦) *</Text>
+              <TextInput
+                style={[styles.input, errors.pricePerDay && styles.inputError]}
+                placeholder="85000"
+                placeholderTextColor={colors.textSecondary}
+                value={pricePerDay}
+                onChangeText={setPricePerDay}
+                keyboardType="number-pad"
+              />
+              {errors.pricePerDay && <Text style={styles.errorText}>{errors.pricePerDay}</Text>}
+            </View>
+
+            <View style={[styles.inputGroup, styles.halfWidth]}>
+              <Text style={styles.label}>Price per Hour (₦) *</Text>
+              <TextInput
+                style={[styles.input, errors.pricePerHour && styles.inputError]}
+                placeholder="10625"
+                placeholderTextColor={colors.textSecondary}
+                value={pricePerHour}
+                onChangeText={setPricePerHour}
+                keyboardType="number-pad"
+              />
+              {errors.pricePerHour && <Text style={styles.errorText}>{errors.pricePerHour}</Text>}
+            </View>
+          </View>
+        </View>
+
+        {/* Features */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Features</Text>
+
+          <View style={styles.row}>
+            <View style={[styles.inputGroup, styles.halfWidth]}>
+              <Text style={styles.label}>Seats *</Text>
+              <TextInput
+                style={[styles.input, errors.seats && styles.inputError]}
+                placeholder="4"
+                placeholderTextColor={colors.textSecondary}
+                value={seats}
+                onChangeText={setSeats}
+                keyboardType="number-pad"
+              />
+              {errors.seats && <Text style={styles.errorText}>{errors.seats}</Text>}
+            </View>
+
+            <View style={[styles.inputGroup, styles.halfWidth]}>
+              <Text style={styles.label}>Doors *</Text>
+              <TextInput
+                style={[styles.input, errors.doors && styles.inputError]}
+                placeholder="4"
+                placeholderTextColor={colors.textSecondary}
+                value={doors}
+                onChangeText={setDoors}
+                keyboardType="number-pad"
+              />
+              {errors.doors && <Text style={styles.errorText}>{errors.doors}</Text>}
+            </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Transmission *</Text>
+            <View style={styles.chipsContainer}>
+              {transmissionTypes.map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[styles.chip, transmission === type && styles.chipActive]}
+                  onPress={() => setTransmission(type)}
+                >
+                  <Text style={[styles.chipText, transmission === type && styles.chipTextActive]}>
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Fuel Type *</Text>
+            <View style={styles.chipsContainer}>
+              {fuelTypes.map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[styles.chip, fuelType === type && styles.chipActive]}
+                  onPress={() => setFuelType(type)}
+                >
+                  <Text style={[styles.chipText, fuelType === type && styles.chipTextActive]}>
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+
+        {/* Location */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Location</Text>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Pickup Location *</Text>
+            <TextInput
+              style={[styles.input, errors.location && styles.inputError]}
+              placeholder="Enter pickup address"
+              placeholderTextColor={colors.textSecondary}
+              value={location}
+              onChangeText={setLocation}
+              multiline
+            />
+            {errors.location && <Text style={styles.errorText}>{errors.location}</Text>}
+          </View>
+        </View>
+
+        {/* Description */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Description (Optional)</Text>
+
+          <View style={styles.inputGroup}>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="Tell customers about this car, special features, condition, etc."
+              placeholderTextColor={colors.textSecondary}
+              value={description}
+              onChangeText={setDescription}
+              multiline
+              numberOfLines={4}
+            />
+          </View>
+        </View>
+
+        {/* Submit Button */}
+        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
+          <Text style={styles.submitButtonText}>Add Car to Fleet</Text>
+        </TouchableOpacity>
+
+        <View style={styles.bottomSpacing} />
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: 60,
+    paddingBottom: spacing.md,
+    backgroundColor: colors.background,
+  },
+  backButton: {
+    padding: spacing.sm,
+  },
+  backIcon: {
+    fontSize: 24,
+    color: colors.text,
+  },
+  headerTitle: {
+    fontSize: typography.fontSize.xl,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.text,
+  },
+  placeholder: {
+    width: 40,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: spacing.lg,
+  },
+  section: {
+    marginBottom: spacing.xl,
+  },
+  sectionTitle: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  sectionSubtitle: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  photosScroll: {
+    marginBottom: spacing.sm,
+  },
+  photoContainer: {
+    position: 'relative',
+    marginRight: spacing.md,
+  },
+  photo: {
+    width: 150,
+    height: 100,
+    borderRadius: borderRadius.md,
+  },
+  removePhotoButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#EF4444',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removePhotoText: {
+    color: colors.textWhite,
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.bold,
+  },
+  addPhotoButton: {
+    width: 150,
+    height: 100,
+    borderRadius: borderRadius.md,
+    borderWidth: 2,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.inputBackground,
+  },
+  addPhotoIcon: {
+    fontSize: 30,
+    marginBottom: spacing.xs,
+  },
+  addPhotoText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+  },
+  inputGroup: {
+    marginBottom: spacing.md,
+  },
+  label: {
+    fontSize: typography.fontSize.sm,
+    color: colors.text,
+    fontWeight: typography.fontWeight.medium,
+    marginBottom: spacing.xs,
+  },
+  input: {
+    backgroundColor: colors.inputBackground,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    fontSize: typography.fontSize.base,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  inputError: {
+    borderColor: '#EF4444',
+  },
+  textArea: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  errorText: {
+    fontSize: typography.fontSize.xs,
+    color: '#EF4444',
+    marginTop: spacing.xs,
+  },
+  chipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  chip: {
+    backgroundColor: colors.inputBackground,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  chipActive: {
+    backgroundColor: colors.primary + '20',
+    borderColor: colors.primary,
+  },
+  chipText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeight.medium,
+  },
+  chipTextActive: {
+    color: colors.primary,
+    fontWeight: typography.fontWeight.semiBold,
+  },
+  row: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  halfWidth: {
+    flex: 1,
+  },
+  submitButton: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    alignItems: 'center',
+    marginTop: spacing.md,
+  },
+  submitButtonText: {
+    color: colors.textWhite,
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.semiBold,
+  },
+  bottomSpacing: {
+    height: 40,
+  },
+});
