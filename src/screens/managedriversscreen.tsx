@@ -1,3 +1,4 @@
+// src/screens/managedriversscreen.tsx
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -12,6 +13,13 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, typography, spacing, borderRadius } from '../constants';
+import {
+  getDrivers,
+  addDriver,
+  updateDriver,
+  deleteDriver,
+  Driver,
+} from '../services/driverservice';
 
 interface ManageDriversScreenProps {
   onNavigateBack: () => void;
@@ -19,19 +27,6 @@ interface ManageDriversScreenProps {
   onNavigateToFleet: () => void;
   onNavigateToBookings: () => void;
   onNavigateToProfile: () => void;
-}
-
-interface Driver {
-  id: string;
-  name: string;
-  phone: string;
-  email: string;
-  licenseNumber: string;
-  experience: string;
-  status: 'available' | 'busy';
-  totalTrips: number;
-  rating: number;
-  photo?: string;
 }
 
 export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
@@ -53,37 +48,21 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
   const [licenseNumber, setLicenseNumber] = useState('');
   const [experience, setExperience] = useState('');
 
+  /* --------------------------------------------------- */
+  /*                DATA LAYER (service)                */
+  /* --------------------------------------------------- */
   useEffect(() => {
     fetchDrivers();
   }, []);
 
   const fetchDrivers = async () => {
     try {
-      console.log('🔵 Loading drivers...');
-      const { auth, db } = await import('../config/firebase');
-      const { collection, query, where, getDocs } = await import('firebase/firestore');
-      
-      const vendorId = auth.currentUser?.uid;
-      if (!vendorId) {
-        setLoading(false);
-        return;
-      }
-
-      const q = query(
-        collection(db, 'drivers'),
-        where('vendorId', '==', vendorId)
-      );
-      
-      const snapshot = await getDocs(q);
-      const driversList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Driver[];
-
-      setDrivers(driversList);
-      console.log(`✅ Loaded ${driversList.length} drivers`);
-    } catch (error) {
-      console.error('❌ Error loading drivers:', error);
+      console.log('Loading drivers...');
+      const list = await getDrivers();
+      setDrivers(list);
+      console.log(`Loaded ${list.length} drivers`);
+    } catch (e) {
+      console.error('Error loading drivers:', e);
     } finally {
       setLoading(false);
     }
@@ -103,37 +82,15 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
-
     try {
-      const { auth, db } = await import('../config/firebase');
-      const { collection, addDoc } = await import('firebase/firestore');
-      
-      const vendorId = auth.currentUser?.uid;
-      if (!vendorId) return;
-
-      const driverData = {
-        vendorId,
-        name,
-        phone,
-        email,
-        licenseNumber,
-        experience,
-        status: 'available',
-        totalTrips: 0,
-        rating: 5.0,
-        createdAt: new Date().toISOString(),
-      };
-
-      const docRef = await addDoc(collection(db, 'drivers'), driverData);
-      console.log('✅ Driver added:', docRef.id);
-
+      await addDriver({ name, phone, email, licenseNumber, experience });
       Alert.alert('Success', 'Driver added successfully!');
       setShowAddModal(false);
       resetForm();
       fetchDrivers();
-    } catch (error) {
-      console.error('❌ Error adding driver:', error);
-      Alert.alert('Error', 'Failed to add driver');
+    } catch (e: any) {
+      console.error('Error adding driver:', e);
+      Alert.alert('Error', e.message ?? 'Failed to add driver');
     }
   };
 
@@ -142,27 +99,21 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
-
     try {
-      const { db } = await import('../config/firebase');
-      const { doc, updateDoc } = await import('firebase/firestore');
-
-      await updateDoc(doc(db, 'drivers', editingDriver.id), {
+      await updateDriver(editingDriver.id!, {
         name,
         phone,
         email,
         licenseNumber,
         experience,
-        updatedAt: new Date().toISOString(),
       });
-
       Alert.alert('Success', 'Driver updated successfully!');
       setShowAddModal(false);
       resetForm();
       fetchDrivers();
-    } catch (error) {
-      console.error('❌ Error updating driver:', error);
-      Alert.alert('Error', 'Failed to update driver');
+    } catch (e: any) {
+      console.error('Error updating driver:', e);
+      Alert.alert('Error', e.message ?? 'Failed to update driver');
     }
   };
 
@@ -177,15 +128,12 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
           style: 'destructive',
           onPress: async () => {
             try {
-              const { db } = await import('../config/firebase');
-              const { doc, deleteDoc } = await import('firebase/firestore');
-
-              await deleteDoc(doc(db, 'drivers', driver.id));
+              await deleteDriver(driver.id!);
               Alert.alert('Success', 'Driver removed successfully');
               fetchDrivers();
-            } catch (error) {
-              console.error('❌ Error deleting driver:', error);
-              Alert.alert('Error', 'Failed to delete driver');
+            } catch (e: any) {
+              console.error('Error deleting driver:', e);
+              Alert.alert('Error', e.message ?? 'Failed to delete driver');
             }
           },
         },
@@ -197,9 +145,9 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
     setEditingDriver(driver);
     setName(driver.name);
     setPhone(driver.phone);
-    setEmail(driver.email || '');
+    setEmail(driver.email ?? '');
     setLicenseNumber(driver.licenseNumber);
-    setExperience(driver.experience || '');
+    setExperience(driver.experience ?? '');
     setShowAddModal(true);
   };
 
@@ -208,10 +156,12 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
     setShowAddModal(true);
   };
 
-  const getStatusColor = (status: string) => {
-    return status === 'available' ? '#10B981' : '#F59E0B';
-  };
+  const getStatusColor = (status: string) =>
+    status === 'available' ? '#10B981' : '#F59E0B';
 
+  /* --------------------------------------------------- */
+  /*                     UI (unchanged)                 */
+  /* --------------------------------------------------- */
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -228,7 +178,6 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
             resizeMode="cover"
           />
         </LinearGradient>
-
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Manage Drivers</Text>
           <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
@@ -250,7 +199,7 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
             </View>
           ) : drivers.length === 0 ? (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>👨‍✈️</Text>
+              <Text style={styles.emptyIcon}>Driver</Text>
               <Text style={styles.emptyTitle}>No Drivers Yet</Text>
               <Text style={styles.emptyText}>
                 Add drivers to manage your with-driver bookings
@@ -284,9 +233,9 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
                     </View>
                     <View style={styles.driverInfo}>
                       <Text style={styles.driverName}>{driver.name}</Text>
-                      <Text style={styles.driverPhone}>📞 {driver.phone}</Text>
+                      <Text style={styles.driverPhone}>Phone {driver.phone}</Text>
                       {driver.email && (
-                        <Text style={styles.driverEmail}>✉️ {driver.email}</Text>
+                        <Text style={styles.driverEmail}>Email {driver.email}</Text>
                       )}
                     </View>
                   </View>
@@ -313,7 +262,9 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
                     </View>
                     <View style={styles.statDivider} />
                     <View style={styles.statItem}>
-                      <Text style={styles.statValue}>⭐ {driver.rating?.toFixed(1) || '5.0'}</Text>
+                      <Text style={styles.statValue}>
+                        Star {driver.rating?.toFixed(1) || '5.0'}
+                      </Text>
                       <Text style={styles.statLabel}>Rating</Text>
                     </View>
                   </View>
@@ -324,20 +275,19 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
                       style={styles.editButton}
                       onPress={() => handleEditDriver(driver)}
                     >
-                      <Text style={styles.editButtonText}>✏️ Edit</Text>
+                      <Text style={styles.editButtonText}>Edit</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.deleteButton}
                       onPress={() => handleDeleteDriver(driver)}
                     >
-                      <Text style={styles.deleteButtonText}>🗑️ Remove</Text>
+                      <Text style={styles.deleteButtonText}>Remove</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
               ))}
             </View>
           )}
-
           <View style={styles.bottomSpacing} />
         </ScrollView>
       </View>
@@ -364,10 +314,9 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
                   resetForm();
                 }}
               >
-                <Text style={styles.modalClose}>✕</Text>
+                <Text style={styles.modalClose}>X</Text>
               </TouchableOpacity>
             </View>
-
             <ScrollView showsVerticalScrollIndicator={false}>
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Full Name *</Text>
@@ -379,7 +328,6 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
                   onChangeText={setName}
                 />
               </View>
-
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Phone Number *</Text>
                 <TextInput
@@ -391,7 +339,6 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
                   keyboardType="phone-pad"
                 />
               </View>
-
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Email</Text>
                 <TextInput
@@ -404,7 +351,6 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
                   autoCapitalize="none"
                 />
               </View>
-
               <View style={styles.formGroup}>
                 <Text style={styles.label}>License Number *</Text>
                 <TextInput
@@ -415,7 +361,6 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
                   onChangeText={setLicenseNumber}
                 />
               </View>
-
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Experience</Text>
                 <TextInput
@@ -426,7 +371,6 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
                   onChangeText={setExperience}
                 />
               </View>
-
               <TouchableOpacity
                 style={styles.submitButton}
                 onPress={editingDriver ? handleUpdateDriver : handleAddDriver}
@@ -450,7 +394,6 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
           />
           <Text style={styles.navLabel}>Dashboard</Text>
         </TouchableOpacity>
-
         <TouchableOpacity style={styles.navItem} onPress={onNavigateToFleet}>
           <Image
             source={require('../../assets/images/caricon.png')}
@@ -459,7 +402,6 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
           />
           <Text style={styles.navLabel}>Fleet</Text>
         </TouchableOpacity>
-
         <TouchableOpacity style={styles.navItem} onPress={onNavigateToBookings}>
           <Image
             source={require('../../assets/images/tripicon.png')}
@@ -468,8 +410,6 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
           />
           <Text style={styles.navLabel}>Bookings</Text>
         </TouchableOpacity>
-
-
         <TouchableOpacity style={styles.navItem} onPress={onNavigateToProfile}>
           <Image
             source={require('../../assets/images/profileicon.png')}
@@ -483,6 +423,9 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
   );
 };
 
+/* --------------------------------------------------- */
+/*                     STYLES (unchanged)             */
+/* --------------------------------------------------- */
 const styles = StyleSheet.create({
   container: {
     flex: 1,

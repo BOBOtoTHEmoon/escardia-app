@@ -1,28 +1,56 @@
-import firebase from '../config/firebase';
+// src/services/authservice.ts
 import { auth, db } from '../config/firebase';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  User,
+} from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 
-// Sign up with email and password
+// Cloudinary upload (using fetch)
+const CLOUDINARY_UPLOAD_PRESET = 'escardia_profile'; // Set in Cloudinary
+const CLOUDINARY_CLOUD_NAME = 'your-cloud-name'; // Replace with yours
+
+export const uploadProfilePhoto = async (uri: string): Promise<string> => {
+  const data = new FormData();
+  data.append('file', {
+    uri,
+    type: 'image/jpeg',
+    name: 'profile.jpg',
+  } as any);
+  data.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+    {
+      method: 'POST',
+      body: data,
+    }
+  );
+  const result = await res.json();
+  if (!result.secure_url) throw new Error('Upload failed');
+  return result.secure_url;
+};
+
+// Sign up
 export const signUpWithEmail = async (
   email: string,
   password: string,
   firstName: string,
-  lastName: string
+  lastName: string,
+  photoUrl?: string
 ) => {
   try {
-    // Create user in Firebase Auth
-    const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
 
-    if (!user) {
-      throw new Error('User creation failed');
-    }
-
-    // Save user profile to Firestore
-    await db.collection('users').doc(user.uid).set({
+    await setDoc(doc(db, 'users', user.uid), {
       uid: user.uid,
-      email: email,
-      firstName: firstName,
-      lastName: lastName,
+      email,
+      firstName,
+      lastName,
+      photoUrl: photoUrl || null,
       createdAt: new Date().toISOString(),
     });
 
@@ -33,10 +61,10 @@ export const signUpWithEmail = async (
   }
 };
 
-// Sign in with email and password
+// Sign in
 export const signInWithEmail = async (email: string, password: string) => {
   try {
-    const userCredential = await auth.signInWithEmailAndPassword(email, password);
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
     return { success: true, user: userCredential.user };
   } catch (error: any) {
     console.error('Sign in error:', error);
@@ -47,7 +75,7 @@ export const signInWithEmail = async (email: string, password: string) => {
 // Sign out
 export const logOut = async () => {
   try {
-    await auth.signOut();
+    await signOut(auth);
     return { success: true };
   } catch (error: any) {
     console.error('Sign out error:', error);
@@ -55,17 +83,39 @@ export const logOut = async () => {
   }
 };
 
-// Get user profile from Firestore
+// Get user profile
 export const getUserProfile = async (uid: string) => {
   try {
-    const userDoc = await db.collection('users').doc(uid).get();
-    if (userDoc.exists) {
+    const userDoc = await getDoc(doc(db, 'users', uid));
+    if (userDoc.exists()) {
       return { success: true, data: userDoc.data() };
     } else {
       return { success: false, error: 'User not found' };
     }
   } catch (error: any) {
     console.error('Get user profile error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Update profile photo
+export const updateProfilePhoto = async (uid: string, photoUrl: string) => {
+  try {
+    await setDoc(doc(db, 'users', uid), { photoUrl }, { merge: true });
+    return { success: true };
+  } catch (error: any) {
+    console.error('Update photo error:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Update vendor photo
+export const updateVendorPhoto = async (uid: string, photoUrl: string) => {
+  try {
+    await setDoc(doc(db, 'vendors', uid), { photoUrl }, { merge: true });
+    return { success: true };
+  } catch (error: any) {
+    console.error('Update vendor photo error:', error);
     return { success: false, error: error.message };
   }
 };

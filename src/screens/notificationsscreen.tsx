@@ -1,3 +1,4 @@
+// src/screens/notificationsscreen.tsx
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -7,19 +8,16 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '../constants';
+import {
+  fetchNotifications,
+  markNotificationAsRead,
+  setupNotifications,
+  sendTestPushInApp,
+  Notification,
+} from '../services/notificationservice';
 
 interface NotificationsScreenProps {
   onNavigateBack: () => void;
-}
-
-interface Notification {
-  id: string;
-  type: 'booking' | 'payment' | 'cancellation' | 'general';
-  title: string;
-  message: string;
-  timestamp: string;
-  read: boolean;
-  bookingId?: string;
 }
 
 export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
@@ -29,161 +27,37 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchNotifications();
+    const init = async () => {
+      await setupNotifications(); // Gets token
+      await loadNotifications();
+    };
+    init();
   }, []);
 
-  const fetchNotifications = async () => {
+  const loadNotifications = async () => {
     try {
-      const { auth, db } = await import('../config/firebase');
-      const { collection, query, where, getDocs, orderBy } = await import('firebase/firestore');
-      
-      const vendorId = auth.currentUser?.uid;
-      if (!vendorId) {
-        setLoading(false);
-        return;
-      }
-
-      // Fetch bookings to generate notifications
-      const q = query(
-        collection(db, 'bookings'),
-        where('vendorId', '==', vendorId),
-        orderBy('createdAt', 'desc')
-      );
-      
-      const snapshot = await getDocs(q);
-      
-      // Convert bookings to notifications
-      const notifsList: Notification[] = await Promise.all(
-        snapshot.docs.map(async (docSnap) => {
-          const booking = docSnap.data();
-          
-          // Fetch user name
-          const userQuery = query(collection(db, 'users'), where('__name__', '==', booking.userId));
-          const userSnapshot = await getDocs(userQuery);
-          const userData = userSnapshot.docs[0]?.data();
-          const userName = userData ? `${userData.firstName} ${userData.lastName}` : 'A customer';
-          
-          // Fetch car name
-          const carQuery = query(collection(db, 'cars'), where('__name__', '==', booking.carId));
-          const carSnapshot = await getDocs(carQuery);
-          const carData = carSnapshot.docs[0]?.data();
-          const carName = carData ? `${carData.brand} ${carData.model}` : 'your car';
-
-          // Generate notification based on booking status
-          let title = '';
-          let message = '';
-          let type: 'booking' | 'payment' | 'cancellation' | 'general' = 'booking';
-
-          switch (booking.status) {
-            case 'pending':
-              title = 'New Booking Request';
-              message = `${userName} requested to book ${carName}`;
-              type = 'booking';
-              break;
-            case 'confirmed':
-              title = 'Booking Confirmed';
-              message = `${userName}'s booking for ${carName} has been confirmed`;
-              type = 'booking';
-              break;
-            case 'ongoing':
-              title = 'Trip Started';
-              message = `${userName} started their trip with ${carName}`;
-              type = 'booking';
-              break;
-            case 'completed':
-              title = 'Trip Completed';
-              message = `${userName} completed their trip with ${carName}`;
-              type = 'payment';
-              break;
-            case 'cancelled':
-              title = 'Booking Cancelled';
-              message = `${userName} cancelled their booking for ${carName}`;
-              type = 'cancellation';
-              break;
-            default:
-              title = 'Booking Update';
-              message = `Update on ${carName} booking`;
-              type = 'general';
-          }
-
-          // Format timestamp
-          let timestamp = 'Just now';
-          try {
-            let date;
-            if (booking.createdAt?.toDate) {
-              date = booking.createdAt.toDate();
-            } else {
-              date = new Date(booking.createdAt);
-            }
-            
-            const now = new Date();
-            const diffMs = now.getTime() - date.getTime();
-            const diffMins = Math.floor(diffMs / 60000);
-            const diffHours = Math.floor(diffMs / 3600000);
-            const diffDays = Math.floor(diffMs / 86400000);
-
-            if (diffMins < 1) {
-              timestamp = 'Just now';
-            } else if (diffMins < 60) {
-              timestamp = `${diffMins}m ago`;
-            } else if (diffHours < 24) {
-              timestamp = `${diffHours}h ago`;
-            } else if (diffDays < 7) {
-              timestamp = `${diffDays}d ago`;
-            } else {
-              timestamp = date.toLocaleDateString('en-GB', {
-                day: 'numeric',
-                month: 'short',
-              });
-            }
-          } catch (e) {
-            timestamp = 'Recently';
-          }
-
-          return {
-            id: docSnap.id,
-            type,
-            title,
-            message,
-            timestamp,
-            read: booking.notificationRead || false,
-            bookingId: docSnap.id,
-          };
-        })
-      );
-
-      setNotifications(notifsList);
-      console.log(`✅ Loaded ${notifsList.length} notifications`);
+      const list = await fetchNotifications();
+      setNotifications(list);
     } catch (error) {
-      console.error('❌ Error loading notifications:', error);
+      console.error('Load error:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const markAsRead = async (notificationId: string) => {
-    try {
-      const { db } = await import('../config/firebase');
-      const { doc, updateDoc } = await import('firebase/firestore');
-
-      await updateDoc(doc(db, 'bookings', notificationId), {
-        notificationRead: true,
-      });
-
-      setNotifications(notifications.map(n => 
-        n.id === notificationId ? { ...n, read: true } : n
-      ));
-    } catch (error) {
-      console.error('Error marking notification as read:', error);
-    }
+  const markRead = async (id: string) => {
+    await markNotificationAsRead(id);
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+    );
   };
 
-  const getNotificationIcon = (type: string) => {
+  const icon = (type: string) => {
     switch (type) {
-      case 'booking': return '📅';
-      case 'payment': return '💰';
-      case 'cancellation': return '❌';
-      default: return '🔔';
+      case 'booking': return 'Calendar';
+      case 'payment': return 'Money';
+      case 'cancellation': return 'Cross';
+      default: return 'Bell';
     }
   };
 
@@ -191,108 +65,80 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-          <Text style={styles.backIcon}>←</Text>
+          <Text style={styles.backIcon}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      {/* TEST BUTTON (REMOVE LATER) */}
+      <TouchableOpacity onPress={sendTestPushInApp} style={styles.testButton}>
+        <Text style={styles.testText}>SEND TEST PUSH</Text>
+      </TouchableOpacity>
+
+      <ScrollView style={styles.scrollView}>
         {loading ? (
-          <View style={styles.emptyState}>
+          <View style={styles.empty}>
             <Text style={styles.emptyText}>Loading...</Text>
           </View>
         ) : notifications.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>🔔</Text>
+          <View style={styles.empty}>
+            <Text style={styles.emptyIcon}>Bell</Text>
             <Text style={styles.emptyTitle}>No Notifications</Text>
             <Text style={styles.emptyText}>You're all caught up!</Text>
           </View>
         ) : (
-          <View style={styles.notificationsList}>
-            {notifications.map((notification) => (
+          <View style={styles.list}>
+            {notifications.map((n) => (
               <TouchableOpacity
-                key={notification.id}
-                style={[
-                  styles.notificationCard,
-                  !notification.read && styles.notificationUnread,
-                ]}
-                onPress={() => markAsRead(notification.id)}
+                key={n.id}
+                style={[styles.card, !n.read && styles.unread]}
+                onPress={() => markRead(n.id)}
               >
-                <View style={styles.notificationIcon}>
-                  <Text style={styles.notificationIconText}>
-                    {getNotificationIcon(notification.type)}
+                <View style={styles.icon}>
+                  <Text style={styles.iconText}>{icon(n.type)}</Text>
+                </View>
+                <View style={styles.content}>
+                  <Text style={styles.title}>{n.title}</Text>
+                  <Text style={styles.message}>{n.message}</Text>
+                  <Text style={styles.time}>
+                    {new Date(n.timestamp).toLocaleString()}
                   </Text>
                 </View>
-                <View style={styles.notificationContent}>
-                  <Text style={styles.notificationTitle}>{notification.title}</Text>
-                  <Text style={styles.notificationMessage}>{notification.message}</Text>
-                  <Text style={styles.notificationTime}>{notification.timestamp}</Text>
-                </View>
-                {!notification.read && <View style={styles.unreadDot} />}
+                {!n.read && <View style={styles.dot} />}
               </TouchableOpacity>
             ))}
           </View>
         )}
-        <View style={styles.bottomSpacing} />
+        <View style={styles.bottom} />
       </ScrollView>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+  container: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: spacing.lg,
     paddingTop: 60,
     paddingBottom: spacing.md,
   },
-  backButton: {
-    padding: spacing.sm,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: colors.text,
-  },
-  headerTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-  },
-  headerSpacer: {
-    width: 40,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: spacing['3xl'],
-  },
-  emptyIcon: {
-    fontSize: 80,
-    marginBottom: spacing.md,
-  },
-  emptyTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  emptyText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  notificationsList: {
-    padding: spacing.lg,
-  },
-  notificationCard: {
+  backButton: { padding: spacing.sm },
+  backIcon: { fontSize: 24, color: colors.text },
+  headerTitle: { fontSize: typography.fontSize.xl, fontWeight: 'bold', color: colors.text },
+  headerSpacer: { width: 40 },
+  testButton: { padding: 10, backgroundColor: '#ff3b30', alignItems: 'center' },
+  testText: { color: 'white', fontWeight: 'bold' },
+  scrollView: { flex: 1 },
+  empty: { alignItems: 'center', paddingVertical: spacing['3xl'] },
+  emptyIcon: { fontSize: 80, marginBottom: spacing.md },
+  emptyTitle: { fontSize: typography.fontSize.xl, fontWeight: 'bold', color: colors.text, marginBottom: spacing.xs },
+  emptyText: { fontSize: typography.fontSize.base, color: colors.textSecondary },
+  list: { padding: spacing.lg },
+  card: {
     flexDirection: 'row',
     backgroundColor: colors.backgroundGray,
     borderRadius: borderRadius.lg,
@@ -300,10 +146,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     position: 'relative',
   },
-  notificationUnread: {
-    backgroundColor: colors.primary + '10',
-  },
-  notificationIcon: {
+  unread: { backgroundColor: colors.primary + '10' },
+  icon: {
     width: 45,
     height: 45,
     borderRadius: 22.5,
@@ -312,28 +156,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: spacing.sm,
   },
-  notificationIconText: {
-    fontSize: 20,
-  },
-  notificationContent: {
-    flex: 1,
-  },
-  notificationTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-    marginBottom: 4,
-  },
-  notificationMessage: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  notificationTime: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-  },
-  unreadDot: {
+  iconText: { fontSize: 20 },
+  content: { flex: 1 },
+  title: { fontSize: typography.fontSize.base, fontWeight: '600', color: colors.text, marginBottom: 4 },
+  message: { fontSize: typography.fontSize.sm, color: colors.textSecondary, marginBottom: 4 },
+  time: { fontSize: typography.fontSize.xs, color: colors.textSecondary },
+  dot: {
     position: 'absolute',
     top: spacing.md,
     right: spacing.md,
@@ -342,7 +170,5 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: colors.primary,
   },
-  bottomSpacing: {
-    height: 40,
-  },
+  bottom: { height: 40 },
 });

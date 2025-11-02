@@ -1,3 +1,4 @@
+// src/screens/vendornotificationsscreen.tsx
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -9,6 +10,11 @@ import {
   Alert,
 } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '../constants';
+import {
+  saveNotificationPreferences,
+  getNotificationPreferences,
+  NotificationPreferences,
+} from '../services/notificationservice';
 
 interface VendorNotificationPreferencesScreenProps {
   onNavigateBack: () => void;
@@ -17,18 +23,15 @@ interface VendorNotificationPreferencesScreenProps {
 export const VendorNotificationPreferencesScreen: React.FC<VendorNotificationPreferencesScreenProps> = ({
   onNavigateBack,
 }) => {
-  const [preferences, setPreferences] = useState({
+  const [preferences, setPreferences] = useState<NotificationPreferences>({
     emailNotifications: true,
     pushNotifications: true,
     smsNotifications: false,
-    
     newBookings: true,
     bookingUpdates: true,
     cancellations: true,
-    
     payments: true,
     withdrawals: true,
-    
     promotions: false,
     tips: true,
   });
@@ -40,19 +43,8 @@ export const VendorNotificationPreferencesScreen: React.FC<VendorNotificationPre
 
   const loadPreferences = async () => {
     try {
-      const { db, auth } = await import('../config/firebase');
-      const { doc, getDoc } = await import('firebase/firestore');
-      
-      const vendorId = auth.currentUser?.uid;
-      if (!vendorId) return;
-
-      const vendorDoc = await getDoc(doc(db, 'vendors', vendorId));
-      if (vendorDoc.exists()) {
-        const data = vendorDoc.data();
-        if (data.notificationPreferences) {
-          setPreferences(data.notificationPreferences);
-        }
-      }
+      const saved = await getNotificationPreferences();
+      if (saved) setPreferences(saved);
     } catch (error) {
       console.error('Error loading preferences:', error);
     } finally {
@@ -62,39 +54,18 @@ export const VendorNotificationPreferencesScreen: React.FC<VendorNotificationPre
 
   const handleSave = async () => {
     try {
-      const { db, auth } = await import('../config/firebase');
-      const { doc, updateDoc } = await import('firebase/firestore');
-      
-      const vendorId = auth.currentUser?.uid;
-      if (!vendorId) return;
-
-      await updateDoc(doc(db, 'vendors', vendorId), {
-        notificationPreferences: preferences,
-        updatedAt: new Date().toISOString(),
-      });
-
-      Alert.alert('Success', 'Preferences saved successfully!');
-    } catch (error) {
-      console.error('Error saving preferences:', error);
-      Alert.alert('Error', 'Failed to save preferences');
+      await saveNotificationPreferences(preferences);
+      Alert.alert('Success', 'Preferences saved!');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to save');
     }
   };
 
-  const togglePreference = (key: keyof typeof preferences) => {
-    setPreferences(prev => ({ ...prev, [key]: !prev[key] }));
+  const toggle = (key: keyof NotificationPreferences) => {
+    setPreferences((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const PreferenceRow = ({ 
-    title, 
-    subtitle, 
-    value, 
-    onToggle 
-  }: { 
-    title: string; 
-    subtitle: string; 
-    value: boolean; 
-    onToggle: () => void;
-  }) => (
+  const Row = ({ title, subtitle, value, onToggle }: any) => (
     <View style={styles.preferenceRow}>
       <View style={styles.preferenceLeft}>
         <Text style={styles.preferenceTitle}>{title}</Text>
@@ -110,10 +81,9 @@ export const VendorNotificationPreferencesScreen: React.FC<VendorNotificationPre
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-          <Text style={styles.backIcon}>←</Text>
+          <Text style={styles.backIcon}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
         <TouchableOpacity onPress={handleSave}>
@@ -121,95 +91,31 @@ export const VendorNotificationPreferencesScreen: React.FC<VendorNotificationPre
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* General */}
+      <ScrollView style={styles.scrollView}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🔔 General</Text>
-          
-          <PreferenceRow
-            title="Email Notifications"
-            subtitle="Receive updates via email"
-            value={preferences.emailNotifications}
-            onToggle={() => togglePreference('emailNotifications')}
-          />
-
-          <PreferenceRow
-            title="Push Notifications"
-            subtitle="Receive push notifications on your device"
-            value={preferences.pushNotifications}
-            onToggle={() => togglePreference('pushNotifications')}
-          />
-
-          <PreferenceRow
-            title="SMS Notifications"
-            subtitle="Receive text messages for important updates"
-            value={preferences.smsNotifications}
-            onToggle={() => togglePreference('smsNotifications')}
-          />
+          <Text style={styles.sectionTitle}>General</Text>
+          <Row title="Email" subtitle="Via email" value={preferences.emailNotifications} onToggle={() => toggle('emailNotifications')} />
+          <Row title="Push" subtitle="On your device" value={preferences.pushNotifications} onToggle={() => toggle('pushNotifications')} />
+          <Row title="SMS" subtitle="Text messages" value={preferences.smsNotifications} onToggle={() => toggle('smsNotifications')} />
         </View>
 
-        {/* Bookings */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📅 Bookings</Text>
-          
-          <PreferenceRow
-            title="New Bookings"
-            subtitle="Get notified when you receive a new booking"
-            value={preferences.newBookings}
-            onToggle={() => togglePreference('newBookings')}
-          />
-
-          <PreferenceRow
-            title="Booking Updates"
-            subtitle="Updates on ongoing bookings"
-            value={preferences.bookingUpdates}
-            onToggle={() => togglePreference('bookingUpdates')}
-          />
-
-          <PreferenceRow
-            title="Cancellations"
-            subtitle="Notify when customers cancel bookings"
-            value={preferences.cancellations}
-            onToggle={() => togglePreference('cancellations')}
-          />
+          <Text style={styles.sectionTitle}>Bookings</Text>
+          <Row title="New Bookings" subtitle="New request" value={preferences.newBookings} onToggle={() => toggle('newBookings')} />
+          <Row title="Updates" subtitle="Status changes" value={preferences.bookingUpdates} onToggle={() => toggle('bookingUpdates')} />
+          <Row title="Cancellations" subtitle="Customer cancel" value={preferences.cancellations} onToggle={() => toggle('cancellations')} />
         </View>
 
-        {/* Financial */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>💰 Financial</Text>
-          
-          <PreferenceRow
-            title="Payment Alerts"
-            subtitle="Get notified of successful payments"
-            value={preferences.payments}
-            onToggle={() => togglePreference('payments')}
-          />
-
-          <PreferenceRow
-            title="Withdrawal Confirmations"
-            subtitle="Confirm when funds are withdrawn"
-            value={preferences.withdrawals}
-            onToggle={() => togglePreference('withdrawals')}
-          />
+          <Text style={styles.sectionTitle}>Financial</Text>
+          <Row title="Payments" subtitle="Payment received" value={preferences.payments} onToggle={() => toggle('payments')} />
+          <Row title="Withdrawals" subtitle="Payout sent" value={preferences.withdrawals} onToggle={() => toggle('withdrawals')} />
         </View>
 
-        {/* Marketing */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📢 Marketing</Text>
-          
-          <PreferenceRow
-            title="Promotions & Offers"
-            subtitle="Receive promotional content and special offers"
-            value={preferences.promotions}
-            onToggle={() => togglePreference('promotions')}
-          />
-
-          <PreferenceRow
-            title="Tips & Tricks"
-            subtitle="Get helpful tips to grow your business"
-            value={preferences.tips}
-            onToggle={() => togglePreference('tips')}
-          />
+          <Text style={styles.sectionTitle}>Marketing</Text>
+          <Row title="Promotions" subtitle="Offers & deals" value={preferences.promotions} onToggle={() => toggle('promotions')} />
+          <Row title="Tips" subtitle="Grow your business" value={preferences.tips} onToggle={() => toggle('tips')} />
         </View>
 
         <View style={styles.bottomSpacing} />
@@ -219,70 +125,32 @@ export const VendorNotificationPreferencesScreen: React.FC<VendorNotificationPre
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+  container: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: spacing.lg,
     paddingTop: 60,
     paddingBottom: spacing.md,
   },
-  backButton: {
-    padding: spacing.sm,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: colors.text,
-  },
-  headerTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-  },
-  saveText: {
-    fontSize: typography.fontSize.base,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  section: {
-    padding: spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
+  backButton: { padding: spacing.sm },
+  backIcon: { fontSize: 24, color: colors.text },
+  headerTitle: { fontSize: typography.fontSize.xl, fontWeight: 'bold', color: colors.text },
+  saveText: { fontSize: typography.fontSize.base, color: colors.primary, fontWeight: '600' },
+  scrollView: { flex: 1 },
+  section: { padding: spacing.lg },
+  sectionTitle: { fontSize: typography.fontSize.lg, fontWeight: 'bold', color: colors.text, marginBottom: spacing.md },
   preferenceRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  preferenceLeft: {
-    flex: 1,
-    marginRight: spacing.md,
-  },
-  preferenceTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.medium,
-    color: colors.text,
-    marginBottom: 4,
-  },
-  preferenceSubtitle: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-  },
-  bottomSpacing: {
-    height: 40,
-  },
+  preferenceLeft: { flex: 1, marginRight: spacing.md },
+  preferenceTitle: { fontSize: typography.fontSize.base, fontWeight: '600', color: colors.text, marginBottom: 4 },
+  preferenceSubtitle: { fontSize: typography.fontSize.sm, color: colors.textSecondary },
+  bottomSpacing: { height: 40 },
 });

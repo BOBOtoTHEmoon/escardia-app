@@ -1,3 +1,4 @@
+// src/screens/vendorbankdetailsscreen.tsx
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -10,6 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '../constants';
+import { saveBankDetails, getBankDetails } from '../services/payoutservice';
 
 interface VendorBankDetailsScreenProps {
   onNavigateBack: () => void;
@@ -30,18 +32,11 @@ export const VendorBankDetailsScreen: React.FC<VendorBankDetailsScreenProps> = (
 
   const loadBankDetails = async () => {
     try {
-      const { db, auth } = await import('../config/firebase');
-      const { doc, getDoc } = await import('firebase/firestore');
-      
-      const vendorId = auth.currentUser?.uid;
-      if (!vendorId) return;
-
-      const vendorDoc = await getDoc(doc(db, 'vendors', vendorId));
-      if (vendorDoc.exists()) {
-        const data = vendorDoc.data();
-        setAccountNumber(data.bankDetails?.accountNumber || '');
-        setAccountName(data.bankDetails?.accountName || '');
-        setBankName(data.bankDetails?.bankName || '');
+      const details = await getBankDetails();
+      if (details) {
+        setAccountNumber(details.accountNumber);
+        setAccountName(details.accountName);
+        setBankName(details.bankName);
       }
     } catch (error) {
       console.error('Error loading bank details:', error);
@@ -55,7 +50,6 @@ export const VendorBankDetailsScreen: React.FC<VendorBankDetailsScreenProps> = (
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-
     if (accountNumber.length !== 10) {
       Alert.alert('Error', 'Account number must be 10 digits');
       return;
@@ -63,25 +57,11 @@ export const VendorBankDetailsScreen: React.FC<VendorBankDetailsScreenProps> = (
 
     setSaving(true);
     try {
-      const { db, auth } = await import('../config/firebase');
-      const { doc, updateDoc } = await import('firebase/firestore');
-      
-      const vendorId = auth.currentUser?.uid;
-      if (!vendorId) return;
-
-      await updateDoc(doc(db, 'vendors', vendorId), {
-        bankDetails: {
-          accountNumber,
-          accountName,
-          bankName,
-          updatedAt: new Date().toISOString(),
-        },
-      });
-
+      await saveBankDetails({ accountNumber, accountName, bankName });
       Alert.alert('Success', 'Bank details saved successfully!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving bank details:', error);
-      Alert.alert('Error', 'Failed to save bank details');
+      Alert.alert('Error', error.message || 'Failed to save bank details');
     } finally {
       setSaving(false);
     }
@@ -89,7 +69,7 @@ export const VendorBankDetailsScreen: React.FC<VendorBankDetailsScreenProps> = (
 
   const nigerianBanks = [
     'Access Bank', 'GTBank', 'Zenith Bank', 'First Bank', 'UBA',
-    'Polaris Bank', 'Fidelity Bank', 'Ecobank', 'Sterling Bank', 
+    'Polaris Bank', 'Fidelity Bank', 'Ecobank', 'Sterling Bank',
     'Union Bank', 'Stanbic IBTC', 'Wema Bank', 'Keystone Bank',
     'FCMB', 'Heritage Bank', 'Jaiz Bank', 'Kuda Bank', 'OPay',
   ];
@@ -125,7 +105,7 @@ export const VendorBankDetailsScreen: React.FC<VendorBankDetailsScreenProps> = (
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>💳 Payment Account</Text>
+          <Text style={styles.sectionTitle}>Payment Account</Text>
           <Text style={styles.sectionSubtitle}>
             Add your bank account details to receive payments
           </Text>
@@ -133,8 +113,8 @@ export const VendorBankDetailsScreen: React.FC<VendorBankDetailsScreenProps> = (
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Bank Name *</Text>
             <View style={styles.pickerContainer}>
-              <ScrollView 
-                horizontal 
+              <ScrollView
+                horizontal
                 showsHorizontalScrollIndicator={false}
                 style={styles.bankScroll}
               >
@@ -185,7 +165,7 @@ export const VendorBankDetailsScreen: React.FC<VendorBankDetailsScreenProps> = (
           </View>
 
           <View style={styles.infoBox}>
-            <Text style={styles.infoIcon}>ℹ️</Text>
+            <Text style={styles.infoIcon}>Info</Text>
             <Text style={styles.infoText}>
               Ensure your account details are correct. Withdrawals will be sent to this account.
             </Text>
@@ -199,11 +179,10 @@ export const VendorBankDetailsScreen: React.FC<VendorBankDetailsScreenProps> = (
             {saving ? (
               <ActivityIndicator color={colors.textWhite} />
             ) : (
-              <Text style={styles.saveButtonText}>💾 Save Bank Details</Text>
+              <Text style={styles.saveButtonText}>Save Bank Details</Text>
             )}
           </TouchableOpacity>
         </View>
-
         <View style={styles.bottomSpacing} />
       </ScrollView>
     </View>
