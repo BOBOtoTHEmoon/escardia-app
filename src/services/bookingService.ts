@@ -7,9 +7,7 @@ interface CancellationResult {
   error?: string;
 }
 
-/**
- * Calculate refund percentage based on time until trip starts
- */
+/**Calculate refund percentage based on time until trip starts*/
 const calculateRefund = (startDate: string, startTime: string): number => {
   const parseDate = (dateStr: string) => {
     const parts = dateStr.trim().split(' ');
@@ -56,9 +54,7 @@ const calculateRefund = (startDate: string, startTime: string): number => {
   }
 };
 
-/**
- * Cancel a booking
- */
+/*Cancel a booking*/
 export const cancelBooking = async (
   bookingId: string
 ): Promise<CancellationResult> => {
@@ -303,9 +299,7 @@ export const getBookingsByStatusRecalculated = async (userId: string, status: st
     return { success: false, error: error.message };
   }
 };
-/**
- * Get all bookings for a vendor's cars
- */
+/*Get all bookings for a vendor's cars*/
 export const getVendorBookings = async (vendorId: string) => {
   try {
     console.log('🔵 Fetching bookings for vendor:', vendorId);

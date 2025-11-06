@@ -1,13 +1,17 @@
 export const CLOUDINARY_CONFIG = {
-  cloudName: 'dntot8okm',
+  cloudName: 'dntotokm',
   uploadPreset: 'escardia_cars',
+  idsUploadPreset: 'escardia_ids', // ✅ ADD THIS
 };
 
-export const uploadToCloudinary = async (imageUri: string): Promise<string> => {
+// ✅ ADD FOLDER PARAMETER
+export const uploadToCloudinary = async (
+  imageUri: string,
+  folder: 'cars' | 'vendor_ids' = 'cars'
+): Promise<string> => {
   try {
     const formData = new FormData();
     
-    // Get the file extension from URI
     const uriParts = imageUri.split('.');
     const fileType = uriParts[uriParts.length - 1];
     
@@ -17,7 +21,12 @@ export const uploadToCloudinary = async (imageUri: string): Promise<string> => {
       name: `photo.${fileType}`,
     } as any);
     
-    formData.append('upload_preset', CLOUDINARY_CONFIG.uploadPreset);
+    // ✅ USE CORRECT PRESET BASED ON FOLDER
+    const preset = folder === 'vendor_ids' 
+      ? CLOUDINARY_CONFIG.idsUploadPreset 
+      : CLOUDINARY_CONFIG.uploadPreset;
+    
+    formData.append('upload_preset', preset);
 
     const response = await fetch(
       `https://api.cloudinary.com/v1_1/${CLOUDINARY_CONFIG.cloudName}/image/upload`,
