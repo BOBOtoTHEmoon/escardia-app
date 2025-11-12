@@ -68,55 +68,55 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   };
 
   const handleSearch = async (query: string) => {
-    const trimmedQuery = query.trim();
-    if (!trimmedQuery) return;
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) return;
 
-    setLoading(true);
-    setHasSearched(true);
+  setLoading(true);
+  setHasSearched(true);
 
-    try {
-      console.log('🔍 Searching for:', trimmedQuery);
-      
-      const { db } = await import('../config/firebase');
-      const { collection, query: fbQuery, where, getDocs } = await import('firebase/firestore');
+  try {
+    console.log('🔍 Searching for:', trimmedQuery);
+    
+    // ✅ USE CARSERVICE (has vendor filtering!)
+    const { getAllCars } = await import('../services/carservice');
+    const carResult = await getAllCars();
 
-      const carsRef = collection(db, 'cars');
-      const q = fbQuery(carsRef, where('status', '==', 'available'));
-      const snapshot = await getDocs(q);
-      
-      const allCars = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      const searchLower = trimmedQuery.toLowerCase();
-      const results = allCars.filter((car: any) => {
-        const brand = (car.brand || '').toLowerCase();
-        const model = (car.model || '').toLowerCase();
-        const type = (car.type || '').toLowerCase();
-        const year = (car.year || '').toString();
-        const location = (car.location || '').toLowerCase();
-
-        return brand.includes(searchLower) ||
-               model.includes(searchLower) ||
-               type.includes(searchLower) ||
-               year.includes(searchLower) ||
-               location.includes(searchLower) ||
-               `${brand} ${model}`.includes(searchLower);
-      });
-
-      console.log(`✅ Found ${results.length} results`);
-      setSearchResults(results);
-      await saveRecentSearch(trimmedQuery);
-      onSearch(trimmedQuery);
-    } catch (error) {
-      console.error('❌ Search error:', error);
+    if (!carResult.success || !carResult.cars) {
+      console.error('❌ Failed to get cars');
       setSearchResults([]);
-    } finally {
-      setLoading(false);
+      return;
     }
-  };
 
+    const allCars = carResult.cars;
+
+    // ✅ Filter by search query
+    const searchLower = trimmedQuery.toLowerCase();
+    const results = allCars.filter((car: any) => {
+      const brand = (car.brand || '').toLowerCase();
+      const model = (car.model || '').toLowerCase();
+      const type = (car.type || '').toLowerCase();
+      const year = (car.year || '').toString();
+      const location = (car.location || '').toLowerCase();
+
+      return brand.includes(searchLower) ||
+             model.includes(searchLower) ||
+             type.includes(searchLower) ||
+             year.includes(searchLower) ||
+             location.includes(searchLower) ||
+             `${brand} ${model}`.includes(searchLower);
+    });
+
+    console.log(`✅ Found ${results.length} results from approved vendors`);
+    setSearchResults(results);
+    await saveRecentSearch(trimmedQuery);
+    onSearch(trimmedQuery);
+  } catch (error) {
+    console.error('❌ Search error:', error);
+    setSearchResults([]);
+  } finally {
+    setLoading(false);
+  }
+};
   const handleCarPress = (carId: string) => {
     onNavigateToCarDetails(carId);
     onClose();

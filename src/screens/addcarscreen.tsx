@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,10 +10,12 @@ import {
   Platform,
   Alert,
   Image,
+   ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { colors, typography, spacing, borderRadius } from '../constants';
-
+import { doc, getDoc } from 'firebase/firestore';
+import { db, auth } from '../config/firebase';
 
 interface AddCarScreenProps {
   onNavigateBack: () => void;
@@ -54,6 +56,94 @@ export const AddCarScreen: React.FC<AddCarScreenProps> = ({
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+
+const [vendorStatus, setVendorStatus] = useState<'checking' | 'pending' | 'approved' | 'rejected'>('checking');
+  useEffect(() => {
+    checkVendorApprovalStatus();
+  }, []);
+
+  const checkVendorApprovalStatus = async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        Alert.alert('Error', 'Please login first');
+        onNavigateBack();
+        return;
+      }
+
+      const vendorDocRef = doc(db, 'vendors', user.uid);
+      const vendorDoc = await getDoc(vendorDocRef);
+
+      if (vendorDoc.exists()) {
+        const status = vendorDoc.data().status || 'pending';
+        setVendorStatus(status);
+        
+        if (status === 'rejected') {
+          Alert.alert(
+            'Account Rejected',
+            'Your vendor application was rejected. Please contact support.',
+            [{ text: 'OK', onPress: onNavigateBack }]
+          );
+        }
+      } else {
+        Alert.alert(
+          'Not a Vendor',
+          'Please complete vendor registration first.',
+          [{ text: 'OK', onPress: onNavigateBack }]
+        );
+        setVendorStatus('pending');
+      }
+    } catch (error) {
+      console.error('Error checking vendor status:', error);
+      setVendorStatus('pending');
+    }
+  };
+  // ✅ ADD CHECKING SCREEN (shows while loading)
+  if (vendorStatus === 'checking') {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={styles.loadingText}>Checking account status...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // ✅ ADD PENDING SCREEN (shows if not approved)
+  if (vendorStatus === 'pending') {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+        <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
+  <Text style={{ fontSize: 24 }}>←</Text>
+</TouchableOpacity>
+          <Text style={styles.headerTitle}>Add Car</Text>
+          <View style={{ width: 24 }} />
+        </View>
+
+        <View style={styles.pendingContainer}>
+          <Text style={styles.pendingIcon}>⏳</Text>
+          <Text style={styles.pendingTitle}>Approval Pending</Text>
+          <Text style={styles.pendingMessage}>
+            Your vendor account is currently under review by our team.
+          </Text>
+          <Text style={styles.pendingNote}>
+            You'll be able to add cars once your account is approved. This usually takes 24-48 hours.
+          </Text>
+          <Text style={styles.pendingNote2}>
+            We'll send you a notification once you're approved! 🎉
+          </Text>
+          <TouchableOpacity 
+            style={styles.pendingButton}
+            onPress={onNavigateBack}
+          >
+            <Text style={styles.pendingButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   const carTypes = ['sedan', 'suv', 'luxury', 'exotic', 'van', 'truck'];
   const transmissionTypes = ['automatic', 'manual'];
@@ -621,5 +711,68 @@ const styles = StyleSheet.create({
   },
   bottomSpacing: {
     height: 40,
+  },
+// ... your existing styles
+
+  // ✅ ADD THESE NEW STYLES
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
+  },
+  pendingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    backgroundColor: '#fff',
+  },
+  pendingIcon: {
+    fontSize: 80,
+    marginBottom: 24,
+  },
+  pendingTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  pendingMessage: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 24,
+  },
+  pendingNote: {
+    fontSize: 14,
+    color: '#007AFF',
+    textAlign: 'center',
+    marginBottom: 8,
+    fontWeight: '600',
+  },
+  pendingNote2: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+  pendingButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 48,
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
+  pendingButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

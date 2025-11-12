@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, typography, spacing, borderRadius } from '../constants';
@@ -29,12 +30,33 @@ export const MyFleetScreen: React.FC<MyFleetScreenProps> = ({
   onAddCar,
   onViewCarDetails,
 }) => {
-  const [filterStatus, setFilterStatus] = useState<'all' | 'available' | 'booked'>('all');
-
-  // Mock data - will be replaced with real data from Firebase
+const [filterStatus, setFilterStatus] = useState<'all' | 'available' | 'booked'>('all');
 const [cars, setCars] = useState<any[]>([]);
 const [loading, setLoading] = useState(true);
 
+ const toggleCarAvailability = async (carId: string, currentStatus: string) => {
+    try {
+      const newStatus = currentStatus === 'available' ? 'maintenance' : 'available';
+      
+      const { updateCarStatus } = await import('../services/carservice');
+      const result = await updateCarStatus(carId, newStatus);
+      
+      if (result.success) {
+        // Update local state
+        setCars(cars.map(car => 
+          car.id === carId ? { ...car, status: newStatus } : car
+        ));
+        
+        Alert.alert(
+          'Success',
+          `Car marked as ${newStatus === 'available' ? 'available' : 'unavailable'}`
+        );
+      }
+    } catch (error) {
+      console.error('Error updating car status:', error);
+      Alert.alert('Error', 'Failed to update car status');
+    }
+  };
 
 // Fetch vendor's cars from Firebase
 useEffect(() => {
@@ -80,7 +102,7 @@ useEffect(() => {
         const booking = doc.data();
         const carId = booking.carId;
         
-        // ✅ Calculate status with TIME
+        // Calculate status with TIME
         const actualStatus = calculateBookingStatus(
           booking.startDate,
           booking.startTime,
@@ -281,6 +303,17 @@ useEffect(() => {
   ₦{(car.pricePerDay || 0).toLocaleString()}
 </Text>
                     </View>
+                    <TouchableOpacity
+  style={[
+    styles.availabilityButton,
+    car.status === 'available' ? styles.availableButton : styles.unavailableButton
+  ]}
+  onPress={() => toggleCarAvailability(car.id, car.status)}
+>
+  <Text style={styles.availabilityText}>
+    {car.status === 'available' ? '✓ Available' : '✕ Unavailable'}
+  </Text>
+</TouchableOpacity>
                   </View>
                 </TouchableOpacity>
               ))}
@@ -595,6 +628,25 @@ paddingBottom: 60,
   },
   carImagePlaceholder: {
   fontSize: 60,
+  textAlign: 'center',
+},
+availabilityButton: {
+  paddingHorizontal: 16,
+  paddingVertical: 10,
+  borderRadius: 8,
+  marginTop: 12, 
+  alignItems: 'center',
+},
+availableButton: {
+  backgroundColor: '#EF4444', 
+},
+unavailableButton: {
+  backgroundColor: '#10B981', 
+},
+availabilityText: {
+  color: '#fff',
+  fontSize: 14,
+  fontWeight: '600',
   textAlign: 'center',
 },
 });

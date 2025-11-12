@@ -43,6 +43,28 @@ export interface Car extends CarData {
   id: string;
 }
 
+// ✅ HELPER FUNCTION - Get approved vendor IDs (reusable!)
+const getApprovedVendorIds = async (): Promise<Set<string>> => {
+  try {
+    const vendorsQuery = query(
+      collection(db, 'vendors'),
+      where('status', '==', 'approved')
+    );
+    const vendorsSnapshot = await getDocs(vendorsQuery);
+    
+    const approvedVendorIds = new Set<string>();
+    vendorsSnapshot.forEach((doc) => {
+      approvedVendorIds.add(doc.id);
+    });
+    
+    console.log(`✅ Found ${approvedVendorIds.size} approved vendors`);
+    return approvedVendorIds;
+  } catch (error) {
+    console.error('Error getting approved vendors:', error);
+    return new Set<string>();
+  }
+};
+
 /**
  * STEP 1: Add a new car to vendor's fleet
  */
@@ -53,10 +75,8 @@ export const addCar = async (
   try {
     console.log('🔵 Step 1: Adding car to Firebase...');
     
-    // Create a new document reference with auto-generated ID
     const carRef = doc(collection(db, 'cars'));
     
-    // Prepare car document
     const carDocument: Omit<Car, 'id'> = {
       ...carData,
       pricePerDay: Number(carData.pricePerDay),
@@ -76,7 +96,6 @@ export const addCar = async (
       updatedAt: serverTimestamp(),
     };
     
-    // Save to Firestore
     await setDoc(carRef, carDocument);
     
     console.log('✅ Car added successfully! ID:', carRef.id);
@@ -103,7 +122,6 @@ export const getVendorCars = async (
   try {
     console.log('🔵 Fetching vendor cars...');
     
-    // Query cars collection for this vendor
     const carsQuery = query(
       collection(db, 'cars'),
       where('vendorId', '==', vendorId)
@@ -152,16 +170,26 @@ export const getCar = async (
       };
     }
     
-    const car = {
+    const carData = {
       id: carDoc.id,
       ...carDoc.data(),
     } as Car;
     
-    console.log('✅ Car fetched:', car.brand, car.model);
+    // ✅ Check if vendor is approved
+    const approvedVendorIds = await getApprovedVendorIds();
+    
+    if (!approvedVendorIds.has(carData.vendorId)) {
+      return {
+        success: false,
+        error: 'This car is no longer available',
+      };
+    }
+    
+    console.log('✅ Car fetched:', carData.brand, carData.model);
     
     return {
       success: true,
-      car,
+      car: carData,
     };
   } catch (error) {
     console.error('❌ Error fetching car:', error);
@@ -258,57 +286,67 @@ export const updateCarStatus = async (
  */
 export const getAvailableCars = async (): Promise<{
   success: boolean;
-  cars?: Car[];
+  cars?: any[];
   error?: string;
 }> => {
   try {
     console.log('🔵 Fetching available cars...');
     
-    const carsQuery = query(
-      collection(db, 'cars'),
-      where('status', '==', 'available'),
-      where('isActive', '==', true)
-    );
+    // ✅ Get approved vendors first
+    const approvedVendorIds = await getApprovedVendorIds();
     
-    const carsSnapshot = await getDocs(carsQuery);
+    // Get all cars
+    const carsSnapshot = await getDocs(collection(db, 'cars'));
     
-    const cars: Car[] = [];
-    carsSnapshot.forEach((doc) => {
-      cars.push({
-        id: doc.id,
-        ...doc.data(),
-      } as Car);
-    });
+    // ✅ Filter cars - only from approved vendors AND available status
+const cars = carsSnapshot.docs
+  .map((doc) => ({
+    id: doc.id,
+    ...doc.data(),
+  }))
+  .filter((car: any) => 
+    approvedVendorIds.has(car.vendorId) && // ✅ Approved vendor
+    car.status === 'available' // ✅ Car is available
+  );
     
-    console.log(`✅ Found ${cars.length} available cars`);
+    console.log(`✅ Loaded ${cars.length} cars from approved vendors (filtered from ${carsSnapshot.size} total)`);
     
     return {
       success: true,
       cars,
     };
   } catch (error) {
-    console.error('❌ Error fetching available cars:', error);
+    console.error('❌ Error fetching cars:', error);
     return {
       success: false,
-      error: 'Failed to load cars',
+      error: 'Failed to fetch cars',
     };
   }
 };
+
 /**
  * Get popular cars (for user home screen)
  */
 export const getPopularCars = async () => {
   try {
+    // ✅ Get approved vendors
+    const approvedVendorIds = await getApprovedVendorIds();
+    
     const q = query(
       collection(db, 'cars'), 
       where('isPopular', '==', true),
       where('status', '==', 'available')
     );
     const snapshot = await getDocs(q);
-    const cars = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    
+    // ✅ Filter by approved vendors
+    const cars = snapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+      .filter((car: any) => approvedVendorIds.has(car.vendorId));
+    
     return { success: true, cars };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -320,16 +358,27 @@ export const getPopularCars = async () => {
  */
 export const getDealCars = async () => {
   try {
+    // ✅ Get approved vendors
+    const approvedVendorIds = await getApprovedVendorIds();
+    
     const q = query(
       collection(db, 'cars'), 
       where('isDiscounted', '==', true),
       where('status', '==', 'available')
     );
     const snapshot = await getDocs(q);
-    const cars = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    
+    // ✅ Filter cars - only from approved vendors AND available status
+const cars = snapshot.docs
+  .map((doc) => ({
+    id: doc.id,
+    ...doc.data(),
+  }))
+  .filter((car: any) => 
+    approvedVendorIds.has(car.vendorId) && // ✅ Approved vendor
+    car.status === 'available' // ✅ Car is available
+  );
+    
     return { success: true, cars };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -341,11 +390,24 @@ export const getDealCars = async () => {
  */
 export const getAllCars = async () => {
   try {
+    // ✅ Get approved vendors
+    const approvedVendorIds = await getApprovedVendorIds();
+    
     const carsSnapshot = await getDocs(collection(db, 'cars'));
-    const cars = carsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    
+   // ✅ Filter cars - only from approved vendors AND available status
+const cars = carsSnapshot.docs
+  .map((doc) => ({
+    id: doc.id,
+    ...doc.data(),
+  }))
+  .filter((car: any) => 
+    approvedVendorIds.has(car.vendorId) && // ✅ Approved vendor
+    car.status === 'available' // ✅ Car is available
+  );
+    
+    console.log(`✅ Loaded ${cars.length} cars from approved vendors`);
+    
     return { success: true, cars };
   } catch (error: any) {
     console.error('Error fetching cars:', error);

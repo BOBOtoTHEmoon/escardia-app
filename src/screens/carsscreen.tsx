@@ -40,31 +40,26 @@ export const CarsScreen: React.FC<CarsScreenProps> = ({
     loadFavorites();
   }, []);
 
-  const fetchCars = async () => {
-    try {
-      console.log('🔵 Fetching all cars...');
-      const { db } = await import('../config/firebase');
-      const { collection, query, where, getDocs } = await import('firebase/firestore');
+const fetchCars = async () => {
+  try {
+    console.log('🔵 Fetching all cars...');
+    
+    // ✅ USE THE SERVICE FUNCTION (has vendor filtering!)
+    const { getAllCars } = await import('../services/carservice');
+    const result = await getAllCars();
 
-      const q = query(
-        collection(db, 'cars'),
-        where('status', '==', 'available')
-      );
-
-      const snapshot = await getDocs(q);
-      const carsList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      console.log(`✅ Fetched ${carsList.length} cars`);
-      setCars(carsList);
-    } catch (error) {
-      console.error('❌ Error fetching cars:', error);
-    } finally {
-      setLoading(false);
+    if (result.success && result.cars) {
+      console.log(`✅ Fetched ${result.cars.length} cars from approved vendors`);
+      setCars(result.cars);
+    } else {
+      console.error('❌ Error:', result.error);
     }
-  };
+  } catch (error) {
+    console.error('❌ Error fetching cars:', error);
+  } finally {
+    setLoading(false);
+  }
+};
 
       const applyFilters = (filters: any) => {
   let filtered = cars;

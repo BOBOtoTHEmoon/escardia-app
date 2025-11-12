@@ -64,12 +64,6 @@ import { VendorTermsAndPrivacyScreen } from './src/screens/vendortermsandprivacy
 import { VendorHelpAndSupportScreen } from './src/screens/vendorhelpandsupportscreen';
 
 
-
-
-
-
-
-
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState <
    'splash' |'welcome' |'onboarding'| 'vendorOnboarding' | 'vendorAccountCreation' | 'myFleet' |'vendorSignIn'|'vendorPhoneVerification'| 'vendorBusinessRegistration'|'vendorIDVerification'|'vendorBookings'|'vendorBookingDetail'| 'vendorCarDetail'|'vendorDashboard'|'vendorProfile'| 'vendorEarnings'|'addCar'| 'manageDrivers'| 'withdrawFunds'|'editCar' |'signup' | 'notifications' | 'signin' | 'verify' | 'home' | 'profile' | 'carDetails' | 'tripDetails' | 'rideMode'| 'payment' | 'confirmation' | 'cars' | 'trips'| 'search' | 'favorites' | 'support' | 'contactUs' | 'faq' | 'policies'|'securityLoginSafety' | 'safetyTips' | 'changePassword'| 'chatWithUs'| 'wallet' | 'transactions'| 'tripDetail' | 'editTrip' | 'tripBooking' | 'editTrip' |'cardPayment' | 'bankTransfer'| 'vendorSettings' | 'vendorBankDetails' | 'vendorDocuments' | 'vendorAnalytics' | 'vendorNotificationPreferences' | 'vendorTermsAndPrivacy' | 'vendorHelpAndSupport'
