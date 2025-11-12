@@ -1,8 +1,3 @@
-// ============================================
-// PRICING CALCULATOR SERVICE
-// ============================================
-// File: src/services/pricingService.ts
-
 interface PricingInput {
   car: {
     pricePerDay: number;
@@ -15,19 +10,21 @@ interface PricingInput {
     rideMode: 'self-drive' | 'with-driver';
   };
   escorts?: Array<{
-    type: 'basic' | 'premium' | 'vip';
+    type: 'legion' | 'private'; 
     count: number;
-    price: number;
+    pricePerPerson: number; 
   }> | null;
+  hiluxCount?: number; 
+  hiluxCost?: number; 
 }
 
 interface PricingBreakdown {
   baseRental: number;
   deliveryFee: number;
   escortFees: {
-    basic: number;
-    premium: number;
-    vip: number;
+    legion: number;
+    private: number; 
+    hilux: number;  
     total: number;
   };
   subtotal: number;
@@ -45,9 +42,7 @@ const DELIVERY_FEE = 5000; // ₦5,000 flat fee for delivery
 const PLATFORM_FEE_PERCENTAGE = 0.10; // 10% of base rental
 const SERVICE_FEE = 2000; // ₦2,000 flat service fee
 
-/**
- * Calculate complete trip pricing breakdown
- */
+/**Calculate complete trip pricing breakdown*/
 export const calculateTripPrice = (input: PricingInput): PricingBreakdown => {
   // 1. Calculate base car rental
   let baseRental = 0;
@@ -62,9 +57,9 @@ export const calculateTripPrice = (input: PricingInput): PricingBreakdown => {
 
   // 3. Calculate escort fees (per day basis, even if hourly rental)
   let escortFeesBreakdown = {
-    basic: 0,
-    premium: 0,
-    vip: 0,
+    legion: 0,
+    private: 0,
+    hilux: 0, 
     total: 0,
   };
 
@@ -75,18 +70,23 @@ export const calculateTripPrice = (input: PricingInput): PricingBreakdown => {
       : input.tripDetails.duration;
 
     input.escorts.forEach(escort => {
-      const escortCost = escort.price * escort.count * daysForEscort;
+      const escortCost = escort.pricePerPerson * escort.count * daysForEscort;
       
-      if (escort.type === 'basic') {
-        escortFeesBreakdown.basic += escortCost;
-      } else if (escort.type === 'premium') {
-        escortFeesBreakdown.premium += escortCost;
-      } else if (escort.type === 'vip') {
-        escortFeesBreakdown.vip += escortCost;
+      if (escort.type === 'legion') {
+        escortFeesBreakdown.legion += escortCost;
+      } else if (escort.type === 'private') {
+        escortFeesBreakdown.private += escortCost;
       }
       
       escortFeesBreakdown.total += escortCost;
     });
+
+    //Add Hilux cost
+    if (input.hiluxCost && input.hiluxCost > 0) {
+      const hiluxTotalCost = input.hiluxCost * daysForEscort;
+      escortFeesBreakdown.hilux = hiluxTotalCost;
+      escortFeesBreakdown.total += hiluxTotalCost;
+    }
   }
 
   // 4. Calculate subtotal (before platform and service fees)
@@ -116,27 +116,28 @@ export const calculateTripPrice = (input: PricingInput): PricingBreakdown => {
     });
   }
 
-  if (escortFeesBreakdown.basic > 0) {
-    const basicCount = input.escorts?.find(e => e.type === 'basic')?.count || 0;
+  //UPDATED ESCORT BREAKDOWN
+  if (escortFeesBreakdown.legion > 0) {
+    const legionCount = input.escorts?.find(e => e.type === 'legion')?.count || 0;
     breakdown.push({
-      label: `Basic Escort (${basicCount})`,
-      amount: escortFeesBreakdown.basic,
+      label: `LEGION Security (${legionCount} personnel)`,
+      amount: escortFeesBreakdown.legion,
     });
   }
 
-  if (escortFeesBreakdown.premium > 0) {
-    const premiumCount = input.escorts?.find(e => e.type === 'premium')?.count || 0;
+  if (escortFeesBreakdown.private > 0) {
+    const privateCount = input.escorts?.find(e => e.type === 'private')?.count || 0;
     breakdown.push({
-      label: `Premium Escort (${premiumCount})`,
-      amount: escortFeesBreakdown.premium,
+      label: `PRIVATE Security (${privateCount} personnel)`,
+      amount: escortFeesBreakdown.private,
     });
   }
 
-  if (escortFeesBreakdown.vip > 0) {
-    const vipCount = input.escorts?.find(e => e.type === 'vip')?.count || 0;
+  //NEW HILUX BREAKDOWN
+  if (escortFeesBreakdown.hilux > 0) {
     breakdown.push({
-      label: `VIP Escort (${vipCount})`,
-      amount: escortFeesBreakdown.vip,
+      label: `Transport (${input.hiluxCount} Hilux)`,
+      amount: escortFeesBreakdown.hilux,
     });
   }
 
@@ -162,16 +163,12 @@ export const calculateTripPrice = (input: PricingInput): PricingBreakdown => {
   };
 };
 
-/**
- * Format currency to Naira
- */
+/**Format currency to Naira*/
 export const formatCurrency = (amount: number): string => {
   return `₦${amount.toLocaleString()}`;
 };
 
-/**
- * Quick price calculator for display purposes
- */
+/**Quick price calculator for display purposes*/
 export const getQuickPrice = (
   pricePerDay: number,
   days: number,
@@ -184,9 +181,10 @@ export const getQuickPrice = (
     total += DELIVERY_FEE;
   }
   
-  // Add estimated escort fee (assuming 1 basic escort)
+  // Add estimated escort fee (assuming 1 legion escort + 1 hilux)
   if (hasEscorts) {
-    total += 5000 * days;
+    total += 25000 * days; // 1 legion
+    total += 80000 * days; // 1 hilux
   }
   
   // Add platform and service fees

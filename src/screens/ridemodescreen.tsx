@@ -16,9 +16,8 @@ interface RideModeScreenProps {
 }
 
 interface EscortCount {
-  basic: number;
-  premium: number;
-  vip: number;
+  legion: number;
+  private: number;
 }
 
 export const RideModeScreen: React.FC<RideModeScreenProps> = ({
@@ -27,15 +26,15 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
   tripData,
 }) => {
   const [escortCounts, setEscortCounts] = useState<EscortCount>({
-    basic: 0,
-    premium: 0,
-    vip: 0,
+    legion: 0,
+    private: 0,
   });
 
+  const HILUX_PRICE_PER_DAY = 80000;
+
   const escortOptions = [
-    { id: 'basic', name: 'Basic Security', price: 5000 },
-    { id: 'premium', name: 'Premium Security', price: 10000 },
-    { id: 'vip', name: 'VIP Security', price: 20000 },
+    { id: 'legion', name: 'LEGION Security', pricePerPerson: 25000 },
+    { id: 'private', name: 'PRIVATE Security', pricePerPerson: 30000 },
   ];
 
   const updateEscortCount = (type: keyof EscortCount, increment: boolean) => {
@@ -48,26 +47,54 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
   };
 
   const getTotalEscorts = () => {
-    return escortCounts.basic + escortCounts.premium + escortCounts.vip;
+    return escortCounts.legion + escortCounts.private;
+  };
+
+  const getHiluxCount = () => {
+    const total = getTotalEscorts();
+    if (total === 0) return 0;
+    if (total <= 2) return 0; // 1-2 escorts: no hilux needed
+    if (total <= 7) return 1; // 3-7 escorts: 1 hilux
+    return Math.ceil(total / 4); // 8+: 2 hiluxes (8-15), 3 hiluxes (16-23), etc.
+  };
+
+  const getHiluxCost = () => {
+    return getHiluxCount() * HILUX_PRICE_PER_DAY;
+  };
+
+  const getTotalSecurityCost = () => {
+    const legionCost = escortCounts.legion * 25000;
+    const privateCost = escortCounts.private * 30000;
+    const hiluxCost = getHiluxCost();
+    return legionCost + privateCost + hiluxCost;
   };
 
   const handleContinue = () => {
     const escorts = [];
     
-    if (escortCounts.basic > 0) {
-      escorts.push({ type: 'basic', count: escortCounts.basic, price: 5000 });
+    if (escortCounts.legion > 0) {
+      escorts.push({ 
+        type: 'legion', 
+        count: escortCounts.legion, 
+        pricePerPerson: 25000 
+      });
     }
-    if (escortCounts.premium > 0) {
-      escorts.push({ type: 'premium', count: escortCounts.premium, price: 10000 });
-    }
-    if (escortCounts.vip > 0) {
-      escorts.push({ type: 'vip', count: escortCounts.vip, price: 20000 });
+    if (escortCounts.private > 0) {
+      escorts.push({ 
+        type: 'private', 
+        count: escortCounts.private, 
+        pricePerPerson: 30000 
+      });
     }
 
     const rideModeData = {
       rideMode: tripData?.rideMode || 'self-drive',
       escorts: escorts.length > 0 ? escorts : null,
+      hiluxCount: getHiluxCount(),
+      hiluxCost: getHiluxCost(),
+      totalSecurityCost: getTotalSecurityCost(),
     };
+    
     onContinue(rideModeData);
   };
 
@@ -78,25 +105,25 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
         <TouchableOpacity style={styles.backButton} onPress={onNavigateBack}>
           <Text style={styles.backArrow}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Escort Details</Text>
+        <Text style={styles.headerTitle}>Security Details</Text>
         <View style={styles.headerSpacer} />
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Escort Details */}
+        {/* Security Details */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Escort Details</Text>
+          <Text style={styles.sectionTitle}>Security Details</Text>
           <Text style={styles.sectionSubtitle}>
-            Select the type and number of escorts you need. You can choose multiple types or skip to proceed without escorts.
+            Select the type and number of security personnel you need. Transport (Hilux) will be added automatically based on team size.
           </Text>
 
-          {/* No Escort Option */}
+          {/* No Security Option */}
           <TouchableOpacity
             style={[
               styles.noEscortOption,
               getTotalEscorts() === 0 && styles.noEscortOptionActive,
             ]}
-            onPress={() => setEscortCounts({ basic: 0, premium: 0, vip: 0 })}
+            onPress={() => setEscortCounts({ legion: 0, private: 0 })}
           >
             <Text
               style={[
@@ -104,11 +131,11 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
                 getTotalEscorts() === 0 && styles.noEscortTextActive,
               ]}
             >
-              No Escort Needed
+              No Security Needed
             </Text>
           </TouchableOpacity>
 
-          {/* Escort Type Selection */}
+          {/* Security Type Selection */}
           <View style={styles.escortTypeSection}>
             {escortOptions.map((option) => (
               <View key={option.id} style={styles.escortCard}>
@@ -116,7 +143,7 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
                   <View>
                     <Text style={styles.escortName}>{option.name}</Text>
                     <Text style={styles.escortPrice}>
-                      ₦{option.price.toLocaleString()}/day
+                      ₦{option.pricePerPerson.toLocaleString()}/person/day
                     </Text>
                   </View>
                 </View>
@@ -146,29 +173,57 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
             ))}
           </View>
 
+          {/* Hilux Information */}
+          {getTotalEscorts() >= 3 && (
+            <View style={styles.hiluxInfoCard}>
+              <Text style={styles.hiluxInfoTitle}>🚙 Transport Vehicle Required</Text>
+              <Text style={styles.hiluxInfoText}>
+                {getHiluxCount()} Hilux vehicle{getHiluxCount() > 1 ? 's' : ''} needed for {getTotalEscorts()} personnel
+              </Text>
+              <Text style={styles.hiluxInfoSubtext}>
+                ₦{HILUX_PRICE_PER_DAY.toLocaleString()}/day per Hilux
+              </Text>
+            </View>
+          )}
+
           {/* Summary */}
           {getTotalEscorts() > 0 && (
             <View style={styles.summaryCard}>
-              <Text style={styles.summaryTitle}>Escort Summary</Text>
-              {escortCounts.basic > 0 && (
+              <Text style={styles.summaryTitle}>Security Summary</Text>
+              
+              {/* Personnel Costs */}
+              {escortCounts.legion > 0 && (
                 <Text style={styles.summaryText}>
-                  Basic Security: {escortCounts.basic} × ₦5,000 = ₦{(escortCounts.basic * 5000).toLocaleString()}
+                  LEGION: {escortCounts.legion} × ₦25,000 = ₦{(escortCounts.legion * 25000).toLocaleString()}
                 </Text>
               )}
-              {escortCounts.premium > 0 && (
+              {escortCounts.private > 0 && (
                 <Text style={styles.summaryText}>
-                  Premium Security: {escortCounts.premium} × ₦10,000 = ₦{(escortCounts.premium * 10000).toLocaleString()}
+                  PRIVATE: {escortCounts.private} × ₦30,000 = ₦{(escortCounts.private * 30000).toLocaleString()}
                 </Text>
               )}
-              {escortCounts.vip > 0 && (
+              
+              {/* Hilux Cost */}
+              {getHiluxCount() > 0 && (
                 <Text style={styles.summaryText}>
-                  VIP Security: {escortCounts.vip} × ₦20,000 = ₦{(escortCounts.vip * 20000).toLocaleString()}
+                  Transport: {getHiluxCount()} Hilux × ₦{HILUX_PRICE_PER_DAY.toLocaleString()} = ₦{getHiluxCost().toLocaleString()}
                 </Text>
               )}
+              
               <View style={styles.summaryDivider} />
-              <Text style={styles.summaryTotal}>
-                Total Escorts: {getTotalEscorts()}
-              </Text>
+              
+              {/* Total */}
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryTotal}>Total Personnel:</Text>
+                <Text style={styles.summaryTotal}>{getTotalEscorts()}</Text>
+              </View>
+              
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryTotalPrice}>Total Security Cost:</Text>
+                <Text style={styles.summaryTotalPrice}>
+                  ₦{getTotalSecurityCost().toLocaleString()}
+                </Text>
+              </View>
             </View>
           )}
         </View>
@@ -177,7 +232,7 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
       {/* Continue Button */}
       <View style={styles.footer}>
         <Button
-          title="Continue"
+          title={getTotalEscorts() > 0 ? `Continue (₦${getTotalSecurityCost().toLocaleString()})` : 'Continue'}
           onPress={handleContinue}
           style={styles.continueButton}
         />
@@ -233,6 +288,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.regular,
     color: colors.textSecondary,
     marginBottom: spacing.lg,
+    lineHeight: 22,
   },
   noEscortOption: {
     backgroundColor: colors.inputBackground,
@@ -308,6 +364,30 @@ const styles = StyleSheet.create({
     minWidth: 30,
     textAlign: 'center',
   },
+  hiluxInfoCard: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginTop: spacing.lg,
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
+  hiluxInfoTitle: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.semiBold,
+    color: '#92400E',
+    marginBottom: spacing.xs,
+  },
+  hiluxInfoText: {
+    fontSize: typography.fontSize.sm,
+    color: '#92400E',
+    marginBottom: 4,
+  },
+  hiluxInfoSubtext: {
+    fontSize: typography.fontSize.xs,
+    color: '#92400E',
+    fontWeight: typography.fontWeight.medium,
+  },
   summaryCard: {
     backgroundColor: colors.success + '15',
     borderRadius: borderRadius.md,
@@ -331,10 +411,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
     marginVertical: spacing.sm,
   },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
   summaryTotal: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.semiBold,
     color: colors.text,
+  },
+  summaryTotalPrice: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.primary,
   },
   footer: {
     padding: spacing.lg,

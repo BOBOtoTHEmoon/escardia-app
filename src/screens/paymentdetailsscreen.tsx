@@ -1,8 +1,3 @@
-// ============================================
-// PAYMENT DETAILS SCREEN
-// ============================================
-// File: src/screens/PaymentDetailsScreen.tsx
-
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -37,10 +32,13 @@ interface PaymentDetailsScreenProps {
     };
     escortData?: {
       escorts: Array<{
-        type: 'basic' | 'premium' | 'vip';
+        type: 'legion' | 'private'; // ✅ UPDATED
         count: number;
-        price: number;
+        pricePerPerson: number; // ✅ UPDATED
       }> | null;
+      hiluxCount?: number; // ✅ NEW
+      hiluxCost?: number; // ✅ NEW
+      totalSecurityCost?: number; // ✅ NEW
     };
   };
 }
@@ -62,6 +60,8 @@ const PaymentDetailsScreen: React.FC<PaymentDetailsScreenProps> = ({
       return;
     }
 
+    console.log('📊 Booking Data:', bookingData); // ✅ Debug log
+
     // Calculate pricing when component mounts
     const calculatedPricing = calculateTripPrice({
       car: {
@@ -74,8 +74,12 @@ const PaymentDetailsScreen: React.FC<PaymentDetailsScreenProps> = ({
         pickupMethod: bookingData.tripData.pickupMethod,
         rideMode: bookingData.tripData.rideMode,
       },
-      escorts: bookingData.escortData?.escorts || null,
+      escorts: bookingData.escortData?.escorts || null, // ✅ NEW format
+      hiluxCount: bookingData.escortData?.hiluxCount || 0, // ✅ NEW
+      hiluxCost: bookingData.escortData?.hiluxCost || 0, // ✅ NEW
     });
+    
+    console.log('💰 Calculated Pricing:', calculatedPricing); // ✅ Debug log
     setPricing(calculatedPricing);
   }, [bookingData]);
 
@@ -91,14 +95,14 @@ const PaymentDetailsScreen: React.FC<PaymentDetailsScreenProps> = ({
       return;
     }
 
- // Navigate to appropriate payment screen based on selection, passing total amount
-if (selectedPaymentMethod === 'card') {
-  onNavigateToCardPayment(pricing.total);
-} else if (selectedPaymentMethod === 'bank') {
-  onNavigateToBankTransfer(pricing.total);
-} else if (selectedPaymentMethod === 'wallet') {
-  onNavigateToWalletPayment(pricing.total);
-}
+    // Navigate to appropriate payment screen based on selection, passing total amount
+    if (selectedPaymentMethod === 'card') {
+      onNavigateToCardPayment(pricing.total);
+    } else if (selectedPaymentMethod === 'bank') {
+      onNavigateToBankTransfer(pricing.total);
+    } else if (selectedPaymentMethod === 'wallet') {
+      onNavigateToWalletPayment(pricing.total);
+    }
   };
 
   if (!pricing || !bookingData?.tripData) {
@@ -138,7 +142,9 @@ if (selectedPaymentMethod === 'card') {
           
           <View style={styles.tripInfoRow}>
             <Text style={styles.tripInfoLabel}>Car:</Text>
-            <Text style={styles.tripInfoValue}>{tripData.car.model} {tripData.car.year}</Text>
+            <Text style={styles.tripInfoValue}>
+              {tripData.car.brand} {tripData.car.model} {tripData.car.year}
+            </Text>
           </View>
           
           <View style={styles.tripInfoRow}>
@@ -168,6 +174,32 @@ if (selectedPaymentMethod === 'card') {
               {tripData.startDate} - {tripData.endDate}
             </Text>
           </View>
+
+          {/* ✅ Show Security Info if exists */}
+          {bookingData.escortData && bookingData.escortData.escorts && bookingData.escortData.escorts.length > 0 && (
+            <>
+              <View style={styles.divider} />
+              <Text style={[styles.sectionTitle, { fontSize: typography.fontSize.base, marginTop: spacing.sm }]}>
+                🛡️ Security Details
+              </Text>
+              {bookingData.escortData.escorts.map((escort, index) => (
+                <View key={index} style={styles.tripInfoRow}>
+                  <Text style={styles.tripInfoLabel}>
+                    {escort.type === 'legion' ? 'LEGION' : 'PRIVATE'}:
+                  </Text>
+                  <Text style={styles.tripInfoValue}>{escort.count} personnel</Text>
+                </View>
+              ))}
+              {bookingData.escortData.hiluxCount && bookingData.escortData.hiluxCount > 0 && (
+                <View style={styles.tripInfoRow}>
+                  <Text style={styles.tripInfoLabel}>Transport:</Text>
+                  <Text style={styles.tripInfoValue}>
+                    {bookingData.escortData.hiluxCount} Hilux
+                  </Text>
+                </View>
+              )}
+            </>
+          )}
         </View>
 
         {/* Pricing Breakdown */}
@@ -320,6 +352,9 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semiBold,
     color: colors.text,
+    textAlign: 'right',
+    flex: 1,
+    marginLeft: spacing.sm,
   },
   pricingCard: {
     backgroundColor: colors.inputBackground,
