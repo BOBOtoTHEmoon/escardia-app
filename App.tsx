@@ -271,7 +271,9 @@ export default function App() {
           doors: bookingData.tripData.car.doors,
           transmission: bookingData.tripData.car.transmission,
           location: bookingData.tripData.car.location,
+          vendorId: bookingData.tripData.car.vendorId,
         },
+         vendorId: bookingData.tripData.car.vendorId,
         pickupLocation: bookingData.tripData.pickupLocation,
         pickupMethod: bookingData.tripData.pickupMethod,
         startDate: bookingData.tripData.startDate,
@@ -280,6 +282,8 @@ export default function App() {
         stopTime: bookingData.tripData.stopTime,
         rideMode: bookingData.tripData.rideMode,
         escort: bookingData.escortData?.escorts || null,
+         hiluxCount: bookingData.escortData?.hiluxCount || 0, 
+  hiluxCost: bookingData.escortData?.hiluxCost || 0, 
         totalPrice: paymentAmount,
         status: status,
         paymentMethod: selectedPaymentMethod,
@@ -324,14 +328,18 @@ export default function App() {
     setCurrentScreen('cars');
   };
 
-  const handleContinueToPayment = (rideModeData: any) => {
-    console.log('Ride mode data:', rideModeData);
-    setBookingData((prev: any) => ({
-      ...prev,
-      escortData: rideModeData.escorts ? { escorts: rideModeData.escorts } : null,
-    }));
-    setCurrentScreen('payment');
-  };
+const handleContinueToPayment = (rideModeData: any) => {
+  setBookingData((prev: any) => ({
+    ...prev,
+    escortData: {
+      escorts: rideModeData.escorts || null,
+      hiluxCount: rideModeData.hiluxCount || 0,
+      hiluxCost: rideModeData.hiluxCost || 0,
+      totalSecurityCost: rideModeData.totalSecurityCost || 0,
+    },
+  }));
+  setCurrentScreen('payment');
+};
 
 const handleVendorAccountCreation = (data: VendorAccountData) => {
   console.log('🔵 App.tsx received vendor data:', data);
@@ -494,6 +502,7 @@ const handleVendorAccountCreation = (data: VendorAccountData) => {
 
             const transformedData = {
               id: firebaseBooking.id,
+              vendorId: firebaseBooking.vendorId,
               status: firebaseBooking.status,
               rideMode: firebaseBooking.rideMode,
               durationType: firebaseBooking.durationType || 'day',
@@ -509,11 +518,13 @@ const handleVendorAccountCreation = (data: VendorAccountData) => {
                 doors: firebaseBooking.car?.doors || 4,
                 ac: '6+',
                 transmission: firebaseBooking.car?.transmission || 'Automatic',
+                 vendorId: firebaseBooking.car?.vendorId || firebaseBooking.vendorId,
               },
               startDate: firebaseBooking.startDate,
               startTime: firebaseBooking.startTime,
               endDate: firebaseBooking.endDate,
               endTime: firebaseBooking.stopTime,
+              escort: firebaseBooking.escort, 
               escortCount: Array.isArray(firebaseBooking.escort)
                 ? firebaseBooking.escort.reduce((sum: number, e: any) => sum + e.count, 0)
                 : firebaseBooking.escort?.count || 0,

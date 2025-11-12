@@ -179,7 +179,7 @@ const handleContinue = async () => {
   const tripData: TripData = {
     car: carData,
     pickupLocation: pickupMethod === 'vendor' 
-      ? (carData.location || 'Vendor location') // ✅ USE REAL LOCATION
+      ? (carData.location || 'Vendor location') 
       : deliveryAddress,
     deliveryAddress: pickupMethod === 'delivery' ? deliveryAddress : undefined,
     pickupMethod,

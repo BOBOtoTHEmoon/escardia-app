@@ -122,33 +122,38 @@ export const createBooking = async (bookingData: any) => {
   try {
     console.log('🔵 Creating booking with data:', bookingData);
     
-    // Get the car document to find the vendorId
-    const carId = bookingData.carId;
-    console.log('🚗 Car ID from booking data:', carId); // ADD THIS
+    // Try to get vendorId from multiple sources
+    let vendorId = bookingData.vendorId || bookingData.car?.vendorId;
     
-    if (carId) {
-      const carDoc = await getDoc(doc(db, 'cars', carId));
-      console.log('📄 Car document exists:', carDoc.exists()); // ADD THIS
+    // If no vendorId yet, try to get from car document
+    if (!vendorId && bookingData.carId) {
+      console.log('🚗 Looking up car document for carId:', bookingData.carId);
+      const carDoc = await getDoc(doc(db, 'cars', bookingData.carId));
       
       if (carDoc.exists()) {
         const carData = carDoc.data();
-        console.log('🚗 Full car data:', carData); // ADD THIS
-        bookingData.vendorId = carData.vendorId;
-        console.log('✅ Found vendorId:', carData.vendorId);
-        console.log('📝 Booking data after adding vendorId:', bookingData); // ADD THIS
+        vendorId = carData.vendorId;
+        console.log('✅ Found vendorId from car doc:', vendorId);
+        
+        // ✅ Also add vendorId to car object for easy access
+        if (!bookingData.car) bookingData.car = {};
+        bookingData.car.vendorId = vendorId;
       } else {
-        console.log('❌ Car document does not exist!'); // ADD THIS
+        console.log('❌ Car document does not exist for carId:', bookingData.carId);
       }
-    } else {
-      console.log('❌ No carId in booking data!'); // ADD THIS
+    }
+    
+    if (!vendorId) {
+      console.warn('⚠️ No vendorId found! Booking will be created without vendor reference.');
     }
     
     const booking = {
       ...bookingData,
+      vendorId: vendorId, // ✅ Add at top level
       createdAt: new Date().toISOString(),
     };
 
-    console.log('💾 Final booking object to be saved:', booking); // ADD THIS
+    console.log('💾 Final booking object to be saved:', booking);
 
     const docRef = await addDoc(collection(db, 'bookings'), booking);
     console.log('✅ Booking created with ID:', docRef.id);
@@ -158,6 +163,7 @@ export const createBooking = async (bookingData: any) => {
     return { success: false, error: error.message };
   }
 };
+
 export const updateBooking = async (bookingId: string, updatedData: any) => {
   try {
     const bookingRef = doc(db, 'bookings', bookingId);

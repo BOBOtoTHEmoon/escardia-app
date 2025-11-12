@@ -29,6 +29,7 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
     legion: 0,
     private: 0,
   });
+  const [manualHiluxCount, setManualHiluxCount] = useState(0); // ✅ Manual override
 
   const HILUX_PRICE_PER_DAY = 80000;
 
@@ -50,16 +51,39 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
     return escortCounts.legion + escortCounts.private;
   };
 
-  const getHiluxCount = () => {
+  // ✅ NEW - Calculate REQUIRED hilux based on personnel
+  const getRequiredHiluxCount = () => {
     const total = getTotalEscorts();
     if (total === 0) return 0;
-    if (total <= 2) return 0; // 1-2 escorts: no hilux needed
-    if (total <= 7) return 1; // 3-7 escorts: 1 hilux
-    return Math.ceil(total / 4); // 8+: 2 hiluxes (8-15), 3 hiluxes (16-23), etc.
+    if (total <= 2) return 0; // Optional for 1-2
+    if (total <= 7) return 1; // Required: 1 hilux for 3-7
+    return Math.ceil(total / 4); // Required: 2+ hiluxes for 8+
+  };
+
+  // ✅ NEW - Get ACTUAL hilux count (required + manual)
+  const getActualHiluxCount = () => {
+    const required = getRequiredHiluxCount();
+    if (required > 0) {
+      // If hilux is required, use max of required or manual
+      return Math.max(required, manualHiluxCount);
+    }
+    // If hilux is optional (0-2 personnel), use manual count
+    return manualHiluxCount;
+  };
+
+  // ✅ NEW - Check if hilux is required or optional
+  const isHiluxRequired = () => {
+    return getTotalEscorts() >= 3;
+  };
+
+  // ✅ NEW - Check if user can remove hilux
+  const canRemoveHilux = () => {
+    const required = getRequiredHiluxCount();
+    return manualHiluxCount > required;
   };
 
   const getHiluxCost = () => {
-    return getHiluxCount() * HILUX_PRICE_PER_DAY;
+    return getActualHiluxCount() * HILUX_PRICE_PER_DAY;
   };
 
   const getTotalSecurityCost = () => {
@@ -90,7 +114,7 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
     const rideModeData = {
       rideMode: tripData?.rideMode || 'self-drive',
       escorts: escorts.length > 0 ? escorts : null,
-      hiluxCount: getHiluxCount(),
+      hiluxCount: getActualHiluxCount(),
       hiluxCost: getHiluxCost(),
       totalSecurityCost: getTotalSecurityCost(),
     };
@@ -112,9 +136,9 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Security Details */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Security Details</Text>
+          <Text style={styles.sectionTitle}>Security Personnel</Text>
           <Text style={styles.sectionSubtitle}>
-            Select the type and number of security personnel you need. Transport (Hilux) will be added automatically based on team size.
+            Select the type and number of security personnel you need.
           </Text>
 
           {/* No Security Option */}
@@ -123,7 +147,10 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
               styles.noEscortOption,
               getTotalEscorts() === 0 && styles.noEscortOptionActive,
             ]}
-            onPress={() => setEscortCounts({ legion: 0, private: 0 })}
+            onPress={() => {
+              setEscortCounts({ legion: 0, private: 0 });
+              setManualHiluxCount(0); // Reset hilux too
+            }}
           >
             <Text
               style={[
@@ -173,21 +200,75 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
             ))}
           </View>
 
-          {/* Hilux Information */}
-          {getTotalEscorts() >= 3 && (
-            <View style={styles.hiluxInfoCard}>
-              <Text style={styles.hiluxInfoTitle}>🚙 Transport Vehicle Required</Text>
-              <Text style={styles.hiluxInfoText}>
-                {getHiluxCount()} Hilux vehicle{getHiluxCount() > 1 ? 's' : ''} needed for {getTotalEscorts()} personnel
+          {/* ✅ HILUX SECTION - Always show if personnel > 0 */}
+          {getTotalEscorts() > 0 && (
+            <>
+              <View style={styles.divider} />
+              <Text style={styles.sectionTitle}>Transport Vehicle (Hilux)</Text>
+              <Text style={styles.sectionSubtitle}>
+                {isHiluxRequired() 
+                  ? `${getRequiredHiluxCount()} Hilux required for ${getTotalEscorts()} personnel`
+                  : 'Optional transport for your security team'}
               </Text>
-              <Text style={styles.hiluxInfoSubtext}>
-                ₦{HILUX_PRICE_PER_DAY.toLocaleString()}/day per Hilux
-              </Text>
-            </View>
+
+              {/* Hilux Card */}
+              <View style={styles.hiluxCard}>
+                <View style={styles.hiluxCardHeader}>
+                  <View>
+                    <Text style={styles.hiluxName}>🚙 Hilux Vehicle</Text>
+                    <Text style={styles.hiluxPrice}>
+                      ₦{HILUX_PRICE_PER_DAY.toLocaleString()}/day per vehicle
+                    </Text>
+                    {isHiluxRequired() && (
+                      <Text style={styles.hiluxRequired}>
+                        ⚠️ Required for {getTotalEscorts()} personnel
+                      </Text>
+                    )}
+                  </View>
+                </View>
+
+                {/* Counter */}
+                <View style={styles.counterContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.counterButton,
+                      (!canRemoveHilux() && manualHiluxCount <= getRequiredHiluxCount()) && styles.counterButtonDisabled
+                    ]}
+                    onPress={() => {
+                      const required = getRequiredHiluxCount();
+                      if (manualHiluxCount > required) {
+                        setManualHiluxCount(Math.max(required, manualHiluxCount - 1));
+                      }
+                    }}
+                    disabled={!canRemoveHilux() && manualHiluxCount <= getRequiredHiluxCount()}
+                  >
+                    <Text style={styles.counterButtonText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.counterValue}>
+                    {getActualHiluxCount()}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.counterButton}
+                    onPress={() => setManualHiluxCount(getActualHiluxCount() + 1)}
+                  >
+                    <Text style={styles.counterButtonText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Info Card */}
+              {isHiluxRequired() && (
+                <View style={styles.infoCard}>
+                  <Text style={styles.infoText}>
+                    ℹ️ Hilux transport is required for teams of 3 or more personnel. You can add extra vehicles if needed.
+                  </Text>
+                </View>
+              )}
+            </>
           )}
 
           {/* Summary */}
-          {getTotalEscorts() > 0 && (
+          {(getTotalEscorts() > 0 || getActualHiluxCount() > 0) && (
             <View style={styles.summaryCard}>
               <Text style={styles.summaryTitle}>Security Summary</Text>
               
@@ -204,9 +285,9 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
               )}
               
               {/* Hilux Cost */}
-              {getHiluxCount() > 0 && (
+              {getActualHiluxCount() > 0 && (
                 <Text style={styles.summaryText}>
-                  Transport: {getHiluxCount()} Hilux × ₦{HILUX_PRICE_PER_DAY.toLocaleString()} = ₦{getHiluxCost().toLocaleString()}
+                  Transport: {getActualHiluxCount()} Hilux × ₦{HILUX_PRICE_PER_DAY.toLocaleString()} = ₦{getHiluxCost().toLocaleString()}
                 </Text>
               )}
               
@@ -217,6 +298,13 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
                 <Text style={styles.summaryTotal}>Total Personnel:</Text>
                 <Text style={styles.summaryTotal}>{getTotalEscorts()}</Text>
               </View>
+              
+              {getActualHiluxCount() > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryTotal}>Total Vehicles:</Text>
+                  <Text style={styles.summaryTotal}>{getActualHiluxCount()}</Text>
+                </View>
+              )}
               
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryTotalPrice}>Total Security Cost:</Text>
@@ -232,7 +320,7 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
       {/* Continue Button */}
       <View style={styles.footer}>
         <Button
-          title={getTotalEscorts() > 0 ? `Continue (₦${getTotalSecurityCost().toLocaleString()})` : 'Continue'}
+          title={getTotalSecurityCost() > 0 ? `Continue (₦${getTotalSecurityCost().toLocaleString()})` : 'Continue'}
           onPress={handleContinue}
           style={styles.continueButton}
         />
@@ -336,6 +424,41 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.semiBold,
     color: colors.primary,
   },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.lg,
+  },
+  hiluxCard: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
+  hiluxCardHeader: {
+    flex: 1,
+  },
+  hiluxName: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.semiBold,
+    color: '#92400E',
+    marginBottom: spacing.xs,
+  },
+  hiluxPrice: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semiBold,
+    color: '#92400E',
+  },
+  hiluxRequired: {
+    fontSize: typography.fontSize.xs,
+    color: '#F59E0B',
+    marginTop: 4,
+    fontWeight: typography.fontWeight.medium,
+  },
   counterContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -351,6 +474,7 @@ const styles = StyleSheet.create({
   },
   counterButtonDisabled: {
     backgroundColor: colors.textLight,
+    opacity: 0.5,
   },
   counterButtonText: {
     color: colors.textWhite,
@@ -364,29 +488,18 @@ const styles = StyleSheet.create({
     minWidth: 30,
     textAlign: 'center',
   },
-  hiluxInfoCard: {
-    backgroundColor: '#FEF3C7',
+  infoCard: {
+    backgroundColor: '#EFF6FF',
     borderRadius: borderRadius.md,
     padding: spacing.md,
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
     borderLeftWidth: 4,
-    borderLeftColor: '#F59E0B',
+    borderLeftColor: '#3B82F6',
   },
-  hiluxInfoTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-    color: '#92400E',
-    marginBottom: spacing.xs,
-  },
-  hiluxInfoText: {
+  infoText: {
     fontSize: typography.fontSize.sm,
-    color: '#92400E',
-    marginBottom: 4,
-  },
-  hiluxInfoSubtext: {
-    fontSize: typography.fontSize.xs,
-    color: '#92400E',
-    fontWeight: typography.fontWeight.medium,
+    color: '#1E40AF',
+    lineHeight: 20,
   },
   summaryCard: {
     backgroundColor: colors.success + '15',

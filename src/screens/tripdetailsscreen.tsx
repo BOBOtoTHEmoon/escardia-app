@@ -1,11 +1,12 @@
-import React from 'react';
+import React, {useState, useEffect} from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, Linking } from 'react-native';
 import { cancelBooking } from '../services/bookingService';
 import { Alert } from 'react-native';
 
 interface TripDetailScreenProps {
   tripData: {
-    id: string; // Firebase document ID
+    id: string; 
+    vendorId?: string; 
     status: 'upcoming' | 'ongoing' | 'past';
     rideMode: 'Driver' | 'Self-Drive';
     durationType: 'hour' | 'day';
@@ -21,6 +22,7 @@ interface TripDetailScreenProps {
   doors: number;
   ac: string;
   transmission: string;
+  vendorId?: string;
 };
     startDate: string;
     startTime: string;
@@ -53,6 +55,49 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
    console.log('🚗 TripDetailScreen - Full tripData:', tripData);
   console.log('🚗 TripDetailScreen - car object:', tripData.car);
   console.log('🚗 TripDetailScreen - car.photos:', tripData.car?.photos);
+
+  const [vendorDetails, setVendorDetails] = useState<any>(null);
+  const [loadingVendor, setLoadingVendor] = useState(true);
+  useEffect(() => {
+    loadVendorDetails();
+  }, []);
+
+  const loadVendorDetails = async () => {
+  try {
+    const { db } = await import('../config/firebase');
+    const { doc, getDoc } = await import('firebase/firestore');
+
+    // ✅ Check BOTH top-level vendorId AND car.vendorId
+    const vendorId = tripData.vendorId || tripData.car?.vendorId;
+    
+    console.log('🔍 Full tripData:', tripData);
+    console.log('🔍 tripData.vendorId:', tripData.vendorId);
+    console.log('🔍 tripData.car?.vendorId:', tripData.car?.vendorId);
+    console.log('🔍 Using vendorId:', vendorId);
+    
+    if (!vendorId) {
+      console.log('⚠️ No vendorId found in booking data');
+      setLoadingVendor(false);
+      return;
+    }
+
+    console.log('🔍 Loading vendor:', vendorId);
+    const vendorDoc = await getDoc(doc(db, 'vendors', vendorId));
+    
+    if (vendorDoc.exists()) {
+      const data = vendorDoc.data();
+      console.log('✅ Vendor loaded:', data);
+      setVendorDetails(data);
+    } else {
+      console.log('❌ Vendor not found');
+    }
+  } catch (error) {
+    console.error('❌ Error loading vendor:', error);
+  } finally {
+    setLoadingVendor(false);
+  }
+};
+
   const {
     id,
     status,
@@ -361,6 +406,7 @@ const realStatus = calculateRealStatus();
             {rideMode === 'Driver' ? 'Driver details' : 'Vendor details'}
           </Text>
 
+          {/* ✅ DRIVER DETAILS (keep as is for now - will implement later) */}
           {driver && rideMode === 'Driver' && (
             <View style={styles.contactCard}>
               <Image source={driver.photo} style={styles.contactPhoto} />
@@ -391,33 +437,62 @@ const realStatus = calculateRealStatus();
             </View>
           )}
 
-          {vendor && (
+          {/* ✅ VENDOR DETAILS - REAL DATA */}
+          {loadingVendor ? (
             <View style={styles.contactCard}>
-              <Image source={vendor.photo} style={styles.contactPhoto} />
-              <View style={styles.contactInfo}>
-                <Text style={styles.contactName}>{vendor.name}</Text>
-                <Text style={styles.contactPhone}>{vendor.phone}</Text>
+              <Text style={styles.loadingText}>Loading vendor details...</Text>
+            </View>
+          ) : vendorDetails ? (
+            <View style={styles.contactCard}>
+              <View style={styles.contactPhoto}>
+                <Text style={styles.contactPhotoText}>
+                  {vendorDetails.firstName?.[0]?.toUpperCase() || 'V'}
+                </Text>
               </View>
-              <TouchableOpacity
-                style={styles.contactButton}
-                onPress={() => handleMessage(vendor.phone)}
-              >
-                <Image
-                  source={require('../../assets/images/message.png')}
-                  style={styles.contactIcon}
-                  resizeMode="contain"
-                />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.contactButton}
-                onPress={() => handleCall(vendor.phone)}
-              >
-                <Image
-                  source={require('../../assets/images/phone.png')}
-                  style={styles.contactIcon}
-                  resizeMode="contain"
-                />
-              </TouchableOpacity>
+              <View style={styles.contactInfo}>
+                <Text style={styles.contactName}>
+                  {vendorDetails.businessName || 
+                   `${vendorDetails.firstName} ${vendorDetails.lastName}`}
+                </Text>
+                <Text style={styles.contactPhone}>
+                  {vendorDetails.phoneNumber || 'No phone available'}
+                </Text>
+                {vendorDetails.businessAddress && (
+                  <Text style={styles.contactAddress}>
+                    📍 {vendorDetails.businessAddress}
+                  </Text>
+                )}
+              </View>
+              {vendorDetails.phoneNumber && (
+                <>
+                  <TouchableOpacity
+                    style={styles.contactButton}
+                    onPress={() => handleMessage(vendorDetails.phoneNumber)}
+                  >
+                    <Image
+                      source={require('../../assets/images/message.png')}
+                      style={styles.contactIcon}
+                      resizeMode="contain"
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.contactButton}
+                    onPress={() => handleCall(vendorDetails.phoneNumber)}
+                  >
+                    <Image
+                      source={require('../../assets/images/phone.png')}
+                      style={styles.contactIcon}
+                      resizeMode="contain"
+                    />
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          ) : (
+            <View style={styles.contactCard}>
+              <Text style={styles.errorText}>
+                ⚠️ Vendor details unavailable. Contact support if needed.
+              </Text>
             </View>
           )}
         </View>
@@ -644,12 +719,6 @@ const styles = StyleSheet.create({
     padding: 16,
     marginTop: 8,
   },
-  contactPhoto: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    marginRight: 12,
-  },
   contactInfo: {
     flex: 1,
   },
@@ -709,5 +778,36 @@ carImagePlaceholder: {
 },
 carImageEmoji: {
   fontSize: 60,
+},
+contactPhoto: {
+  width: 48,
+  height: 48,
+  borderRadius: 24,
+  marginRight: 12,
+  backgroundColor: '#3B82F6', // ✅ ADD THIS
+  justifyContent: 'center', // ✅ ADD THIS
+  alignItems: 'center', // ✅ ADD THIS
+},
+contactPhotoText: {
+  fontSize: 20,
+  fontWeight: '600',
+  color: '#FFFFFF',
+},
+contactAddress: {
+  fontSize: 11,
+  color: '#6B7280',
+  marginTop: 2,
+},
+loadingText: {
+  fontSize: 13,
+  color: '#6B7280',
+  textAlign: 'center',
+  paddingVertical: 20,
+},
+errorText: {
+  fontSize: 13,
+  color: '#EF4444',
+  textAlign: 'center',
+  paddingVertical: 20,
 },
 });

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Clipboard,
   Alert,
+  Image,
 } from 'react-native';
 import { Button } from '../components';
 import { colors, typography, spacing, borderRadius } from '../constants';
@@ -14,7 +15,7 @@ import { colors, typography, spacing, borderRadius } from '../constants';
 interface BookingConfirmationScreenProps {
   onBackToHome: () => void;
   bookingData: {
-    bookingId?: string; // Firebase booking ID
+    bookingId?: string;
     tripData: {
       car: any;
       pickupLocation: string;
@@ -30,10 +31,12 @@ interface BookingConfirmationScreenProps {
     };
     escortData?: {
       escorts: Array<{
-        type: 'basic' | 'premium' | 'vip';
+        type: 'legion' | 'private';
         count: number;
-        price: number;
+        pricePerPerson: number;
       }> | null;
+      hiluxCount?: number;
+      hiluxCost?: number;
     };
   };
   totalAmount: number;
@@ -47,20 +50,47 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
   paymentMethod,
 }) => {
   const [tripId, setTripId] = useState('');
+  const [vendorDetails, setVendorDetails] = useState<any>(null);
+  const [loadingVendor, setLoadingVendor] = useState(true);
 
   useEffect(() => {
-  // Use Firebase booking ID if available, otherwise generate one
-  if (bookingData.bookingId) {
-    setTripId(bookingData.bookingId);
-  } else {
-    const generateTripId = () => {
-      const timestamp = Date.now();
-      const random = Math.floor(Math.random() * 10000);
-      return `ESC${timestamp}${random}`;
-    };
-    setTripId(generateTripId());
-  }
-}, [bookingData.bookingId]);
+    // Use Firebase booking ID if available, otherwise generate one
+    if (bookingData.bookingId) {
+      setTripId(bookingData.bookingId);
+    } else {
+      const generateTripId = () => {
+        const timestamp = Date.now();
+        const random = Math.floor(Math.random() * 10000);
+        return `ESC${timestamp}${random}`;
+      };
+      setTripId(generateTripId());
+    }
+
+    // ✅ Load vendor details
+    loadVendorDetails();
+  }, [bookingData.bookingId]);
+
+  const loadVendorDetails = async () => {
+    try {
+      const { db } = await import('../config/firebase');
+      const { doc, getDoc } = await import('firebase/firestore');
+
+      const vendorId = bookingData.tripData.car.vendorId;
+      
+      if (vendorId) {
+        const vendorDoc = await getDoc(doc(db, 'vendors', vendorId));
+        
+        if (vendorDoc.exists()) {
+          setVendorDetails(vendorDoc.data());
+        }
+      }
+    } catch (error) {
+      console.error('Error loading vendor:', error);
+    } finally {
+      setLoadingVendor(false);
+    }
+  };
+
   const copyTripId = () => {
     Clipboard.setString(tripId);
     Alert.alert('Copied!', 'Trip ID copied to clipboard');
@@ -68,17 +98,21 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
 
   const { tripData, escortData } = bookingData;
 
-  // Calculate total escorts
-  const totalEscorts = escortData?.escorts?.reduce((sum, escort) => sum + escort.count, 0) || 0;
-
   // Get escort details string
   const getEscortDetails = () => {
     if (!escortData?.escorts || escortData.escorts.length === 0) {
       return 'None';
     }
-    return escortData.escorts
-      .map(escort => `${escort.count} ${escort.type}`)
+    
+    const details = escortData.escorts
+      .map(escort => `${escort.count} ${escort.type.toUpperCase()}`)
       .join(', ');
+    
+    if (escortData.hiluxCount && escortData.hiluxCount > 0) {
+      return `${details} + ${escortData.hiluxCount} Hilux`;
+    }
+    
+    return details;
   };
 
   // Format payment method
@@ -103,10 +137,18 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
           </Text>
         </View>
 
-        {/* Car Image */}
+        {/* ✅ Car Image - REAL IMAGE */}
         <View style={styles.carImageSection}>
           <View style={styles.carImageContainer}>
-            <Text style={styles.carImagePlaceholder}>🚗</Text>
+            {tripData.car.photos && tripData.car.photos.length > 0 ? (
+              <Image 
+                source={{ uri: tripData.car.photos[0] }} 
+                style={styles.carImage} 
+                resizeMode="contain"
+              />
+            ) : (
+              <Text style={styles.carImagePlaceholder}>🚗</Text>
+            )}
           </View>
           <View style={styles.carImageDots}>
             <View style={[styles.dot, styles.dotActive]} />
@@ -118,7 +160,7 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
         {/* Car Details */}
         <View style={styles.carDetailsSection}>
           <Text style={styles.carName}>
-            {tripData.car.brand || 'Lexus'} {tripData.car.model}
+            {tripData.car.brand} {tripData.car.model}
           </Text>
           <View style={styles.carMetaRow}>
             <Text style={styles.carMeta}>{tripData.car.year}</Text>
@@ -163,7 +205,7 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
           </View>
 
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Escort Option</Text>
+            <Text style={styles.infoLabel}>Security</Text>
             <Text style={styles.infoValue}>
               {getEscortDetails()}
             </Text>
@@ -197,42 +239,72 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
           </View>
         </View>
 
-        {/* Driver/Vendor Details - Only show if with driver or delivery */}
-        {(tripData.rideMode === 'with-driver' || tripData.pickupMethod === 'delivery') && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              {tripData.rideMode === 'with-driver' ? 'Driver Details' : 'Vendor Details'}
-            </Text>
+        {/* ✅ Vendor Details - REAL DATA */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Vendor Details</Text>
 
-            <View style={styles.driverCard}>
-              <View style={styles.driverInfo}>
-                <View style={styles.driverAvatar}>
-                  <Text style={styles.driverAvatarText}>👤</Text>
+          {loadingVendor ? (
+            <Text style={styles.loadingText}>Loading vendor details...</Text>
+          ) : vendorDetails ? (
+            <>
+              <View style={styles.driverCard}>
+                <View style={styles.driverInfo}>
+                  <View style={styles.driverAvatar}>
+                    <Text style={styles.driverAvatarText}>
+                      {vendorDetails.firstName?.[0]?.toUpperCase() || '👤'}
+                    </Text>
+                  </View>
+                  <View style={styles.driverTextInfo}>
+                    <Text style={styles.driverName}>
+                      {vendorDetails.businessName || 
+                       `${vendorDetails.firstName} ${vendorDetails.lastName}`}
+                    </Text>
+                    <Text style={styles.driverPhone}>
+                      {vendorDetails.phoneNumber || 'Phone not available'}
+                    </Text>
+                    {vendorDetails.businessAddress && (
+                      <Text style={styles.driverLocation}>
+                        📍 {vendorDetails.businessAddress}
+                      </Text>
+                    )}
+                  </View>
                 </View>
-                <View style={styles.driverTextInfo}>
-                  <Text style={styles.driverName}>
-                    {tripData.rideMode === 'with-driver' ? 'Driver' : 'Vendor'} will be assigned
-                  </Text>
-                  <Text style={styles.driverPhone}>You'll be notified shortly</Text>
+                <View style={styles.driverActions}>
+                  <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={() => Alert.alert('Coming Soon', 'Chat feature will be available soon')}
+                  >
+                    <Text style={styles.actionIcon}>💬</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={() => {
+                      if (vendorDetails.phoneNumber) {
+                        Alert.alert('Call Vendor', vendorDetails.phoneNumber);
+                      }
+                    }}
+                  >
+                    <Text style={styles.actionIcon}>📞</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-              <View style={styles.driverActions}>
-                <TouchableOpacity style={styles.actionButton} disabled>
-                  <Text style={styles.actionIcon}>💬</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton} disabled>
-                  <Text style={styles.actionIcon}>📞</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
 
+              <View style={styles.infoCard}>
+                <Text style={styles.infoCardText}>
+                  📌 {tripData.pickupMethod === 'vendor' 
+                    ? 'Visit the vendor at the address shown above at your scheduled time'
+                    : 'The vendor will deliver the car to your specified address'}
+                </Text>
+              </View>
+            </>
+          ) : (
             <View style={styles.infoCard}>
               <Text style={styles.infoCardText}>
-                📌 {tripData.rideMode === 'with-driver' ? 'Your driver' : 'The vendor'} will contact you before the trip start time
+                ⚠️ Vendor details will be shared with you shortly via email and SMS
               </Text>
             </View>
-          </View>
-        )}
+          )}
+        </View>
 
         {/* Next Steps */}
         <View style={styles.section}>
@@ -324,10 +396,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   carImageContainer: {
-    width: 200,
+    width: 250,
     height: 150,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  carImage: {
+    width: '100%',
+    height: '100%',
   },
   carImagePlaceholder: {
     fontSize: 100,
@@ -385,6 +461,12 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.bold,
     color: colors.text,
     marginBottom: spacing.md,
+  },
+  loadingText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    padding: spacing.lg,
   },
   infoRow: {
     flexDirection: 'row',
@@ -452,13 +534,15 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: colors.background,
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
   },
   driverAvatarText: {
-    fontSize: 24,
+    fontSize: 20,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.textWhite,
   },
   driverTextInfo: {
     flex: 1,
@@ -467,10 +551,15 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.semiBold,
     color: colors.text,
-    marginBottom: spacing.xs,
+    marginBottom: 2,
   },
   driverPhone: {
     fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  driverLocation: {
+    fontSize: typography.fontSize.xs,
     color: colors.textSecondary,
   },
   driverActions: {
@@ -481,7 +570,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.primary + '40',
+    backgroundColor: colors.primary + '20',
     justifyContent: 'center',
     alignItems: 'center',
   },
