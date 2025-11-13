@@ -81,16 +81,23 @@ const handleImagePicker = async (
 
   if (!result.canceled && result.assets[0]) {
     const localUri = result.assets[0].uri;
+    console.log('📸 Local image URI:', localUri); 
     setUploading(true);
 
     try {
       console.log('🔵 Uploading ID to Cloudinary...');
       const cloudinaryUrl = await uploadToCloudinary(localUri, 'vendor_ids');
+      console.log('✅ ID uploaded successfully:', cloudinaryUrl);
       setter(cloudinaryUrl);
-      console.log('✅ ID uploaded:', cloudinaryUrl);
-    } catch (error) {
-      console.error('❌ Upload failed:', error);
-      Alert.alert('Upload Failed', 'Failed to upload image. Please try again.');
+      Alert.alert('Success', 'Image uploaded successfully!'); 
+    } catch (error: any) {
+      console.error('❌ Upload failed - Full error:', error); 
+      console.error('❌ Error message:', error.message); 
+      console.error('❌ Error stack:', error.stack); 
+      Alert.alert(
+        'Upload Failed', 
+        `Failed to upload image: ${error.message || 'Unknown error'}. Please try again.`
+      ); 
     } finally {
       setUploading(false);
     }
