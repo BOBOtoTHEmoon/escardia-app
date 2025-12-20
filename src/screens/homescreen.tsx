@@ -14,6 +14,7 @@ import { SearchModal } from '../components/searchmodal';
 import { FilterModal } from '../components/filtermodal';
 import { LocationSelector } from '../components/locationselector';
 import { getUserFavorites, addToFavorites, removeFromFavorites } from '../services/favoritesservice';
+import { saveUserLocation, loadUserLocation } from '../utils/locationStorage';
 
 
 
@@ -73,6 +74,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   useEffect(() => {
     fetchCars();
     loadFavorites();
+    loadSavedLocation();
   }, []);
 
   const fetchCars = async () => {
@@ -145,6 +147,13 @@ const loadFavorites = async () => {
   const result = await getUserFavorites();
   if (result.success) {
     setFavorites(result.favorites);
+  }
+};
+
+const loadSavedLocation = async () => {
+  const saved = await loadUserLocation();
+  if (saved) {
+    setUserLocation(saved.name);
   }
 };
 
@@ -465,11 +474,14 @@ const toggleFavorite = async (carId: string) => {
       />
 
       <LocationSelector
-        visible={showLocationSelector}
-        currentLocation={userLocation}
-        onClose={() => setShowLocationSelector(false)}
-        onSelectLocation={(location) => setUserLocation(location)}
-      />
+  visible={showLocationSelector}
+  currentLocation={userLocation}
+  onClose={() => setShowLocationSelector(false)}
+  onSelectLocation={async (location, coords) => {
+    setUserLocation(location);
+    await saveUserLocation(location, coords);  // ← Saves to device
+  }}
+/>
     </View>
   );
 };

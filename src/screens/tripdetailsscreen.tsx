@@ -1,35 +1,48 @@
-import React, {useState, useEffect} from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, Linking } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Linking,
+  Alert,
+} from 'react-native';
 import { cancelBooking } from '../services/bookingService';
-import { Alert } from 'react-native';
+import { StaticMap } from '../components/StaticMap';
 
 interface TripDetailScreenProps {
   tripData: {
-    id: string; 
-    vendorId?: string; 
+    id: string;
+    vendorId?: string;
     status: 'upcoming' | 'ongoing' | 'past';
     rideMode: 'Driver' | 'Self-Drive';
     durationType: 'hour' | 'day';
-    durationValue: number; // 3 hours, 12 hours, 3 days, etc.
+    durationValue: number;
     pickupLocation: string;
-   car: {
-  model: string;
-  year: string;
-  price: string;
-  image?: any; 
-  photos?: string[]; 
-  seats: number;
-  doors: number;
-  ac: string;
-  transmission: string;
-  vendorId?: string;
-};
+    pickupCoordinates?: {
+      latitude: number;
+      longitude: number;
+    };
+    car: {
+      model: string;
+      year: string;
+      price: string;
+      image?: any;
+      photos?: string[];
+      seats: number;
+      doors: number;
+      ac: string;
+      transmission: string;
+      vendorId?: string;
+    };
     startDate: string;
     startTime: string;
     endDate: string;
     endTime: string;
     escortCount: number;
-      escort?: any; 
+    escort?: any;
     paymentMethod: string;
     totalCost: string;
     driver?: {
@@ -52,51 +65,51 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
   onNavigateBack,
   onEditTrip,
 }) => {
-   console.log('🚗 TripDetailScreen - Full tripData:', tripData);
+  console.log('🚗 TripDetailScreen - Full tripData:', tripData);
   console.log('🚗 TripDetailScreen - car object:', tripData.car);
   console.log('🚗 TripDetailScreen - car.photos:', tripData.car?.photos);
 
   const [vendorDetails, setVendorDetails] = useState<any>(null);
   const [loadingVendor, setLoadingVendor] = useState(true);
+
   useEffect(() => {
     loadVendorDetails();
   }, []);
 
   const loadVendorDetails = async () => {
-  try {
-    const { db } = await import('../config/firebase');
-    const { doc, getDoc } = await import('firebase/firestore');
+    try {
+      const { db } = await import('../config/firebase');
+      const { doc, getDoc } = await import('firebase/firestore');
 
-    // ✅ Check BOTH top-level vendorId AND car.vendorId
-    const vendorId = tripData.vendorId || tripData.car?.vendorId;
-    
-    console.log('🔍 Full tripData:', tripData);
-    console.log('🔍 tripData.vendorId:', tripData.vendorId);
-    console.log('🔍 tripData.car?.vendorId:', tripData.car?.vendorId);
-    console.log('🔍 Using vendorId:', vendorId);
-    
-    if (!vendorId) {
-      console.log('⚠️ No vendorId found in booking data');
+      const vendorId = tripData.vendorId || tripData.car?.vendorId;
+
+      console.log('🔍 Full tripData:', tripData);
+      console.log('🔍 tripData.vendorId:', tripData.vendorId);
+      console.log('🔍 tripData.car?.vendorId:', tripData.car?.vendorId);
+      console.log('🔍 Using vendorId:', vendorId);
+
+      if (!vendorId) {
+        console.log('⚠️ No vendorId found in booking data');
+        setLoadingVendor(false);
+        return;
+      }
+
+      console.log('🔍 Loading vendor:', vendorId);
+      const vendorDoc = await getDoc(doc(db, 'vendors', vendorId));
+
+      if (vendorDoc.exists()) {
+        const data = vendorDoc.data();
+        console.log('✅ Vendor loaded:', data);
+        setVendorDetails(data);
+      } else {
+        console.log('❌ Vendor not found');
+      }
+    } catch (error) {
+      console.error('❌ Error loading vendor:', error);
+    } finally {
       setLoadingVendor(false);
-      return;
     }
-
-    console.log('🔍 Loading vendor:', vendorId);
-    const vendorDoc = await getDoc(doc(db, 'vendors', vendorId));
-    
-    if (vendorDoc.exists()) {
-      const data = vendorDoc.data();
-      console.log('✅ Vendor loaded:', data);
-      setVendorDetails(data);
-    } else {
-      console.log('❌ Vendor not found');
-    }
-  } catch (error) {
-    console.error('❌ Error loading vendor:', error);
-  } finally {
-    setLoadingVendor(false);
-  }
-};
+  };
 
   const {
     id,
@@ -105,6 +118,7 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
     durationType,
     durationValue,
     pickupLocation,
+    pickupCoordinates,
     car,
     startDate,
     startTime,
@@ -116,42 +130,42 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
     driver,
     vendor,
   } = tripData;
+
   const calculateRealStatus = () => {
-  const parseDate = (dateStr: string) => {
-    const parts = dateStr.trim().split(' ');
-    if (parts.length === 3) {
-      const months: { [key: string]: number } = {
-        'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5,
-        'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11
-      };
-      const day = parseInt(parts[0]);
-      const month = months[parts[1]];
-      const year = parseInt(parts[2]);
-      return new Date(year, month, day);
+    const parseDate = (dateStr: string) => {
+      const parts = dateStr.trim().split(' ');
+      if (parts.length === 3) {
+        const months: { [key: string]: number } = {
+          Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+          Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+        };
+        const day = parseInt(parts[0]);
+        const month = months[parts[1]];
+        const year = parseInt(parts[2]);
+        return new Date(year, month, day);
+      }
+      return new Date();
+    };
+
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    const tripStart = parseDate(startDate);
+    tripStart.setHours(0, 0, 0, 0);
+
+    const tripEnd = parseDate(endDate);
+    tripEnd.setHours(0, 0, 0, 0);
+
+    if (now >= tripStart && now <= tripEnd) {
+      return 'ongoing';
+    } else if (now > tripEnd) {
+      return 'past';
     }
-    return new Date();
+    return 'upcoming';
   };
 
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  
-  const tripStart = parseDate(startDate);
-  tripStart.setHours(0, 0, 0, 0);
-  
-  const tripEnd = parseDate(endDate);
-  tripEnd.setHours(0, 0, 0, 0);
+  const realStatus = calculateRealStatus();
 
-  if (now >= tripStart && now <= tripEnd) {
-    return 'ongoing';
-  } else if (now > tripEnd) {
-    return 'past';
-  }
-  return 'upcoming';
-};
-
-const realStatus = calculateRealStatus();
-
-  // Format status display
   const getStatusDisplay = () => {
     if (status === 'ongoing') {
       return durationType === 'hour' ? `${durationValue} hours` : `Day ${durationValue}`;
@@ -159,11 +173,9 @@ const realStatus = calculateRealStatus();
     if (status === 'upcoming') {
       return durationType === 'hour' ? `${durationValue} hours` : `${durationValue} Days`;
     }
-    // Past trips show the end date
     return endDate;
   };
 
-  // Format trip duration display
   const getTripDuration = () => {
     if (durationType === 'hour') {
       return `${durationValue} hours`;
@@ -178,40 +190,41 @@ const realStatus = calculateRealStatus();
   const handleMessage = (phone: string) => {
     Linking.openURL(`sms:${phone}`);
   };
+
   const handleCancelTrip = () => {
-  Alert.alert(
-    '❌ Cancel Trip',
-    'Are you sure you want to cancel this trip?\n\n📋 Cancellation Policy:\n\n• 24+ hours before: 100% refund\n• 12-24 hours before: 50% refund\n• 2-12 hours before: 25% refund\n• Less than 2 hours: No refund',
-    [
-      {
-        text: 'No, Keep Trip',
-        style: 'cancel',
-      },
-      {
-        text: 'Yes, Cancel Trip',
-        style: 'destructive',
-        onPress: async () => {
-          const result = await cancelBooking(id);
-          
-          if (result.success) {
-            Alert.alert(
-              '✅ Trip Cancelled',
-              `Your trip has been cancelled successfully.\n\nRefund: ${result.refundPercentage}% of total cost will be processed within 3-5 business days.`,
-              [
-                {
-                  text: 'OK',
-                  onPress: () => onNavigateBack(),
-                }
-              ]
-            );
-          } else {
-            Alert.alert('Error', result.error || 'Failed to cancel trip');
-          }
+    Alert.alert(
+      '❌ Cancel Trip',
+      'Are you sure you want to cancel this trip?\n\n📋 Cancellation Policy:\n\n• 24+ hours before: 100% refund\n• 12-24 hours before: 50% refund\n• 2-12 hours before: 25% refund\n• Less than 2 hours: No refund',
+      [
+        {
+          text: 'No, Keep Trip',
+          style: 'cancel',
         },
-      },
-    ]
-  );
-};
+        {
+          text: 'Yes, Cancel Trip',
+          style: 'destructive',
+          onPress: async () => {
+            const result = await cancelBooking(id);
+
+            if (result.success) {
+              Alert.alert(
+                '✅ Trip Cancelled',
+                `Your trip has been cancelled successfully.\n\nRefund: ${result.refundPercentage}% of total cost will be processed within 3-5 business days.`,
+                [
+                  {
+                    text: 'OK',
+                    onPress: () => onNavigateBack(),
+                  },
+                ]
+              );
+            } else {
+              Alert.alert('Error', result.error || 'Failed to cancel trip');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -234,19 +247,19 @@ const realStatus = calculateRealStatus();
         {/* Status Badge */}
         <View style={styles.statusContainer}>
           <View style={[styles.statusBadge, styles[`${realStatus}Badge`]]}>
-           <Text style={styles.statusText}>
-  {realStatus.charAt(0).toUpperCase() + realStatus.slice(1)}
-</Text>
+            <Text style={styles.statusText}>
+              {realStatus.charAt(0).toUpperCase() + realStatus.slice(1)}
+            </Text>
           </View>
           <Text style={styles.durationText}>{getStatusDisplay()}</Text>
         </View>
 
-        {/* Map Placeholder */}
+        {/* ✅ UPDATED: Static Map with pickup location */}
         <View style={styles.mapContainer}>
-          <Image
-            source={require('../../assets/images/map.png')}
-            style={styles.mapImage}
-            resizeMode="cover"
+          <StaticMap
+            location={pickupLocation}
+            coordinates={pickupCoordinates}
+            showOpenInMaps={true}
           />
         </View>
 
@@ -275,17 +288,17 @@ const realStatus = calculateRealStatus();
               <Text style={styles.carPrice}>NGN {car.price}</Text>
             </View>
 
-           {car.photos && car.photos.length > 0 ? (
-  <Image 
-    source={{ uri: car.photos[0] }} 
-    style={styles.carImage} 
-    resizeMode="cover"
-  />
-) : (
-  <View style={styles.carImagePlaceholder}>
-    <Text style={styles.carImageEmoji}>🚗</Text>
-  </View>
-)}
+            {car.photos && car.photos.length > 0 ? (
+              <Image
+                source={{ uri: car.photos[0] }}
+                style={styles.carImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.carImagePlaceholder}>
+                <Text style={styles.carImageEmoji}>🚗</Text>
+              </View>
+            )}
 
             <View style={styles.carSpecs}>
               <View style={styles.specItem}>
@@ -341,29 +354,33 @@ const realStatus = calculateRealStatus();
 
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Start Day/Time</Text>
-              <Text style={styles.detailValue}>{startDate} {startTime}</Text>
+              <Text style={styles.detailValue}>
+                {startDate} {startTime}
+              </Text>
             </View>
 
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>End Day/Time</Text>
-              <Text style={styles.detailValue}>{endDate} {endTime}</Text>
+              <Text style={styles.detailValue}>
+                {endDate} {endTime}
+              </Text>
             </View>
 
             <View style={styles.detailRow}>
-  <Text style={styles.detailLabel}>Escort option</Text>
-  <View style={styles.escortValue}>
-    <Image
-      source={require('../../assets/images/guard.png')}
-      style={styles.guardIcon}
-      resizeMode="contain"
-    />
-    <Text style={styles.detailValue}>
-      {Array.isArray(tripData.escort) 
-        ? tripData.escort.reduce((sum: number, e: any) => sum + e.count, 0)
-        : escortCount}
-    </Text>
-  </View>
-</View>
+              <Text style={styles.detailLabel}>Escort option</Text>
+              <View style={styles.escortValue}>
+                <Image
+                  source={require('../../assets/images/guard.png')}
+                  style={styles.guardIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.detailValue}>
+                  {Array.isArray(tripData.escort)
+                    ? tripData.escort.reduce((sum: number, e: any) => sum + e.count, 0)
+                    : escortCount}
+                </Text>
+              </View>
+            </View>
 
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Ride mode</Text>
@@ -386,19 +403,17 @@ const realStatus = calculateRealStatus();
             </View>
           </View>
         </View>
+
         {realStatus === 'upcoming' && (
-  <View style={styles.cancelButtonSection}>
-    <TouchableOpacity 
-      style={styles.cancelButton}
-      onPress={handleCancelTrip}
-    >
-      <Text style={styles.cancelButtonText}>Cancel Trip</Text>
-    </TouchableOpacity>
-    <Text style={styles.cancelPolicyText}>
-      📋 Cancel 24+ hours before for full refund
-    </Text>
-  </View>
-)}
+          <View style={styles.cancelButtonSection}>
+            <TouchableOpacity style={styles.cancelButton} onPress={handleCancelTrip}>
+              <Text style={styles.cancelButtonText}>Cancel Trip</Text>
+            </TouchableOpacity>
+            <Text style={styles.cancelPolicyText}>
+              📋 Cancel 24+ hours before for full refund
+            </Text>
+          </View>
+        )}
 
         {/* Driver/Vendor Details */}
         <View style={styles.contactsSection}>
@@ -406,7 +421,6 @@ const realStatus = calculateRealStatus();
             {rideMode === 'Driver' ? 'Driver details' : 'Vendor details'}
           </Text>
 
-          {/* ✅ DRIVER DETAILS (keep as is for now - will implement later) */}
           {driver && rideMode === 'Driver' && (
             <View style={styles.contactCard}>
               <Image source={driver.photo} style={styles.contactPhoto} />
@@ -437,7 +451,6 @@ const realStatus = calculateRealStatus();
             </View>
           )}
 
-          {/* ✅ VENDOR DETAILS - REAL DATA */}
           {loadingVendor ? (
             <View style={styles.contactCard}>
               <Text style={styles.loadingText}>Loading vendor details...</Text>
@@ -451,8 +464,8 @@ const realStatus = calculateRealStatus();
               </View>
               <View style={styles.contactInfo}>
                 <Text style={styles.contactName}>
-                  {vendorDetails.businessName || 
-                   `${vendorDetails.firstName} ${vendorDetails.lastName}`}
+                  {vendorDetails.businessName ||
+                    `${vendorDetails.firstName} ${vendorDetails.lastName}`}
                 </Text>
                 <Text style={styles.contactPhone}>
                   {vendorDetails.phoneNumber || 'No phone available'}
@@ -570,15 +583,10 @@ const styles = StyleSheet.create({
     color: '#000',
   },
   mapContainer: {
-    height: 180,
     marginHorizontal: 20,
     marginBottom: 20,
     borderRadius: 12,
     overflow: 'hidden',
-  },
-  mapImage: {
-    width: '100%',
-    height: '100%',
   },
   locationSection: {
     paddingHorizontal: 20,
@@ -634,11 +642,11 @@ const styles = StyleSheet.create({
     color: '#3B82F6',
   },
   carImage: {
-  width: '90%',
-  height: 130,
-  marginVertical: 12,
-  borderRadius: 8,
-},
+    width: '90%',
+    height: 130,
+    marginVertical: 12,
+    borderRadius: 8,
+  },
   carSpecs: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -747,67 +755,69 @@ const styles = StyleSheet.create({
     tintColor: '#FFFFFF',
   },
   cancelButtonSection: {
-  paddingHorizontal: 20,
-  marginBottom: 20,
-},
-cancelButton: {
-  backgroundColor: '#EF4444',
-  borderRadius: 12,
-  paddingVertical: 16,
-  alignItems: 'center',
-  marginBottom: 8,
-},
-cancelButtonText: {
-  fontSize: 16,
-  fontWeight: '600',
-  color: '#FFFFFF',
-},
-cancelPolicyText: {
-  fontSize: 12,
-  color: '#6B7280',
-  textAlign: 'center',
-},
-carImagePlaceholder: {
-  width: '100%',
-  height: 100,
-  backgroundColor: '#F3F4F6',
-  justifyContent: 'center',
-  alignItems: 'center',
-  marginVertical: 12,
-  borderRadius: 8,
-},
-carImageEmoji: {
-  fontSize: 60,
-},
-contactPhoto: {
-  width: 48,
-  height: 48,
-  borderRadius: 24,
-  marginRight: 12,
-  backgroundColor: '#3B82F6', // ✅ ADD THIS
-  justifyContent: 'center', // ✅ ADD THIS
-  alignItems: 'center', // ✅ ADD THIS
-},
-contactPhotoText: {
-  fontSize: 20,
-  fontWeight: '600',
-  color: '#FFFFFF',
-},
-contactAddress: {
-  fontSize: 11,
-  color: '#6B7280',
-  marginTop: 2,
-},
-loadingText: {
-  fontSize: 13,
-  color: '#6B7280',
-  textAlign: 'center',
-  paddingVertical: 20,
-},
-errorText: {
-  fontSize: 13,
-  color: '#EF4444',
-  textAlign: 'center',
-  paddingVertical: 20,
-},
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  cancelButton: {
+    backgroundColor: '#EF4444',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  cancelPolicyText: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  carImagePlaceholder: {
+    width: '100%',
+    height: 100,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 12,
+    borderRadius: 8,
+  },
+  carImageEmoji: {
+    fontSize: 60,
+  },
+  contactPhoto: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: 12,
+    backgroundColor: '#3B82F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  contactPhotoText: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  contactAddress: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  loadingText: {
+    fontSize: 13,
+    color: '#6B7280',
+    textAlign: 'center',
+    paddingVertical: 20,
+  },
+  errorText: {
+    fontSize: 13,
+    color: '#EF4444',
+    textAlign: 'center',
+    paddingVertical: 20,
+  },
 });
+
+export default TripDetailScreen;

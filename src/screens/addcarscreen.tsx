@@ -10,7 +10,8 @@ import {
   Platform,
   Alert,
   Image,
-   ActivityIndicator,
+  ActivityIndicator,
+  Modal,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { colors, typography, spacing, borderRadius } from '../constants';
@@ -56,8 +57,11 @@ export const AddCarScreen: React.FC<AddCarScreenProps> = ({
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [isSubmitting, setIsSubmitting] = useState(false); // ✅ NEW
+  const [showSuccessModal, setShowSuccessModal] = useState(false); // ✅ NEW
 
-const [vendorStatus, setVendorStatus] = useState<'checking' | 'pending' | 'approved' | 'rejected'>('checking');
+  const [vendorStatus, setVendorStatus] = useState<'checking' | 'pending' | 'approved' | 'rejected'>('checking');
+  
   useEffect(() => {
     checkVendorApprovalStatus();
   }, []);
@@ -98,7 +102,8 @@ const [vendorStatus, setVendorStatus] = useState<'checking' | 'pending' | 'appro
       setVendorStatus('pending');
     }
   };
-  // ✅ ADD CHECKING SCREEN (shows while loading)
+
+  // ✅ CHECKING SCREEN (shows while loading)
   if (vendorStatus === 'checking') {
     return (
       <View style={styles.container}>
@@ -110,14 +115,14 @@ const [vendorStatus, setVendorStatus] = useState<'checking' | 'pending' | 'appro
     );
   }
 
-  // ✅ ADD PENDING SCREEN (shows if not approved)
+  // ✅ PENDING SCREEN (shows if vendor not approved)
   if (vendorStatus === 'pending') {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-        <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-  <Text style={{ fontSize: 24 }}>←</Text>
-</TouchableOpacity>
+          <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
+            <Text style={{ fontSize: 24 }}>←</Text>
+          </TouchableOpacity>
           <Text style={styles.headerTitle}>Add Car</Text>
           <View style={{ width: 24 }} />
         </View>
@@ -219,72 +224,85 @@ const [vendorStatus, setVendorStatus] = useState<'checking' | 'pending' | 'appro
     return Object.keys(newErrors).length === 0;
   };
 
-const handleSubmit = async () => {
-  if (!validateForm()) {
-    Alert.alert('Missing Information', 'Please fill in all required fields');
-    return;
-  }
-
-  console.log('🔵 Adding car to Firebase...');
-
-  try {
-    const { auth } = await import('../config/firebase');
-    const { uploadToCloudinary } = await import('../config/cloudinary');
-    
-    const vendorId = auth.currentUser?.uid;
-
-    if (!vendorId) {
-      Alert.alert('Error', 'You must be logged in to add a car');
+  const handleSubmit = async () => {
+    if (!validateForm()) {
+      Alert.alert('Missing Information', 'Please fill in all required fields');
       return;
     }
 
-    // Upload photos to Cloudinary
-    console.log('📸 Uploading photos to Cloudinary...');
-    const photoUrls: string[] = [];
-    
-    for (let i = 0; i < photos.length; i++) {
-      const photoUri = photos[i];
-      console.log(`Uploading photo ${i + 1}/${photos.length}...`);
+    setIsSubmitting(true); // ✅ Show loading
+
+    console.log('🔵 Adding car to Firebase...');
+
+    try {
+      const { auth } = await import('../config/firebase');
+      const { uploadToCloudinary } = await import('../config/cloudinary');
       
-      const cloudinaryUrl = await uploadToCloudinary(photoUri);
-      photoUrls.push(cloudinaryUrl);
-      console.log(`✅ Photo ${i + 1} uploaded:`, cloudinaryUrl);
+      const vendorId = auth.currentUser?.uid;
+
+      if (!vendorId) {
+        Alert.alert('Error', 'You must be logged in to add a car');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Upload photos to Cloudinary
+      console.log('📸 Uploading photos to Cloudinary...');
+      const photoUrls: string[] = [];
+      
+      for (let i = 0; i < photos.length; i++) {
+        const photoUri = photos[i];
+        console.log(`Uploading photo ${i + 1}/${photos.length}...`);
+        
+        const cloudinaryUrl = await uploadToCloudinary(photoUri);
+        photoUrls.push(cloudinaryUrl);
+        console.log(`✅ Photo ${i + 1} uploaded:`, cloudinaryUrl);
+      }
+
+      console.log('✅ All photos uploaded to Cloudinary!');
+
+      const carData = {
+        brand,
+        model,
+        year,
+        type: carType,
+        pricePerDay: Number(pricePerDay),
+        pricePerHour: Number(pricePerHour),
+        seats: Number(seats),
+        doors: Number(doors),
+        transmission,
+        fuelType,
+        location,
+        description,
+        photos: photoUrls,
+      };
+
+      const { addCar } = await import('../services/carservice');
+      const result = await addCar(carData, vendorId);
+
+      setIsSubmitting(false); // ✅ Hide loading
+
+      if (result.success) {
+        console.log('✅ Car added! ID:', result.carId);
+        console.log('⏳ Car is pending admin approval');
+        
+        // ✅ Show success modal instead of basic alert
+        setShowSuccessModal(true);
+      } else {
+        Alert.alert('Error', result.error || 'Failed to add car');
+      }
+    } catch (error) {
+      console.error('❌ Error adding car:', error);
+      setIsSubmitting(false);
+      Alert.alert('Error', 'Failed to add car. Please try again.');
     }
+  };
 
-    console.log('✅ All photos uploaded to Cloudinary!');
-
-    const carData = {
-      brand,
-      model,
-      year,
-      type: carType,
-      pricePerDay: Number(pricePerDay),
-      pricePerHour: Number(pricePerHour),
-      seats: Number(seats),
-      doors: Number(doors),
-      transmission,
-      fuelType,
-      location,
-      description,
-      photos: photoUrls,
-    };
-
-    const { addCar } = await import('../services/carservice');
-    const result = await addCar(carData, vendorId);
-
-    if (result.success) {
-      console.log('✅ Car added! ID:', result.carId);
-      Alert.alert('Success', 'Car added to your fleet successfully!', [
-        { text: 'OK', onPress: onCarAdded },
-      ]);
-    } else {
-      Alert.alert('Error', result.error || 'Failed to add car');
-    }
-  } catch (error) {
-    console.error('❌ Error adding car:', error);
-    Alert.alert('Error', 'Failed to add car. Please try again.');
-  }
-};
+  // ✅ Handle success modal close
+  const handleSuccessModalClose = () => {
+    setShowSuccessModal(false);
+    onCarAdded();
+  };
 
   return (
     <KeyboardAvoidingView
@@ -308,7 +326,7 @@ const handleSubmit = async () => {
         {/* Photos Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Car Photos *</Text>
-          <Text style={styles.sectionSubtitle}>Add up to 5 photos</Text>
+          <Text style={styles.sectionSubtitle}>Add up to 5 photos (clear, well-lit images help get approved faster)</Text>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photosScroll}>
             {photos.map((photo, index) => (
@@ -527,13 +545,67 @@ const handleSubmit = async () => {
           </View>
         </View>
 
+        {/* ✅ Info Box about approval */}
+        <View style={styles.infoBox}>
+          <Text style={styles.infoIcon}>ℹ️</Text>
+          <Text style={styles.infoText}>
+            Your car will be reviewed by our team before it appears to customers. This usually takes 24-48 hours.
+          </Text>
+        </View>
+
         {/* Submit Button */}
-        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitButtonText}>Add Car to Fleet</Text>
+        <TouchableOpacity 
+          style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]} 
+          onPress={handleSubmit}
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? (
+            <View style={styles.submitButtonContent}>
+              <ActivityIndicator size="small" color="#fff" />
+              <Text style={styles.submitButtonText}>  Adding Car...</Text>
+            </View>
+          ) : (
+            <Text style={styles.submitButtonText}>Add Car to Fleet</Text>
+          )}
         </TouchableOpacity>
 
         <View style={styles.bottomSpacing} />
       </ScrollView>
+
+      {/* ✅ SUCCESS MODAL - Shows after car is added */}
+      <Modal
+        visible={showSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleSuccessModalClose}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalIcon}>🎉</Text>
+            <Text style={styles.modalTitle}>Car Added Successfully!</Text>
+            <Text style={styles.modalMessage}>
+              Your {brand} {model} has been submitted for review.
+            </Text>
+            
+            <View style={styles.modalInfoBox}>
+              <Text style={styles.modalInfoTitle}>⏳ What happens next?</Text>
+              <Text style={styles.modalInfoText}>
+                • Our team will review your car listing{'\n'}
+                • This usually takes 24-48 hours{'\n'}
+                • You'll be notified once approved{'\n'}
+                • Then your car will be visible to customers
+              </Text>
+            </View>
+            
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={handleSuccessModalClose}
+            >
+              <Text style={styles.modalButtonText}>Got it!</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -697,12 +769,39 @@ const styles = StyleSheet.create({
   halfWidth: {
     flex: 1,
   },
+  // ✅ NEW: Info box styles
+  infoBox: {
+    flexDirection: 'row',
+    backgroundColor: '#EFF6FF',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    alignItems: 'flex-start',
+  },
+  infoIcon: {
+    fontSize: 20,
+    marginRight: spacing.sm,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: typography.fontSize.sm,
+    color: '#1E40AF',
+    lineHeight: 20,
+  },
   submitButton: {
     backgroundColor: colors.primary,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     alignItems: 'center',
     marginTop: spacing.md,
+  },
+  submitButtonDisabled: {
+    backgroundColor: colors.primary + '80',
+  },
+  submitButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   submitButtonText: {
     color: colors.textWhite,
@@ -712,9 +811,7 @@ const styles = StyleSheet.create({
   bottomSpacing: {
     height: 40,
   },
-// ... your existing styles
-
-  // ✅ ADD THESE NEW STYLES
+  // Loading & Pending styles
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -774,5 +871,69 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  // ✅ NEW: Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+  },
+  modalIcon: {
+    fontSize: 60,
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#000',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  modalInfoBox: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    padding: 16,
+    width: '100%',
+    marginBottom: 20,
+  },
+  modalInfoTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#92400E',
+    marginBottom: 8,
+  },
+  modalInfoText: {
+    fontSize: 13,
+    color: '#92400E',
+    lineHeight: 20,
+  },
+  modalButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 40,
+    paddingVertical: 14,
+    borderRadius: 12,
+    width: '100%',
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

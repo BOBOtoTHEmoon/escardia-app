@@ -30,11 +30,12 @@ export const MyFleetScreen: React.FC<MyFleetScreenProps> = ({
   onAddCar,
   onViewCarDetails,
 }) => {
-const [filterStatus, setFilterStatus] = useState<'all' | 'available' | 'booked'>('all');
-const [cars, setCars] = useState<any[]>([]);
-const [loading, setLoading] = useState(true);
+  // ✅ UPDATED: Added 'pending' filter option
+  const [filterStatus, setFilterStatus] = useState<'all' | 'available' | 'booked' | 'pending'>('all');
+  const [cars, setCars] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
- const toggleCarAvailability = async (carId: string, currentStatus: string) => {
+  const toggleCarAvailability = async (carId: string, currentStatus: string) => {
     try {
       const newStatus = currentStatus === 'available' ? 'maintenance' : 'available';
       
@@ -58,106 +59,134 @@ const [loading, setLoading] = useState(true);
     }
   };
 
-// Fetch vendor's cars from Firebase
-useEffect(() => {
-  const fetchCars = async () => {
-    try {
-      console.log('🔵 Loading vendor cars...');
-      const { auth, db } = await import('../config/firebase');
-      const { collection, query, where, getDocs } = await import('firebase/firestore');
-      const { calculateBookingStatus } = await import('../utils/dateHelpers'); // ✅ IMPORT
-      
-      const vendorId = auth.currentUser?.uid;
-
-      if (!vendorId) {
-        console.log('❌ No vendor logged in');
-        setLoading(false);
-        return;
-      }
-
-      // 1. Get all vendor's cars
-      const { getVendorCars } = await import('../services/carservice');
-      const result = await getVendorCars(vendorId);
-
-      if (!result.success || !result.cars) {
-        setLoading(false);
-        return;
-      }
-
-      // 2. Get all bookings for this vendor
-      const bookingsQuery = query(
-        collection(db, 'bookings'),
-        where('vendorId', '==', vendorId)
-      );
-      
-      const bookingsSnapshot = await getDocs(bookingsQuery);
-      
-      // Track active bookings (for status) with TIME CHECK
-      const activeBookings = new Set<string>();
-      
-      // Track bookings & earnings per car
-      const carStats: { [carId: string]: { bookings: number; earnings: number } } = {};
-
-      bookingsSnapshot.docs.forEach(doc => {
-        const booking = doc.data();
-        const carId = booking.carId;
+  // Fetch vendor's cars from Firebase
+  useEffect(() => {
+    const fetchCars = async () => {
+      try {
+        console.log('🔵 Loading vendor cars...');
+        const { auth, db } = await import('../config/firebase');
+        const { collection, query, where, getDocs } = await import('firebase/firestore');
+        const { calculateBookingStatus } = await import('../utils/dateHelpers');
         
-        // Calculate status with TIME
-        const actualStatus = calculateBookingStatus(
-          booking.startDate,
-          booking.startTime,
-          booking.endDate,
-          booking.stopTime
+        const vendorId = auth.currentUser?.uid;
+
+        if (!vendorId) {
+          console.log('❌ No vendor logged in');
+          setLoading(false);
+          return;
+        }
+
+        // 1. Get all vendor's cars
+        const { getVendorCars } = await import('../services/carservice');
+        const result = await getVendorCars(vendorId);
+
+        if (!result.success || !result.cars) {
+          setLoading(false);
+          return;
+        }
+
+        // 2. Get all bookings for this vendor
+        const bookingsQuery = query(
+          collection(db, 'bookings'),
+          where('vendorId', '==', vendorId)
         );
         
-        // Count for status (upcoming/ongoing only)
-        if (actualStatus === 'upcoming' || actualStatus === 'ongoing') {
-          activeBookings.add(carId);
-        }
+        const bookingsSnapshot = await getDocs(bookingsQuery);
         
-        // Initialize stats for this car if not exists
-        if (!carStats[carId]) {
-          carStats[carId] = { bookings: 0, earnings: 0 };
-        }
+        // Track active bookings (for status) with TIME CHECK
+        const activeBookings = new Set<string>();
         
-        // Count all bookings
-        carStats[carId].bookings += 1;
-        
-        // Count earnings from completed bookings only
-        if (actualStatus === 'completed') {
-          carStats[carId].earnings += booking.totalPrice || 0;
-        }
-      });
+        // Track bookings & earnings per car
+        const carStats: { [carId: string]: { bookings: number; earnings: number } } = {};
 
-      // 3. Merge car data with calculated stats
-      const carsWithStats = result.cars.map((car: any) => {
-        const stats = carStats[car.id] || { bookings: 0, earnings: 0 };
-        const isBooked = activeBookings.has(car.id);
-        
-        return {
-          ...car,
-          status: isBooked ? 'booked' : 'available',
-          totalBookings: stats.bookings,
-          totalEarnings: stats.earnings,
-        };
-      });
+        bookingsSnapshot.docs.forEach(doc => {
+          const booking = doc.data();
+          const carId = booking.carId;
+          
+          // Calculate status with TIME
+          const actualStatus = calculateBookingStatus(
+            booking.startDate,
+            booking.startTime,
+            booking.endDate,
+            booking.stopTime
+          );
+          
+          // Count for status (upcoming/ongoing only)
+          if (actualStatus === 'upcoming' || actualStatus === 'ongoing') {
+            activeBookings.add(carId);
+          }
+          
+          // Initialize stats for this car if not exists
+          if (!carStats[carId]) {
+            carStats[carId] = { bookings: 0, earnings: 0 };
+          }
+          
+          // Count all bookings
+          carStats[carId].bookings += 1;
+          
+          // Count earnings from completed bookings only
+          if (actualStatus === 'completed') {
+            carStats[carId].earnings += booking.totalPrice || 0;
+          }
+        });
 
-      console.log(`✅ Loaded ${carsWithStats.length} cars with stats`);
-      setCars(carsWithStats);
-    } catch (error) {
-      console.error('❌ Error loading cars:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+        // 3. Merge car data with calculated stats
+        const carsWithStats = result.cars.map((car: any) => {
+          const stats = carStats[car.id] || { bookings: 0, earnings: 0 };
+          const isBooked = activeBookings.has(car.id);
+          
+          return {
+            ...car,
+            // Only show as booked if car is approved AND has active booking
+            status: isBooked && car.approvalStatus === 'approved' ? 'booked' : car.status || 'available',
+            totalBookings: stats.bookings,
+            totalEarnings: stats.earnings,
+            // ✅ Keep approval status
+            approvalStatus: car.approvalStatus || 'pending',
+            rejectionReason: car.rejectionReason || null,
+          };
+        });
 
-  fetchCars();
-}, []);
+        console.log(`✅ Loaded ${carsWithStats.length} cars with stats`);
+        setCars(carsWithStats);
+      } catch (error) {
+        console.error('❌ Error loading cars:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
+    fetchCars();
+  }, []);
+
+  // ✅ UPDATED: Filter logic includes approval status
   const filteredCars = cars.filter((car) => {
     if (filterStatus === 'all') return true;
-    return car.status === filterStatus;
+    if (filterStatus === 'pending') return car.approvalStatus === 'pending' || car.approvalStatus === 'rejected';
+    if (filterStatus === 'available') return car.approvalStatus === 'approved' && car.status === 'available';
+    if (filterStatus === 'booked') return car.approvalStatus === 'approved' && car.status === 'booked';
+    return true;
   });
+
+  // ✅ NEW: Get approval status badge
+  const getApprovalStatusBadge = (approvalStatus: string) => {
+    switch (approvalStatus) {
+      case 'approved':
+        return null; // Don't show badge for approved cars (show availability instead)
+      case 'rejected':
+        return (
+          <View style={[styles.approvalBadge, styles.approvalBadgeRejected]}>
+            <Text style={styles.approvalBadgeText}>✗ Rejected</Text>
+          </View>
+        );
+      default:
+        return (
+          <View style={[styles.approvalBadge, styles.approvalBadgePending]}>
+            <Text style={styles.approvalBadgeText}>⏳ Pending Review</Text>
+          </View>
+        );
+    }
+  };
 
   const getStatusColor = (status: string) => {
     return status === 'available' ? '#10B981' : '#F59E0B';
@@ -166,6 +195,12 @@ useEffect(() => {
   const getStatusText = (status: string) => {
     return status === 'available' ? 'Available' : 'Booked';
   };
+
+  // ✅ Count cars by status
+  const approvedCars = cars.filter(c => c.approvalStatus === 'approved');
+  const pendingOrRejectedCars = cars.filter(c => c.approvalStatus === 'pending' || c.approvalStatus === 'rejected');
+  const availableCars = approvedCars.filter(c => c.status === 'available');
+  const bookedCars = approvedCars.filter(c => c.status === 'booked');
 
   return (
     <View style={styles.container}>
@@ -199,7 +234,7 @@ useEffect(() => {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Filter Tabs */}
+          {/* ✅ UPDATED: Filter Tabs with Pending option */}
           <View style={styles.filterContainer}>
             <TouchableOpacity
               style={[styles.filterTab, filterStatus === 'all' && styles.filterTabActive]}
@@ -211,13 +246,22 @@ useEffect(() => {
             </TouchableOpacity>
 
             <TouchableOpacity
+              style={[styles.filterTab, filterStatus === 'pending' && styles.filterTabActive]}
+              onPress={() => setFilterStatus('pending')}
+            >
+              <Text style={[styles.filterText, filterStatus === 'pending' && styles.filterTextActive]}>
+                Review ({pendingOrRejectedCars.length})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[styles.filterTab, filterStatus === 'available' && styles.filterTabActive]}
               onPress={() => setFilterStatus('available')}
             >
               <Text
                 style={[styles.filterText, filterStatus === 'available' && styles.filterTextActive]}
               >
-                Available ({cars.filter((c) => c.status === 'available').length})
+                Live ({availableCars.length})
               </Text>
             </TouchableOpacity>
 
@@ -226,23 +270,25 @@ useEffect(() => {
               onPress={() => setFilterStatus('booked')}
             >
               <Text style={[styles.filterText, filterStatus === 'booked' && styles.filterTextActive]}>
-                Booked ({cars.filter((c) => c.status === 'booked').length})
+                Booked ({bookedCars.length})
               </Text>
             </TouchableOpacity>
           </View>
 
           {/* Cars Grid */}
           {loading ? (
-  <View style={styles.emptyState}>
-    <Text style={styles.emptyText}>Loading your fleet...</Text>
-  </View>
-) : filteredCars.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>Loading your fleet...</Text>
+            </View>
+          ) : filteredCars.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyIcon}>🚗</Text>
               <Text style={styles.emptyTitle}>No cars found</Text>
               <Text style={styles.emptyText}>
                 {filterStatus === 'all'
                   ? 'Start adding cars to your fleet'
+                  : filterStatus === 'pending'
+                  ? 'No cars pending review'
                   : `No ${filterStatus} cars at the moment`}
               </Text>
               {filterStatus === 'all' && (
@@ -256,26 +302,36 @@ useEffect(() => {
               {filteredCars.map((car) => (
                 <TouchableOpacity
                   key={car.id}
-                  style={styles.carCard}
+                  style={[
+                    styles.carCard,
+                    // ✅ Visual indicator for pending/rejected cars
+                    car.approvalStatus === 'pending' && styles.carCardPending,
+                    car.approvalStatus === 'rejected' && styles.carCardRejected,
+                  ]}
                   onPress={() => onViewCarDetails(car.id)}
                 >
-                  {/* Status Badge */}
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      { backgroundColor: getStatusColor(car.status) },
-                    ]}
-                  >
-                    <Text style={styles.statusText}>{getStatusText(car.status)}</Text>
-                  </View>
+                  {/* ✅ Approval Status Badge (for pending/rejected) */}
+                  {car.approvalStatus !== 'approved' ? (
+                    getApprovalStatusBadge(car.approvalStatus)
+                  ) : (
+                    // Availability Badge (only for approved cars)
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        { backgroundColor: getStatusColor(car.status) },
+                      ]}
+                    >
+                      <Text style={styles.statusText}>{getStatusText(car.status)}</Text>
+                    </View>
+                  )}
 
                   {/* Car Image */}
                   <View style={styles.carImageContainer}>
                     {car.photos && car.photos.length > 0 ? (
-  <Image source={{ uri: car.photos[0] }} style={styles.carImage} resizeMode="contain" />
-) : (
-  <Text style={styles.carImagePlaceholder}>🚗</Text>
-)}
+                      <Image source={{ uri: car.photos[0] }} style={styles.carImage} resizeMode="contain" />
+                    ) : (
+                      <Text style={styles.carImagePlaceholder}>🚗</Text>
+                    )}
                   </View>
 
                   {/* Car Info */}
@@ -285,35 +341,78 @@ useEffect(() => {
                     </Text>
                     <Text style={styles.carYear}>{car.year}</Text>
 
-                    <View style={styles.carStats}>
-                      <View style={styles.statItem}>
-                        <Text style={styles.statLabel}>Bookings</Text>
-                       <Text style={styles.statValue}>{car.totalBookings || 0}</Text>
+                    {/* ✅ Rejection Reason (if rejected) */}
+                    {car.approvalStatus === 'rejected' && car.rejectionReason && (
+                      <View style={styles.rejectionBox}>
+                        <Text style={styles.rejectionTitle}>Reason:</Text>
+                        <Text style={styles.rejectionText}>{car.rejectionReason}</Text>
                       </View>
-                      <View style={styles.statDivider} />
-                      <View style={styles.statItem}>
-                        <Text style={styles.statLabel}>Earnings</Text>
-                        <Text style={styles.statValue}>₦{(car.totalEarnings || 0).toLocaleString()}</Text>
+                    )}
+
+                    {/* ✅ Pending Info Box */}
+                    {car.approvalStatus === 'pending' && (
+                      <View style={styles.pendingInfoBox}>
+                        <Text style={styles.pendingInfoText}>
+                          Our team is reviewing this car. This usually takes 24-48 hours.
+                        </Text>
                       </View>
-                    </View>
+                    )}
+
+                    {/* Stats (only for approved cars) */}
+                    {car.approvalStatus === 'approved' && (
+                      <View style={styles.carStats}>
+                        <View style={styles.statItem}>
+                          <Text style={styles.statLabel}>Bookings</Text>
+                          <Text style={styles.statValue}>{car.totalBookings || 0}</Text>
+                        </View>
+                        <View style={styles.statDivider} />
+                        <View style={styles.statItem}>
+                          <Text style={styles.statLabel}>Earnings</Text>
+                          <Text style={styles.statValue}>₦{(car.totalEarnings || 0).toLocaleString()}</Text>
+                        </View>
+                      </View>
+                    )}
 
                     <View style={styles.priceContainer}>
                       <Text style={styles.priceLabel}>Per Day</Text>
                       <Text style={styles.price}>
-  ₦{(car.pricePerDay || 0).toLocaleString()}
-</Text>
+                        ₦{(car.pricePerDay || 0).toLocaleString()}
+                      </Text>
                     </View>
-                    <TouchableOpacity
-  style={[
-    styles.availabilityButton,
-    car.status === 'available' ? styles.availableButton : styles.unavailableButton
-  ]}
-  onPress={() => toggleCarAvailability(car.id, car.status)}
->
-  <Text style={styles.availabilityText}>
-    {car.status === 'available' ? '✓ Available' : '✕ Unavailable'}
-  </Text>
-</TouchableOpacity>
+
+                    {/* Availability Toggle (only for approved cars) */}
+                    {car.approvalStatus === 'approved' && (
+                      <TouchableOpacity
+                        style={[
+                          styles.availabilityButton,
+                          car.status === 'available' ? styles.availableButton : styles.unavailableButton
+                        ]}
+                        onPress={() => toggleCarAvailability(car.id, car.status)}
+                      >
+                        <Text style={styles.availabilityText}>
+                          {car.status === 'available' ? '✓ Available' : '✕ Unavailable'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {/* ✅ Edit Button for rejected cars */}
+                    {car.approvalStatus === 'rejected' && (
+                      <TouchableOpacity
+                        style={styles.editButton}
+                        onPress={() => {
+                          Alert.alert(
+                            'Edit Car',
+                            'Would you like to edit this car and resubmit for review?',
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              { text: 'Edit', onPress: () => onViewCarDetails(car.id) },
+                            ]
+                          );
+                        }}
+                      >
+                        <Text style={styles.editButtonText}>Edit & Resubmit</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </TouchableOpacity>
               ))}
@@ -353,14 +452,14 @@ useEffect(() => {
           <Text style={styles.navLabel}>Bookings</Text>
         </TouchableOpacity>
 
-               <TouchableOpacity style={styles.navItem}>
-                        <Image
-                          source={require('../../assets/images/walleticon.png')}
-                          style={styles.navIconActive}
-                          resizeMode="contain"
-                        />
-                        <Text style={styles.navLabel}>Earnings</Text>
-                      </TouchableOpacity>
+        <TouchableOpacity style={styles.navItem} onPress={onNavigateToEarnings}>
+          <Image
+            source={require('../../assets/images/walleticon.png')}
+            style={styles.navIcon}
+            resizeMode="contain"
+          />
+          <Text style={styles.navLabel}>Earnings</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity style={styles.navItem} onPress={onNavigateToProfile}>
           <Image
@@ -382,7 +481,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingTop: 80,
-paddingBottom: 60,
+    paddingBottom: 60,
     paddingHorizontal: spacing.lg,
     overflow: 'hidden',
   },
@@ -439,7 +538,7 @@ paddingBottom: 60,
   },
   filterContainer: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.xs,
     marginBottom: spacing.lg,
   },
   filterTab: {
@@ -453,7 +552,7 @@ paddingBottom: 60,
     backgroundColor: colors.primary,
   },
   filterText: {
-    fontSize: typography.fontSize.sm,
+    fontSize: typography.fontSize.xs,
     color: colors.textSecondary,
     fontWeight: typography.fontWeight.medium,
   },
@@ -470,6 +569,16 @@ paddingBottom: 60,
     padding: spacing.md,
     position: 'relative',
   },
+  // ✅ NEW: Card styles for pending/rejected
+  carCardPending: {
+    borderWidth: 2,
+    borderColor: '#F59E0B',
+    borderStyle: 'dashed',
+  },
+  carCardRejected: {
+    borderWidth: 2,
+    borderColor: '#EF4444',
+  },
   statusBadge: {
     position: 'absolute',
     top: spacing.md,
@@ -480,6 +589,27 @@ paddingBottom: 60,
     zIndex: 10,
   },
   statusText: {
+    fontSize: typography.fontSize.xs,
+    color: colors.textWhite,
+    fontWeight: typography.fontWeight.semiBold,
+  },
+  // ✅ NEW: Approval badge styles
+  approvalBadge: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: borderRadius.sm,
+    zIndex: 10,
+  },
+  approvalBadgePending: {
+    backgroundColor: '#F59E0B',
+  },
+  approvalBadgeRejected: {
+    backgroundColor: '#EF4444',
+  },
+  approvalBadgeText: {
     fontSize: typography.fontSize.xs,
     color: colors.textWhite,
     fontWeight: typography.fontWeight.semiBold,
@@ -505,6 +635,36 @@ paddingBottom: 60,
   carYear: {
     fontSize: typography.fontSize.sm,
     color: colors.textSecondary,
+  },
+  // ✅ NEW: Rejection box styles
+  rejectionBox: {
+    backgroundColor: '#FEE2E2',
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  rejectionTitle: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semiBold,
+    color: '#991B1B',
+    marginBottom: 2,
+  },
+  rejectionText: {
+    fontSize: typography.fontSize.sm,
+    color: '#991B1B',
+    lineHeight: 18,
+  },
+  // ✅ NEW: Pending info box styles
+  pendingInfoBox: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  pendingInfoText: {
+    fontSize: typography.fontSize.xs,
+    color: '#92400E',
+    lineHeight: 16,
   },
   carStats: {
     flexDirection: 'row',
@@ -627,26 +787,41 @@ paddingBottom: 60,
     fontWeight: typography.fontWeight.semiBold,
   },
   carImagePlaceholder: {
-  fontSize: 60,
-  textAlign: 'center',
-},
-availabilityButton: {
-  paddingHorizontal: 16,
-  paddingVertical: 10,
-  borderRadius: 8,
-  marginTop: 12, 
-  alignItems: 'center',
-},
-availableButton: {
-  backgroundColor: '#EF4444', 
-},
-unavailableButton: {
-  backgroundColor: '#10B981', 
-},
-availabilityText: {
-  color: '#fff',
-  fontSize: 14,
-  fontWeight: '600',
-  textAlign: 'center',
-},
+    fontSize: 60,
+    textAlign: 'center',
+  },
+  availabilityButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  availableButton: {
+    backgroundColor: '#EF4444',
+  },
+  unavailableButton: {
+    backgroundColor: '#10B981',
+  },
+  availabilityText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  // ✅ NEW: Edit button for rejected cars
+  editButton: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  editButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
 });

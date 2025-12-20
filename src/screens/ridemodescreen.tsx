@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,8 @@ interface RideModeScreenProps {
   onNavigateBack: () => void;
   onContinue: (rideModeData: any) => void;
   tripData?: any;
+   savedFormData?: any;  // ← ADD
+  onFormDataChange?: (data: any) => void; 
 }
 
 interface EscortCount {
@@ -24,12 +26,25 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({
   onNavigateBack,
   onContinue,
   tripData,
+   savedFormData,
+  onFormDataChange,
 }) => {
-  const [escortCounts, setEscortCounts] = useState<EscortCount>({
-    legion: 0,
-    private: 0,
-  });
-  const [manualHiluxCount, setManualHiluxCount] = useState(0); // ✅ Manual override
+ const [escortCounts, setEscortCounts] = useState<EscortCount>(
+  savedFormData?.escortCounts || { legion: 0, private: 0 }
+);
+const [manualHiluxCount, setManualHiluxCount] = useState(
+  savedFormData?.manualHiluxCount || 0
+);
+
+// Save form data when anything changes
+useEffect(() => {
+  if (onFormDataChange) {
+    onFormDataChange({
+      escortCounts,
+      manualHiluxCount,
+    });
+  }
+}, [escortCounts, manualHiluxCount]);
 
   const HILUX_PRICE_PER_DAY = 80000;
 

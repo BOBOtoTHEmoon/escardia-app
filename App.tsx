@@ -62,11 +62,12 @@ import { VendorAnalyticsScreen } from './src/screens/vendoranalyticsscreen';
 import { VendorNotificationPreferencesScreen } from './src/screens/vendornotificationsscreen';
 import { VendorTermsAndPrivacyScreen } from './src/screens/vendortermsandprivacyscreen';
 import { VendorHelpAndSupportScreen } from './src/screens/vendorhelpandsupportscreen';
+import { AddMoneyScreen } from './src/screens/addmoneyscreen';
 
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState <
-   'splash' |'welcome' |'onboarding'| 'vendorOnboarding' | 'vendorAccountCreation' | 'myFleet' |'vendorSignIn'|'vendorPhoneVerification'| 'vendorBusinessRegistration'|'vendorIDVerification'|'vendorBookings'|'vendorBookingDetail'| 'vendorCarDetail'|'vendorDashboard'|'vendorProfile'| 'vendorEarnings'|'addCar'| 'manageDrivers'| 'withdrawFunds'|'editCar' |'signup' | 'notifications' | 'signin' | 'verify' | 'home' | 'profile' | 'carDetails' | 'tripDetails' | 'rideMode'| 'payment' | 'confirmation' | 'cars' | 'trips'| 'search' | 'favorites' | 'support' | 'contactUs' | 'faq' | 'policies'|'securityLoginSafety' | 'safetyTips' | 'changePassword'| 'chatWithUs'| 'wallet' | 'transactions'| 'tripDetail' | 'editTrip' | 'tripBooking' | 'editTrip' |'cardPayment' | 'bankTransfer'| 'vendorSettings' | 'vendorBankDetails' | 'vendorDocuments' | 'vendorAnalytics' | 'vendorNotificationPreferences' | 'vendorTermsAndPrivacy' | 'vendorHelpAndSupport'
+   'splash' |'welcome' |'onboarding'| 'vendorOnboarding' | 'vendorAccountCreation' | 'myFleet' |'vendorSignIn'|'vendorPhoneVerification'| 'vendorBusinessRegistration'|'vendorIDVerification'|'vendorBookings'|'vendorBookingDetail'| 'vendorCarDetail'|'vendorDashboard'|'vendorProfile'| 'vendorEarnings'|'addCar'| 'manageDrivers'| 'withdrawFunds'|'editCar' |'signup' | 'notifications' | 'signin' | 'verify' | 'home' | 'profile' | 'carDetails' | 'tripDetails' | 'rideMode'| 'payment' | 'confirmation' | 'cars' | 'trips'| 'search' | 'favorites' | 'support' | 'contactUs' | 'faq' | 'policies'|'securityLoginSafety' | 'safetyTips' | 'changePassword'| 'chatWithUs'| 'wallet' | 'transactions'| 'tripDetail' | 'editTrip' | 'tripBooking' | 'editTrip' |'cardPayment' | 'bankTransfer'| 'vendorSettings' | 'vendorBankDetails' | 'vendorDocuments' | 'vendorAnalytics' | 'vendorNotificationPreferences' | 'vendorTermsAndPrivacy' | 'vendorHelpAndSupport'| 'addMoney' 
   >('splash');
   
   const [user, setUser] = useState<any>(null);
@@ -82,6 +83,19 @@ export default function App() {
   const [selectedCarId, setSelectedCarId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
   const [vendorAccountData, setVendorAccountData] = useState<VendorAccountData | null>(null);
+  const [bookingFormData, setBookingFormData] = useState<any>({
+  // Trip booking data
+  pickupMethod: 'vendor',
+  rateType: 'day',
+  deliveryAddress: '',
+  startDate: null,
+  endDate: null,
+  startTime: null,
+  stopTime: null,
+  // Security data
+  escortCounts: { legion: 0, private: 0 },
+  manualHiluxCount: 0,
+});
 
   // Listen for auth state changes
   useEffect(() => {
@@ -109,9 +123,18 @@ export default function App() {
     setCurrentScreen('verify');
   };
 
-  const handleSignInSuccess = () => {
-    setCurrentScreen('home');
-  };
+  const handleSignInSuccess = async () => {
+  try {
+    const { savePushToken } = await import('./src/services/notificationService');
+    const user = auth.currentUser;
+    if (user) {
+      await savePushToken(user.uid, 'user');
+    }
+  } catch (error) {
+    console.log('Push token error:', error);
+  }
+  setCurrentScreen('home');
+};
 
   const handleNavigateToSignIn = () => {
     setCurrentScreen('signin');
@@ -299,6 +322,19 @@ export default function App() {
           bookingId: result.id,
         }));
         setCurrentScreen('confirmation');
+
+  setBookingFormData({
+        pickupMethod: 'vendor',
+        rateType: 'day',
+        deliveryAddress: '',
+        startDate: null,
+        endDate: null,
+        startTime: null,
+        stopTime: null,
+        escortCounts: { legion: 0, private: 0 },
+        manualHiluxCount: 0,
+      });
+
       } else {
         alert('Booking failed: ' + result.error);
       }
@@ -422,13 +458,15 @@ const handleVendorAccountCreation = (data: VendorAccountData) => {
           }}
         />
       )}
-      {currentScreen === 'rideMode' && (
-        <RideModeScreen
-          onNavigateBack={() => setCurrentScreen('tripBooking')}
-          onContinue={handleContinueToPayment}
-          tripData={bookingData}
-        />
-      )}
+     {currentScreen === 'rideMode' && (
+  <RideModeScreen
+    onNavigateBack={() => setCurrentScreen('tripBooking')}
+    onContinue={handleContinueToPayment}
+    tripData={bookingData}
+    savedFormData={bookingFormData}
+    onFormDataChange={(data: any) => setBookingFormData((prev: any) => ({ ...prev, ...data }))}
+  />
+)}
       {currentScreen === 'payment' && (
         <PaymentDetailsScreen
           onNavigateBack={() => setCurrentScreen('rideMode')}
@@ -593,11 +631,12 @@ const handleVendorAccountCreation = (data: VendorAccountData) => {
         />
       )}
       {currentScreen === 'wallet' && (
-        <WalletScreen
-          onNavigateBack={() => setCurrentScreen('profile')}
-          onNavigateToTransactions={() => setCurrentScreen('transactions')}
-        />
-      )}
+  <WalletScreen
+    onNavigateBack={() => setCurrentScreen('profile')}
+    onNavigateToTransactions={() => setCurrentScreen('transactions')}
+    onNavigateToAddMoney={() => setCurrentScreen('addMoney')}
+  />
+)}
 
       {currentScreen === 'transactions' && <TransactionsScreen onNavigateBack={() => setCurrentScreen('wallet')} />}
       {currentScreen === 'tripDetail' && selectedTrip && (
@@ -607,13 +646,15 @@ const handleVendorAccountCreation = (data: VendorAccountData) => {
           onEditTrip={() => setCurrentScreen('editTrip')}
         />
       )}
-      {currentScreen === 'tripBooking' && selectedCar && (
-        <TripBookingScreen
-          carData={selectedCar}
-          onNavigateBack={() => setCurrentScreen('carDetails')}
-          onContinue={handleContinueToRideMode}
-        />
-      )}
+    {currentScreen === 'tripBooking' && selectedCar && (
+  <TripBookingScreen
+    carData={selectedCar}
+    onNavigateBack={() => setCurrentScreen('carDetails')}
+    onContinue={handleContinueToRideMode}
+    savedFormData={bookingFormData}
+    onFormDataChange={(data: any) => setBookingFormData((prev: any) => ({ ...prev, ...data }))}
+  />
+)}
       {currentScreen === 'editTrip' && selectedTrip && (
         <EditTripScreen
           tripData={selectedTrip}
@@ -632,20 +673,33 @@ const handleVendorAccountCreation = (data: VendorAccountData) => {
         />
       )}
       {currentScreen === 'cardPayment' && (
-        <CardPaymentScreen
-          onNavigateBack={() => setCurrentScreen('payment')}
-          onPaymentComplete={handleMakePayment}
-          totalAmount={paymentAmount}
-        />
-      )}
-
-      {currentScreen === 'bankTransfer' && (
-        <BankTransferScreen
-          onNavigateBack={() => setCurrentScreen('payment')}
-          onPaymentComplete={handleMakePayment}
-          totalAmount={paymentAmount}
-        />
-      )}
+  <CardPaymentScreen
+    onNavigateBack={() => setCurrentScreen('payment')}
+    onPaymentComplete={handleMakePayment}
+    totalAmount={paymentAmount}
+    bookingData={{
+      bookingId: bookingData?.bookingId || 'pending',
+      vendorId: bookingData?.tripData?.car?.vendorId || '',
+      carId: bookingData?.tripData?.car?.id || '',
+      carName: `${bookingData?.tripData?.car?.brand || ''} ${bookingData?.tripData?.car?.model || ''}`,
+      duration: `${bookingData?.tripData?.duration || 0} ${bookingData?.tripData?.durationType || 'day'}s`,
+    }}
+  />
+)}
+    {currentScreen === 'bankTransfer' && (
+  <BankTransferScreen
+    onNavigateBack={() => setCurrentScreen('payment')}
+    onPaymentComplete={handleMakePayment}
+    totalAmount={paymentAmount}
+    bookingData={{
+      bookingId: bookingData?.bookingId || 'pending',
+      vendorId: bookingData?.tripData?.car?.vendorId || '',
+      carId: bookingData?.tripData?.car?.id || '',
+      carName: `${bookingData?.tripData?.car?.brand || ''} ${bookingData?.tripData?.car?.model || ''}`,
+      duration: `${bookingData?.tripData?.duration || 0} ${bookingData?.tripData?.durationType || 'day'}s`,
+    }}
+  />
+)}
       {currentScreen === 'vendorOnboarding' && (
         <VendorOnboardingScreen
           onComplete={() => setCurrentScreen('vendorAccountCreation')}
@@ -716,31 +770,39 @@ const handleVendorAccountCreation = (data: VendorAccountData) => {
           }}
         />
       )}
-      {currentScreen === 'vendorSignIn' && (
-        <VendorSignInScreen
-          onSignInSuccess={async () => {
-            const { getVendorProfile } = await import('./src/services/vendorauthservice');
-            const user = auth.currentUser;
+{currentScreen === 'vendorSignIn' && (
+  <VendorSignInScreen
+    onSignInSuccess={async () => {
+      const { getVendorProfile } = await import('./src/services/vendorauthservice');
+      const { savePushToken } = await import('./src/services/notificationService');  // ← ADD THIS
+      const user = auth.currentUser;
 
-            if (user) {
-              console.log('🔵 Loading vendor profile...');
-              const result = await getVendorProfile(user.uid);
+      if (user) {
+        // Save push token ← ADD THIS
+        try {
+          await savePushToken(user.uid, 'vendor');
+        } catch (error) {
+          console.log('Push token error:', error);
+        }
 
-              if (result.success && result.data) {
-                setVendorProfile(result.data);
-                console.log('✅ Vendor profile loaded:', result.data);
-              }
-            }
+        console.log('🔵 Loading vendor profile...');
+        const result = await getVendorProfile(user.uid);
 
-            setCurrentScreen('vendorDashboard');
-          }}
-          onNavigateToSignUp={() => setCurrentScreen('vendorAccountCreation')}
-          onForgotPassword={() => {
-            alert('Password reset coming soon!');
-          }}
-          onNavigateBack={() => setCurrentScreen('vendorAccountCreation')}
-        />
-      )}
+        if (result.success && result.data) {
+          setVendorProfile(result.data);
+          console.log('✅ Vendor profile loaded:', result.data);
+        }
+      }
+
+      setCurrentScreen('vendorDashboard');
+    }}
+    onNavigateToSignUp={() => setCurrentScreen('vendorAccountCreation')}
+    onForgotPassword={() => {
+      alert('Password reset coming soon!');
+    }}
+    onNavigateBack={() => setCurrentScreen('vendorAccountCreation')}
+  />
+)}
       {currentScreen === 'vendorDashboard' && (
         <VendorDashboardScreen
           vendorName={vendorProfile?.businessName || vendorProfile?.firstName || 'Vendor'}
@@ -880,6 +942,12 @@ const handleVendorAccountCreation = (data: VendorAccountData) => {
       {currentScreen === 'vendorHelpAndSupport' && (
         <VendorHelpAndSupportScreen onNavigateBack={() => setCurrentScreen('vendorProfile')} />
       )}
+      {currentScreen === 'addMoney' && (
+  <AddMoneyScreen
+    onNavigateBack={() => setCurrentScreen('wallet')}
+    onSuccess={() => setCurrentScreen('wallet')}
+  />
+)}
     </>
   );
 }

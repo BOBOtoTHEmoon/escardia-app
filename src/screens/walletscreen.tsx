@@ -1,67 +1,110 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Image } from 'react-native';
+// ============================================
+// ESCARDIA - WALLET SCREEN (Updated)
+// File: src/screens/WalletScreen.tsx
+// ============================================
+
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Image,
+  RefreshControl,
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
+import { colors, typography, spacing, borderRadius } from '../constants';
+import { auth } from '../config/firebase';
+import {
+  getOrCreateWallet,
+  getRecentTransactions,
+  formatAmount,
+  formatTransactionDate,
+  getTransactionTitle,
+  getTransactionSubtitle,
+  Wallet,
+  Transaction,
+} from '../services/walletService';
 
 interface WalletScreenProps {
   onNavigateBack: () => void;
   onNavigateToTransactions: () => void;
-}
-
-interface Transaction {
-  id: string;
-  title: string;
-  subtitle: string;
-  amount: string;
-  time: string;
-  type: 'credit' | 'debit';
-  icon: string;
+  onNavigateToAddMoney?: () => void;
 }
 
 export const WalletScreen: React.FC<WalletScreenProps> = ({
   onNavigateBack,
   onNavigateToTransactions,
+  onNavigateToAddMoney,
 }) => {
-  // Mock wallet balance - replace with actual data from your backend
-  const walletBalance = '250,000.69';
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Recent transactions - replace with actual data
-  const recentTransactions: Transaction[] = [
-    {
-      id: '1',
-      title: 'Payment for Range Rover S...',
-      subtitle: 'Payment with card',
-      amount: '₦270,000',
-      time: '02:33AM',
-      type: 'debit',
-      icon: 'card',
-    },
-    {
-      id: '2',
-      title: 'Escardia wallet credited',
-      subtitle: 'Payment with card',
-      amount: '₦300,000',
-      time: '06:33PM',
-      type: 'credit',
-      icon: 'wallet',
-    },
-    {
-      id: '3',
-      title: 'Payment for Lamborghini...',
-      subtitle: 'Payment with Wallet',
-      amount: '₦400,000',
-      time: '08:33AM',
-      type: 'debit',
-      icon: 'wallet',
-    },
-    {
-      id: '4',
-      title: 'Escardia wallet credited',
-      subtitle: 'Payment with card',
-      amount: '₦400,000',
-      time: '06:33PM',
-      type: 'credit',
-      icon: 'card',
-    },
-  ];
+  // Load wallet data
+  const loadWalletData = useCallback(async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        console.log('No user logged in');
+        setLoading(false);
+        return;
+      }
+
+      // Load wallet
+      const walletData = await getOrCreateWallet(user.uid);
+      setWallet(walletData);
+
+      // Load recent transactions
+      const recentTxns = await getRecentTransactions(user.uid, 5);
+      setTransactions(recentTxns);
+    } catch (error) {
+      console.error('Error loading wallet data:', error);
+      Alert.alert('Error', 'Failed to load wallet data. Please try again.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWalletData();
+  }, [loadWalletData]);
+
+  // Pull to refresh
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadWalletData();
+  };
+
+  // Handle add money press
+  const handleAddMoney = () => {
+    if (onNavigateToAddMoney) {
+      onNavigateToAddMoney();
+    }
+  };
+
+  // Loading state
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
+            <Text style={styles.backIcon}>←</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Wallet</Text>
+          <View style={styles.placeholder} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading wallet...</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -74,57 +117,87 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView
+        style={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+      >
         {/* Wallet Card */}
         <View style={styles.walletCard}>
           <View style={styles.walletHeader}>
-            <Text style={styles.walletLabel}>NGN Wallet</Text>
-            <TouchableOpacity>
-              <Image
-                source={require('../../assets/images/edit.png')}
-                style={styles.editIcon}
-                resizeMode="contain"
-              />
-                <TouchableOpacity> 
-                  <Image
-                  source={require('../../assets/images/headerpattern.png')}
-                  style={styles.promoPattern}
-                  resizeMode="contain"
-                />
-                </TouchableOpacity>
+            <Text style={styles.walletLabel}>Available Balance</Text>
+            <View style={styles.walletBadge}>
+              <Text style={styles.walletBadgeText}>NGN</Text>
+            </View>
+          </View>
+
+          <Text style={styles.walletBalance}>
+            ₦{formatAmount(wallet?.balance || 0)}
+          </Text>
+
+          <View style={styles.walletActions}>
+            <TouchableOpacity style={styles.addMoneyButton} onPress={handleAddMoney}>
+              <Text style={styles.addMoneyIcon}>+</Text>
+              <Text style={styles.addMoneyText}>Add Money</Text>
             </TouchableOpacity>
           </View>
-          
-          <Text style={styles.walletBalance}>₦{walletBalance}</Text>
-          
-          <TouchableOpacity style={styles.addMoneyButton}>
-            <Text style={styles.addMoneyText}>Add Money</Text>
-          </TouchableOpacity>
         </View>
 
-        {/* Bank Account Details */}
-        <View style={styles.bankSection}>
-          <Text style={styles.sectionTitle}>Bank Account Details</Text>
-          
-          <View style={styles.bankDetails}>
-            <View style={styles.bankRow}>
-              <Text style={styles.bankLabel}>Bank Name</Text>
-              <Text style={styles.bankValue}>Keystone Bank</Text>
-            </View>
-            
-            <View style={styles.bankRow}>
-              <Text style={styles.bankLabel}>Account Number</Text>
-              <View style={styles.accountNumberRow}>
-                <Text style={styles.bankValue}>0865221746</Text>
-                <TouchableOpacity>
-                  <Image
-                    source={require('../../assets/images/copy.png')}
-                    style={styles.copyIcon}
-                    resizeMode="contain"
-                  />
-                </TouchableOpacity>
+        {/* Quick Actions */}
+        <View style={styles.quickActionsSection}>
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <View style={styles.actionsGrid}>
+            <TouchableOpacity style={styles.actionItem} onPress={handleAddMoney}>
+              <View style={[styles.actionIcon, { backgroundColor: '#10B981' + '20' }]}>
+                <Text style={styles.actionIconText}>💳</Text>
               </View>
-            </View>
+              <Text style={styles.actionLabel}>Add Money</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionItem} onPress={onNavigateToTransactions}>
+              <View style={[styles.actionIcon, { backgroundColor: '#3B82F6' + '20' }]}>
+                <Text style={styles.actionIconText}>📊</Text>
+              </View>
+              <Text style={styles.actionLabel}>History</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionItem}
+              onPress={() => Alert.alert('Coming Soon', 'Send money feature coming soon!')}
+            >
+              <View style={[styles.actionIcon, { backgroundColor: '#8B5CF6' + '20' }]}>
+                <Text style={styles.actionIconText}>📤</Text>
+              </View>
+              <Text style={styles.actionLabel}>Send</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionItem}
+              onPress={() => Alert.alert('Help', 'Contact support@escardia.com for wallet issues.')}
+            >
+              <View style={[styles.actionIcon, { backgroundColor: '#F59E0B' + '20' }]}>
+                <Text style={styles.actionIconText}>❓</Text>
+              </View>
+              <Text style={styles.actionLabel}>Help</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Info Box */}
+        <View style={styles.infoBox}>
+          <Text style={styles.infoIcon}>💡</Text>
+          <View style={styles.infoContent}>
+            <Text style={styles.infoTitle}>Pay faster with your wallet</Text>
+            <Text style={styles.infoText}>
+              Add money to your wallet and enjoy instant payments when booking cars.
+            </Text>
           </View>
         </View>
 
@@ -132,38 +205,72 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({
         <View style={styles.activitySection}>
           <View style={styles.activityHeader}>
             <Text style={styles.sectionTitle}>Recent Activity</Text>
-            <TouchableOpacity onPress={onNavigateToTransactions}>
-              <Text style={styles.seeAllText}>See All</Text>
-            </TouchableOpacity>
+            {transactions.length > 0 && (
+              <TouchableOpacity onPress={onNavigateToTransactions}>
+                <Text style={styles.seeAllText}>See All</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
-          {recentTransactions.map((transaction) => (
-            <View key={transaction.id} style={styles.transactionItem}>
-              <View style={styles.transactionIcon}>
-                <Image
-                  source={require('../../assets/images/transaction.png')}
-                  style={styles.transactionIconImage}
-                  resizeMode="contain"
-                />
-              </View>
-              
-              <View style={styles.transactionDetails}>
-                <Text style={styles.transactionTitle}>{transaction.title}</Text>
-                <Text style={styles.transactionSubtitle}>{transaction.subtitle}</Text>
-              </View>
-              
-              <View style={styles.transactionRight}>
-                <Text style={[
-                  styles.transactionAmount,
-                  transaction.type === 'credit' ? styles.creditAmount : styles.debitAmount
-                ]}>
-                  {transaction.amount}
-                </Text>
-                <Text style={styles.transactionTime}>{transaction.time}</Text>
-              </View>
+          {transactions.length === 0 ? (
+            <View style={styles.emptyTransactions}>
+              <Text style={styles.emptyIcon}>📋</Text>
+              <Text style={styles.emptyTitle}>No Transactions Yet</Text>
+              <Text style={styles.emptyText}>
+                Add money to your wallet to get started
+              </Text>
+              <TouchableOpacity style={styles.emptyButton} onPress={handleAddMoney}>
+                <Text style={styles.emptyButtonText}>+ Add Money</Text>
+              </TouchableOpacity>
             </View>
-          ))}
+          ) : (
+            transactions.map((transaction) => (
+              <View key={transaction.id} style={styles.transactionItem}>
+                <View
+                  style={[
+                    styles.transactionIcon,
+                    transaction.type === 'credit'
+                      ? styles.transactionIconCredit
+                      : styles.transactionIconDebit,
+                  ]}
+                >
+                  <Text style={styles.transactionIconText}>
+                    {transaction.type === 'credit' ? '↓' : '↑'}
+                  </Text>
+                </View>
+
+                <View style={styles.transactionDetails}>
+                  <Text style={styles.transactionTitle} numberOfLines={1}>
+                    {getTransactionTitle(transaction)}
+                  </Text>
+                  <Text style={styles.transactionSubtitle}>
+                    {getTransactionSubtitle(transaction)}
+                  </Text>
+                </View>
+
+                <View style={styles.transactionRight}>
+                  <Text
+                    style={[
+                      styles.transactionAmount,
+                      transaction.type === 'credit'
+                        ? styles.creditAmount
+                        : styles.debitAmount,
+                    ]}
+                  >
+                    {transaction.type === 'credit' ? '+' : '-'}₦
+                    {formatAmount(transaction.amount)}
+                  </Text>
+                  <Text style={styles.transactionTime}>
+                    {formatTransactionDate(transaction.createdAt)}
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
         </View>
+
+        {/* Bottom Spacing */}
+        <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
@@ -179,12 +286,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 50,
+    paddingTop: 60,
     paddingBottom: 20,
     backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   backButton: {
     padding: 8,
+    marginLeft: -8,
   },
   backIcon: {
     fontSize: 24,
@@ -202,9 +312,21 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+
+  // Wallet Card
   walletCard: {
     backgroundColor: '#1E3A8A',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     marginBottom: 24,
   },
@@ -212,71 +334,119 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   walletLabel: {
     fontSize: 14,
-    color: '#FFFFFF',
-    opacity: 0.8,
+    color: 'rgba(255,255,255,0.8)',
   },
-  editIcon: {
-    width: 20,
-    height: 20,
-    tintColor: '#FFFFFF',
+  walletBadge: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  walletBadgeText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '500',
   },
   walletBalance: {
     fontSize: 36,
     fontWeight: 'bold',
     color: '#FFFFFF',
     marginBottom: 20,
+    marginTop: 8,
+  },
+  walletActions: {
+    flexDirection: 'row',
   },
   addMoneyButton: {
+    flex: 1,
     backgroundColor: '#10B981',
-    borderRadius: 8,
-    paddingVertical: 12,
+    borderRadius: 12,
+    paddingVertical: 14,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addMoneyIcon: {
+    fontSize: 18,
+    color: '#FFFFFF',
+    marginRight: 8,
+    fontWeight: 'bold',
   },
   addMoneyText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
   },
-  bankSection: {
+
+  // Quick Actions
+  quickActionsSection: {
     marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
     color: '#000',
     marginBottom: 12,
   },
-  bankDetails: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-  },
-  bankRow: {
-    marginBottom: 16,
-  },
-  bankLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  bankValue: {
-    fontSize: 15,
-    color: '#000',
-    fontWeight: '500',
-  },
-  accountNumberRow: {
+  actionsGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
   },
-  copyIcon: {
-    width: 16,
-    height: 16,
+  actionItem: {
+    width: '23%',
+    alignItems: 'center',
   },
+  actionIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  actionIconText: {
+    fontSize: 22,
+  },
+  actionLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.text,
+    textAlign: 'center',
+  },
+
+  // Info Box
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 24,
+  },
+  infoIcon: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  infoContent: {
+    flex: 1,
+  },
+  infoTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E40AF',
+    marginBottom: 4,
+  },
+  infoText: {
+    fontSize: 13,
+    color: '#3B82F6',
+    lineHeight: 18,
+  },
+
+  // Activity Section
   activitySection: {
     marginBottom: 24,
   },
@@ -284,53 +454,91 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   seeAllText: {
     fontSize: 14,
-    color: '#3B82F6',
-    fontWeight: '500',
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  emptyTransactions: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+  },
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  emptyButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  emptyButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   transactionItem: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
+    borderRadius: 14,
+    marginBottom: 10,
   },
   transactionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#E8F0FE',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 14,
   },
-  transactionIconImage: {
-    width: 20,
-    height: 20,
+  transactionIconCredit: {
+    backgroundColor: '#D1FAE5',
+  },
+  transactionIconDebit: {
+    backgroundColor: '#FEE2E2',
+  },
+  transactionIconText: {
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   transactionDetails: {
     flex: 1,
   },
   transactionTitle: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 15,
+    fontWeight: '600',
     color: '#000',
     marginBottom: 4,
   },
   transactionSubtitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#6B7280',
   },
   transactionRight: {
     alignItems: 'flex-end',
   },
   transactionAmount: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     marginBottom: 4,
   },
   creditAmount: {
@@ -341,13 +549,8 @@ const styles = StyleSheet.create({
   },
   transactionTime: {
     fontSize: 12,
-    color: '#6B7280',
+    color: '#9CA3AF',
   },
-  promoPattern: {
-  position: 'absolute',
-  width: '90%',
-  height: '200%',
-  right: -49,
-  opacity: 1,
-   },
 });
+
+export default WalletScreen;

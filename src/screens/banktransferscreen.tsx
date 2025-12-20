@@ -1,66 +1,179 @@
-// ============================================
-// BANK TRANSFER SCREEN
-// ============================================
-// File: src/screens/BankTransferScreen.tsx
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Clipboard,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '../constants';
 import { Button } from '../components';
+import { PaystackWebView } from '../components/PaystackWebView';
+import { 
+  initializeBookingPayment, 
+  verifyPayment,
+  calculatePaymentSplit,
+} from '../services/paystackService';
+import { creditWallet } from '../services/walletService';
+import { auth, db } from '../config/firebase';
+import { doc, updateDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 
 interface BankTransferScreenProps {
   onNavigateBack: () => void;
-  onPaymentComplete: () => void;
+  onPaymentComplete: (paymentMethod: string) => void;
   totalAmount: number;
+  bookingData?: {
+    bookingId: string;
+    vendorId: string;
+    carId: string;
+    carName: string;
+    duration: string;
+  };
 }
 
 export const BankTransferScreen: React.FC<BankTransferScreenProps> = ({
   onNavigateBack,
   onPaymentComplete,
   totalAmount,
+  bookingData,
 }) => {
-  const [hasCopied, setHasCopied] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [showPaystack, setShowPaystack] = useState(false);
+  const [authorizationUrl, setAuthorizationUrl] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [userEmail, setUserEmail] = useState('');
 
-  // Bank account details (replace with your actual details)
-  const bankDetails = {
-    bankName: 'Guarantee Trust Bank',
-    accountNumber: '0123456789',
-    accountName: 'Escardia Technologies Ltd',
+  // Get user email on mount
+  useEffect(() => {
+    const fetchUserEmail = async () => {
+      const user = auth.currentUser;
+      if (user) {
+        if (user.email) {
+          setUserEmail(user.email);
+        } else {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            setUserEmail(userDoc.data().email || '');
+          }
+        }
+      }
+    };
+    fetchUserEmail();
+  }, []);
+
+  // Calculate split
+  const split = calculatePaymentSplit(totalAmount);
+
+  // Initialize payment with bank transfer channel
+  const handlePayWithBank = async () => {
+    if (!userEmail) {
+      Alert.alert('Error', 'Could not retrieve your email. Please try again.');
+      return;
+    }
+
+    if (!bookingData) {
+      Alert.alert('Error', 'Booking data is missing.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        Alert.alert('Error', 'Please log in to continue.');
+        setLoading(false);
+        return;
+      }
+
+      // Initialize payment with Paystack (bank transfer channel)
+      const result = await initializeBookingPayment(
+        userEmail,
+        totalAmount,
+        {
+          bookingId: bookingData.bookingId,
+          userId: user.uid,
+          vendorId: bookingData.vendorId,
+          carId: bookingData.carId,
+          carName: bookingData.carName,
+          duration: bookingData.duration,
+        }
+      );
+
+      if (result.success && result.authorizationUrl) {
+        setAuthorizationUrl(result.authorizationUrl);
+        setPaymentReference(result.reference || '');
+        setShowPaystack(true);
+      } else {
+        Alert.alert('Payment Error', result.error || 'Failed to initialize payment');
+      }
+    } catch (error: any) {
+      console.error('Payment initialization error:', error);
+      Alert.alert('Error', error.message || 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const copyToClipboard = (text: string, field: string) => {
-    Clipboard.setString(text);
-    setHasCopied(field);
-    Alert.alert('Copied!', `${field} copied to clipboard`);
-    setTimeout(() => setHasCopied(null), 2000);
+  // Handle successful payment
+  const handlePaymentSuccess = async (reference: string) => {
+    setShowPaystack(false);
+    setLoading(true);
+
+    try {
+      // Verify payment with Paystack
+      const verification = await verifyPayment(reference);
+
+      if (verification.success) {
+        // Update booking status
+        if (bookingData?.bookingId && bookingData.bookingId !== 'pending') {
+          await updateDoc(doc(db, 'bookings', bookingData.bookingId), {
+            paymentStatus: 'paid',
+            paymentReference: reference,
+            paymentMethod: 'bank_transfer',
+            paidAt: serverTimestamp(),
+          });
+        }
+
+        // Credit vendor wallet (90%)
+        if (bookingData?.vendorId) {
+          await creditWallet(
+            bookingData.vendorId,
+            split.vendorAmount,
+            `Booking payment: ${bookingData.carName}`,
+            'booking_payment',
+            'bank_transfer',
+            reference
+          );
+        }
+
+        Alert.alert(
+          '✅ Payment Successful!',
+          `Your payment of ₦${totalAmount.toLocaleString()} has been processed.`,
+          [
+            {
+              text: 'Continue',
+              onPress: () => onPaymentComplete('bank'),
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Payment Verification Failed', verification.error || 'Please contact support.');
+      }
+    } catch (error: any) {
+      console.error('Payment verification error:', error);
+      Alert.alert('Error', 'Payment verification failed. Please contact support.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleConfirmPayment = () => {
-    Alert.alert(
-      'Confirm Payment',
-      'Have you completed the bank transfer?',
-      [
-        {
-          text: 'Not Yet',
-          style: 'cancel',
-        },
-        {
-          text: 'Yes, I have',
-          onPress: () => {
-            alert('We will verify your payment and confirm your booking shortly.');
-            onPaymentComplete();
-          },
-        },
-      ]
-    );
+  // Handle cancelled payment
+  const handlePaymentCancel = () => {
+    setShowPaystack(false);
+    Alert.alert('Payment Cancelled', 'You cancelled the payment. Please try again.');
   };
 
   return (
@@ -77,94 +190,100 @@ export const BankTransferScreen: React.FC<BankTransferScreenProps> = ({
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Amount Card */}
         <View style={styles.amountCard}>
-          <Text style={styles.amountLabel}>Amount to Transfer</Text>
+          <Text style={styles.amountLabel}>Amount to Pay</Text>
           <Text style={styles.amountText}>₦{totalAmount.toLocaleString()}</Text>
         </View>
 
-        {/* Instructions */}
+        {/* Payment Split Info */}
+        <View style={styles.splitCard}>
+          <Text style={styles.splitTitle}>Payment Breakdown</Text>
+          
+          <View style={styles.splitRow}>
+            <Text style={styles.splitLabel}>Car Rental</Text>
+            <Text style={styles.splitValue}>₦{split.vendorAmount.toLocaleString()}</Text>
+          </View>
+          
+          <View style={styles.splitRow}>
+            <Text style={styles.splitLabel}>Service Fee ({split.commissionRate}%)</Text>
+            <Text style={styles.splitValue}>₦{split.escardiaCommission.toLocaleString()}</Text>
+          </View>
+          
+          <View style={styles.divider} />
+          
+          <View style={styles.splitRow}>
+            <Text style={styles.totalLabel}>Total</Text>
+            <Text style={styles.totalValue}>₦{totalAmount.toLocaleString()}</Text>
+          </View>
+        </View>
+
+        {/* Booking Summary */}
+        {bookingData && bookingData.carName && (
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryTitle}>Booking Summary</Text>
+            <Text style={styles.summaryText}>🚗 {bookingData.carName}</Text>
+            <Text style={styles.summaryText}>⏱️ {bookingData.duration}</Text>
+          </View>
+        )}
+
+        {/* How It Works */}
         <View style={styles.instructionsCard}>
-          <Text style={styles.instructionsTitle}>📋 Transfer Instructions</Text>
+          <Text style={styles.instructionsTitle}>🏦 How Bank Transfer Works</Text>
           <Text style={styles.instructionsText}>
-            1. Open your banking app{'\n'}
-            2. Transfer the exact amount to the account below{'\n'}
-            3. Come back and click "I've Made the Transfer"{'\n'}
-            4. We'll verify and confirm your booking
+            1. Click "Pay with Bank Transfer" below{'\n'}
+            2. Select your bank from the list{'\n'}
+            3. You'll be redirected to your bank's page{'\n'}
+            4. Authorize the payment{'\n'}
+            5. Payment is confirmed instantly!
           </Text>
         </View>
 
-        {/* Bank Details */}
-        <View style={styles.bankDetailsCard}>
-          <Text style={styles.sectionTitle}>Bank Account Details</Text>
-
-          {/* Bank Name */}
-          <View style={styles.detailRow}>
-            <View style={styles.detailContent}>
-              <Text style={styles.detailLabel}>Bank Name</Text>
-              <Text style={styles.detailValue}>{bankDetails.bankName}</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.copyButton}
-              onPress={() => copyToClipboard(bankDetails.bankName, 'Bank Name')}>
-              <Text style={styles.copyButtonText}>
-                {hasCopied === 'Bank Name' ? '✓' : 'Copy'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Account Number */}
-          <View style={styles.detailRow}>
-            <View style={styles.detailContent}>
-              <Text style={styles.detailLabel}>Account Number</Text>
-              <Text style={styles.detailValue}>{bankDetails.accountNumber}</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.copyButton}
-              onPress={() => copyToClipboard(bankDetails.accountNumber, 'Account Number')}>
-              <Text style={styles.copyButtonText}>
-                {hasCopied === 'Account Number' ? '✓' : 'Copy'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Account Name */}
-          <View style={styles.detailRow}>
-            <View style={styles.detailContent}>
-              <Text style={styles.detailLabel}>Account Name</Text>
-              <Text style={styles.detailValue}>{bankDetails.accountName}</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.copyButton}
-              onPress={() => copyToClipboard(bankDetails.accountName, 'Account Name')}>
-              <Text style={styles.copyButtonText}>
-                {hasCopied === 'Account Name' ? '✓' : 'Copy'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Important Note */}
-        <View style={styles.noteCard}>
-          <Text style={styles.noteTitle}>⚠️ Important</Text>
-          <Text style={styles.noteText}>
-            • Transfer the EXACT amount shown above{'\n'}
-            • Payment verification may take 5-30 minutes{'\n'}
-            • Keep your transfer receipt for reference{'\n'}
-            • Contact support if payment isn't confirmed within 1 hour
+        {/* Supported Banks */}
+        <View style={styles.banksCard}>
+          <Text style={styles.banksTitle}>💳 Supported Banks</Text>
+          <Text style={styles.banksText}>
+            All Nigerian banks are supported including:{'\n'}
+            GTBank, Access Bank, Zenith Bank, First Bank, UBA, Kuda, OPay, and more.
           </Text>
         </View>
 
-        {/* Confirm Button */}
+        {/* Security Note */}
+        <View style={styles.securityNote}>
+          <Text style={styles.securityText}>
+            🔒 Your payment is secured with 256-bit SSL encryption via Paystack
+          </Text>
+        </View>
+
+        {/* Pay Button */}
         <Button
-          title="I've Made the Transfer"
-          onPress={handleConfirmPayment}
-          style={styles.confirmButton}
+          title={loading ? 'Processing...' : `Pay ₦${totalAmount.toLocaleString()} with Bank`}
+          onPress={handlePayWithBank}
+          disabled={loading}
         />
 
-        {/* Support Link */}
-        <TouchableOpacity style={styles.supportLink}>
-          <Text style={styles.supportText}>Need help? Contact Support</Text>
+        {loading && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Initializing payment...</Text>
+          </View>
+        )}
+
+        {/* Alternative Option */}
+        <TouchableOpacity 
+          style={styles.alternativeButton}
+          onPress={onNavigateBack}
+        >
+          <Text style={styles.alternativeText}>← Choose different payment method</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Paystack WebView Modal */}
+      <PaystackWebView
+        visible={showPaystack}
+        authorizationUrl={authorizationUrl}
+        reference={paymentReference}
+        onSuccess={handlePaymentSuccess}
+        onCancel={handlePaymentCancel}
+      />
     </View>
   );
 };
@@ -209,8 +328,8 @@ const styles = StyleSheet.create({
   },
   amountCard: {
     backgroundColor: colors.primary + '15',
-    borderRadius: borderRadius.md,
-    padding: spacing.lg,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
     marginBottom: spacing.lg,
     alignItems: 'center',
   },
@@ -220,14 +339,72 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   amountText: {
-    fontSize: typography.fontSize['3xl'],
+    fontSize: 36,
     fontWeight: typography.fontWeight.bold,
     color: colors.primary,
   },
+  splitCard: {
+    backgroundColor: colors.inputBackground,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  splitTitle: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.semiBold,
+    color: colors.text,
+    marginBottom: spacing.md,
+  },
+  splitRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  splitLabel: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+  },
+  splitValue: {
+    fontSize: typography.fontSize.sm,
+    color: colors.text,
+    fontWeight: typography.fontWeight.medium,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.md,
+  },
+  totalLabel: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.text,
+  },
+  totalValue: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.primary,
+  },
+  summaryCard: {
+    backgroundColor: colors.inputBackground,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  summaryTitle: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.semiBold,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  summaryText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
   instructionsCard: {
     backgroundColor: colors.info + '15',
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
     marginBottom: spacing.lg,
   },
   instructionsTitle: {
@@ -239,78 +416,51 @@ const styles = StyleSheet.create({
   instructionsText: {
     fontSize: typography.fontSize.sm,
     color: colors.textSecondary,
-    lineHeight: typography.fontSize.sm * 1.6,
+    lineHeight: 22,
   },
-  bankDetailsCard: {
+  banksCard: {
     backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
     marginBottom: spacing.lg,
   },
-  sectionTitle: {
-    fontSize: typography.fontSize.lg,
+  banksTitle: {
+    fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.semiBold,
     color: colors.text,
-    marginBottom: spacing.md,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
     marginBottom: spacing.sm,
   },
-  detailContent: {
-    flex: 1,
-  },
-  detailLabel: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  detailValue: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-  },
-  copyButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.sm,
-  },
-  copyButtonText: {
-    color: colors.textWhite,
+  banksText: {
     fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.medium,
+    color: colors.textSecondary,
+    lineHeight: 20,
   },
-  noteCard: {
-    backgroundColor: colors.warning + '20',
-    borderRadius: borderRadius.md,
+  securityNote: {
     padding: spacing.md,
+    backgroundColor: colors.success + '15',
+    borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
   },
-  noteTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  noteText: {
+  securityText: {
     fontSize: typography.fontSize.sm,
     color: colors.textSecondary,
-    lineHeight: typography.fontSize.sm * 1.5,
+    textAlign: 'center',
   },
-  confirmButton: {
-    marginBottom: spacing.md,
-  },
-  supportLink: {
+  loadingOverlay: {
+    marginTop: spacing.lg,
     alignItems: 'center',
-    paddingVertical: spacing.md,
   },
-  supportText: {
+  loadingText: {
+    marginTop: spacing.sm,
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+  },
+  alternativeButton: {
+    marginTop: spacing.lg,
+    alignItems: 'center',
+    padding: spacing.md,
+  },
+  alternativeText: {
     fontSize: typography.fontSize.sm,
     color: colors.primary,
     fontWeight: typography.fontWeight.medium,
