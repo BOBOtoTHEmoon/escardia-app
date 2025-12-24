@@ -8,8 +8,8 @@ export const PAYSTACK_CONFIG = {
   // Callback URLs
   CALLBACK_URL: 'https://your-domain.com/api/paystack/callback', // Your webhook URL
   
-  // Commission rate (10%)
-  ESCARDIA_COMMISSION: 0.10,
+  // Commission rate (13%)
+  ESCARDIA_COMMISSION: 0.13,
 };
 export interface PaystackInitializeResponse {
   status: boolean;

@@ -28,7 +28,6 @@ interface PricingBreakdown {
     total: number;
   };
   subtotal: number;
-  platformFee: number;
   serviceFee: number;
   total: number;
   breakdown: Array<{
@@ -39,7 +38,6 @@ interface PricingBreakdown {
 
 // Constants
 const DELIVERY_FEE = 5000; // ₦5,000 flat fee for delivery
-const PLATFORM_FEE_PERCENTAGE = 0.10; // 10% of base rental
 const SERVICE_FEE = 2000; // ₦2,000 flat service fee
 
 /**Calculate complete trip pricing breakdown*/
@@ -92,14 +90,11 @@ export const calculateTripPrice = (input: PricingInput): PricingBreakdown => {
   // 4. Calculate subtotal (before platform and service fees)
   const subtotal = baseRental + deliveryFee + escortFeesBreakdown.total;
 
-  // 5. Calculate platform fee (10% of base rental only)
-  const platformFee = Math.round(baseRental * PLATFORM_FEE_PERCENTAGE);
-
   // 6. Service fee
   const serviceFee = SERVICE_FEE;
 
   // 7. Calculate total
-  const total = subtotal + platformFee + serviceFee;
+ const total = subtotal + serviceFee;
 
   // 8. Build breakdown array for display
   const breakdown: Array<{ label: string; amount: number }> = [
@@ -142,11 +137,6 @@ export const calculateTripPrice = (input: PricingInput): PricingBreakdown => {
   }
 
   breakdown.push({
-    label: 'Platform Fee (10%)',
-    amount: platformFee,
-  });
-
-  breakdown.push({
     label: 'Service Fee',
     amount: serviceFee,
   });
@@ -156,7 +146,6 @@ export const calculateTripPrice = (input: PricingInput): PricingBreakdown => {
     deliveryFee,
     escortFees: escortFeesBreakdown,
     subtotal,
-    platformFee,
     serviceFee,
     total,
     breakdown,
@@ -188,7 +177,6 @@ export const getQuickPrice = (
   }
   
   // Add platform and service fees
-  total += Math.round(pricePerDay * days * PLATFORM_FEE_PERCENTAGE);
   total += SERVICE_FEE;
   
   return total;

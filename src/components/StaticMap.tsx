@@ -1,10 +1,3 @@
-// ============================================
-// ESCARDIA - STATIC MAP COMPONENT (Fixed)
-// File: src/components/StaticMap.tsx
-// ============================================
-// Uses known coordinates to avoid rate limits
-// ============================================
-
 import React, { useState, useEffect } from 'react';
 import {
   View,

@@ -17,6 +17,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { colors, typography, spacing, borderRadius } from '../constants';
 import { doc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../config/firebase';
+import { SearchableDropdown } from '../components/SearchableDropdown';
+import { CAR_BRANDS, getModelsForBrand } from '../data/carData';
+
 
 interface AddCarScreenProps {
   onNavigateBack: () => void;
@@ -61,10 +64,20 @@ export const AddCarScreen: React.FC<AddCarScreenProps> = ({
   const [showSuccessModal, setShowSuccessModal] = useState(false); // ✅ NEW
 
   const [vendorStatus, setVendorStatus] = useState<'checking' | 'pending' | 'approved' | 'rejected'>('checking');
-  
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+
   useEffect(() => {
     checkVendorApprovalStatus();
   }, []);
+
+  useEffect(() => {
+  if (brand) {
+    const models = getModelsForBrand(brand);
+    setModelOptions(models);
+  } else {
+    setModelOptions([]);
+  }
+}, [brand]);
 
   const checkVendorApprovalStatus = async () => {
     try {
@@ -354,29 +367,25 @@ export const AddCarScreen: React.FC<AddCarScreenProps> = ({
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Basic Information</Text>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Brand *</Text>
-            <TextInput
-              style={[styles.input, errors.brand && styles.inputError]}
-              placeholder="e.g. Mercedes, Lexus, BMW"
-              placeholderTextColor={colors.textSecondary}
-              value={brand}
-              onChangeText={setBrand}
-            />
-            {errors.brand && <Text style={styles.errorText}>{errors.brand}</Text>}
-          </View>
+          <SearchableDropdown
+  label="Brand *"
+  placeholder="Select or type brand..."
+  value={brand}
+  onSelect={setBrand}
+  options={CAR_BRANDS}
+  error={errors.brand}
+  allowCustom={true}
+/>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Model *</Text>
-            <TextInput
-              style={[styles.input, errors.model && styles.inputError]}
-              placeholder="e.g. S-Class, RX 350, X5"
-              placeholderTextColor={colors.textSecondary}
-              value={model}
-              onChangeText={setModel}
-            />
-            {errors.model && <Text style={styles.errorText}>{errors.model}</Text>}
-          </View>
+<SearchableDropdown
+  label="Model *"
+  placeholder={brand ? "Select or type model..." : "Select brand first..."}
+  value={model}
+  onSelect={setModel}
+  options={modelOptions}
+  error={errors.model}
+  allowCustom={true}
+/>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Year *</Text>

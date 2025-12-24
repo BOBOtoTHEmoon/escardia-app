@@ -15,7 +15,6 @@ import * as ImagePicker from 'expo-image-picker';
 import { colors, typography, spacing, borderRadius } from '../constants';
 import { uploadToCloudinary } from '../config/cloudinary';
 
-
 interface VendorIDVerificationScreenProps {
   onComplete: (data: IDVerificationData) => void;
   onNavigateBack: () => void;
@@ -40,7 +39,7 @@ export const VendorIDVerificationScreen: React.FC<VendorIDVerificationScreenProp
   const [proofOfAddress, setProofOfAddress] = useState<string | null>(null);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
- const [idFrontUploading, setIdFrontUploading] = useState(false);
+  const [idFrontUploading, setIdFrontUploading] = useState(false);
   const [idBackUploading, setIdBackUploading] = useState(false);
   const [proofUploading, setProofUploading] = useState(false);
 
@@ -53,81 +52,98 @@ export const VendorIDVerificationScreen: React.FC<VendorIDVerificationScreenProp
     return true;
   };
 
-const handleImagePicker = async (
-  type: 'camera' | 'gallery',
-  setter: (uri: string) => void,
-  setUploading: (loading: boolean) => void
-) => {
-  let result;
+  const handleImagePicker = async (
+    type: 'camera' | 'gallery',
+    setter: (uri: string) => void,
+    setUploading: (loading: boolean) => void
+  ) => {
+    let result;
 
-  if (type === 'camera') {
-    const hasPermission = await requestCameraPermission();
-    if (!hasPermission) return;
+    if (type === 'camera') {
+      const hasPermission = await requestCameraPermission();
+      if (!hasPermission) return;
 
-    result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
-  } else {
-    result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
-  }
-
-  if (!result.canceled && result.assets[0]) {
-    const localUri = result.assets[0].uri;
-    console.log('📸 Local image URI:', localUri); 
-    setUploading(true);
-
-    try {
-      console.log('🔵 Uploading ID to Cloudinary...');
-      const cloudinaryUrl = await uploadToCloudinary(localUri, 'vendor_ids');
-      console.log('✅ ID uploaded successfully:', cloudinaryUrl);
-      setter(cloudinaryUrl);
-      Alert.alert('Success', 'Image uploaded successfully!'); 
-    } catch (error: any) {
-      console.error('❌ Upload failed - Full error:', error); 
-      console.error('❌ Error message:', error.message); 
-      console.error('❌ Error stack:', error.stack); 
-      Alert.alert(
-        'Upload Failed', 
-        `Failed to upload image: ${error.message || 'Unknown error'}. Please try again.`
-      ); 
-    } finally {
-      setUploading(false);
+      result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+    } else {
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
     }
-  }
-};
 
-const showImagePickerOptions = (
-  setter: (uri: string) => void,
-  setUploading: (loading: boolean) => void
-) => {
-  Alert.alert('Upload Photo', 'Choose an option', [
-    { 
-      text: 'Take Photo', 
-      onPress: () => handleImagePicker('camera', setter, setUploading) 
-    },
-    { 
-      text: 'Choose from Gallery', 
-      onPress: () => handleImagePicker('gallery', setter, setUploading) 
-    },
-    { text: 'Cancel', style: 'cancel' },
-  ]);
-};
+    if (!result.canceled && result.assets[0]) {
+      const localUri = result.assets[0].uri;
+      console.log('📸 Local image URI:', localUri);
+      setUploading(true);
+
+      try {
+        console.log('🔵 Uploading ID to Cloudinary...');
+        const cloudinaryUrl = await uploadToCloudinary(localUri, 'vendor_ids');
+        console.log('✅ ID uploaded successfully:', cloudinaryUrl);
+        setter(cloudinaryUrl);
+        Alert.alert('Success', 'Image uploaded successfully!');
+      } catch (error: any) {
+        console.error('❌ Upload failed - Full error:', error);
+        console.error('❌ Error message:', error.message);
+        console.error('❌ Error stack:', error.stack);
+        Alert.alert(
+          'Upload Failed',
+          `Failed to upload image: ${error.message || 'Unknown error'}. Please try again.`
+        );
+      } finally {
+        setUploading(false);
+      }
+    }
+  };
+
+  const showImagePickerOptions = (
+    setter: (uri: string) => void,
+    setUploading: (loading: boolean) => void
+  ) => {
+    Alert.alert('Upload Photo', 'Choose an option', [
+      {
+        text: 'Take Photo',
+        onPress: () => handleImagePicker('camera', setter, setUploading),
+      },
+      {
+        text: 'Choose from Gallery',
+        onPress: () => handleImagePicker('gallery', setter, setUploading),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  // ✅ Clear NIN when switching away from National ID
+  const handleIdTypeChange = (type: 'national-id' | 'passport' | 'voters-card') => {
+    setIdType(type);
+    // Clear NIN if switching to non-National ID
+    if (type !== 'national-id') {
+      setNin('');
+      // Clear NIN error if exists
+      setErrors(prev => {
+        const { nin, ...rest } = prev;
+        return rest;
+      });
+    }
+  };
 
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
 
-    if (!nin.trim()) {
-      newErrors.nin = 'NIN is required';
-    } else if (nin.length !== 11) {
-      newErrors.nin = 'NIN must be 11 digits';
+    // ✅ Only validate NIN if National ID is selected
+    if (idType === 'national-id') {
+      if (!nin.trim()) {
+        newErrors.nin = 'NIN is required';
+      } else if (nin.length !== 11) {
+        newErrors.nin = 'NIN must be 11 digits';
+      }
     }
 
     if (!idFront) {
@@ -145,7 +161,7 @@ const showImagePickerOptions = (
   const handleContinue = () => {
     if (validateForm()) {
       onComplete({
-        nin,
+        nin: idType === 'national-id' ? nin : '', // ✅ Only pass NIN if National ID
         idType,
         idFront: idFront!,
         idBack: idBack!,
@@ -154,11 +170,25 @@ const showImagePickerOptions = (
     }
   };
 
+  // Get friendly name for ID type
+  const getIdTypeName = () => {
+    switch (idType) {
+      case 'national-id':
+        return 'National ID';
+      case 'passport':
+        return 'Passport';
+      case 'voters-card':
+        return "Voter's Card";
+      default:
+        return 'ID';
+    }
+  };
+
   const renderIDTypeSelector = () => (
     <View style={styles.idTypeContainer}>
       <TouchableOpacity
         style={[styles.idTypeButton, idType === 'national-id' && styles.idTypeButtonActive]}
-        onPress={() => setIdType('national-id')}
+        onPress={() => handleIdTypeChange('national-id')}
       >
         <Text style={[styles.idTypeText, idType === 'national-id' && styles.idTypeTextActive]}>
           National ID
@@ -167,7 +197,7 @@ const showImagePickerOptions = (
 
       <TouchableOpacity
         style={[styles.idTypeButton, idType === 'passport' && styles.idTypeButtonActive]}
-        onPress={() => setIdType('passport')}
+        onPress={() => handleIdTypeChange('passport')}
       >
         <Text style={[styles.idTypeText, idType === 'passport' && styles.idTypeTextActive]}>
           Passport
@@ -176,7 +206,7 @@ const showImagePickerOptions = (
 
       <TouchableOpacity
         style={[styles.idTypeButton, idType === 'voters-card' && styles.idTypeButtonActive]}
-        onPress={() => setIdType('voters-card')}
+        onPress={() => handleIdTypeChange('voters-card')}
       >
         <Text style={[styles.idTypeText, idType === 'voters-card' && styles.idTypeTextActive]}>
           Voter's Card
@@ -185,41 +215,41 @@ const showImagePickerOptions = (
     </View>
   );
 
- const renderUploadBox = (
-  label: string,
-  image: string | null,
-  onPress: () => void,
-  error?: string,
-  uploading?: boolean
-) => (
-  <View style={styles.uploadGroup}>
-    <Text style={styles.uploadLabel}>{label}</Text>
-    <TouchableOpacity
-      style={[styles.uploadBox, error && styles.uploadBoxError]}
-      onPress={onPress}
-      disabled={uploading}
-    >
-      {uploading ? (
-        <View style={styles.uploadPlaceholder}>
-          <Text style={styles.cameraIconText}>⏳</Text>
-          <Text style={styles.uploadHint}>Uploading...</Text>
-        </View>
-      ) : image ? (
-        <Image source={{ uri: image }} style={styles.uploadedPhoto} resizeMode="cover" />
-      ) : (
-        <View style={styles.uploadPlaceholder}>
-          <View style={styles.cameraIcon}>
-            <Text style={styles.cameraIconText}>📷</Text>
+  const renderUploadBox = (
+    label: string,
+    image: string | null,
+    onPress: () => void,
+    error?: string,
+    uploading?: boolean
+  ) => (
+    <View style={styles.uploadGroup}>
+      <Text style={styles.uploadLabel}>{label}</Text>
+      <TouchableOpacity
+        style={[styles.uploadBox, error && styles.uploadBoxError]}
+        onPress={onPress}
+        disabled={uploading}
+      >
+        {uploading ? (
+          <View style={styles.uploadPlaceholder}>
+            <Text style={styles.cameraIconText}>⏳</Text>
+            <Text style={styles.uploadHint}>Uploading...</Text>
           </View>
-          <Text style={styles.uploadHint}>
-            Add/take a picture or scan of the {label.toLowerCase()}
-          </Text>
-        </View>
-      )}
-    </TouchableOpacity>
-    {error && <Text style={styles.errorText}>{error}</Text>}
-  </View>
-);
+        ) : image ? (
+          <Image source={{ uri: image }} style={styles.uploadedPhoto} resizeMode="cover" />
+        ) : (
+          <View style={styles.uploadPlaceholder}>
+            <View style={styles.cameraIcon}>
+              <Text style={styles.cameraIconText}>📷</Text>
+            </View>
+            <Text style={styles.uploadHint}>
+              Add/take a picture or scan of the {label.toLowerCase()}
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
+      {error && <Text style={styles.errorText}>{error}</Text>}
+    </View>
+  );
 
   return (
     <KeyboardAvoidingView
@@ -262,82 +292,84 @@ const showImagePickerOptions = (
 
         {/* Form */}
         <View style={styles.form}>
-          {/* NIN */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>NIN</Text>
-            <TextInput
-              style={[styles.input, errors.nin && styles.inputError]}
-              placeholder="Enter your 11-digit NIN"
-              placeholderTextColor={colors.textSecondary}
-              value={nin}
-              onChangeText={setNin}
-              keyboardType="number-pad"
-              maxLength={11}
-            />
-            {errors.nin && <Text style={styles.errorText}>{errors.nin}</Text>}
-          </View>
-
-          {/* ID Type Selector */}
+          {/* ID Type Selector - Show first so user picks type before NIN */}
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Government ID Type</Text>
             {renderIDTypeSelector()}
           </View>
 
-         {/* ID Front Upload */}
-{renderUploadBox(
-  `${idType === 'national-id' ? 'National ID' : idType === 'passport' ? 'Passport' : "Voter's Card"} (Front)`,
-  idFront,
-  () => showImagePickerOptions(setIdFront, setIdFrontUploading),
-  errors.idFront,
-  idFrontUploading
-)}
+          {/* ✅ NIN - Only show for National ID */}
+          {idType === 'national-id' && (
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>NIN</Text>
+              <TextInput
+                style={[styles.input, errors.nin && styles.inputError]}
+                placeholder="Enter your 11-digit NIN"
+                placeholderTextColor={colors.textSecondary}
+                value={nin}
+                onChangeText={setNin}
+                keyboardType="number-pad"
+                maxLength={11}
+              />
+              {errors.nin && <Text style={styles.errorText}>{errors.nin}</Text>}
+            </View>
+          )}
 
-{/* ID Back Upload */}
-{renderUploadBox(
-  `${idType === 'national-id' ? 'National ID' : idType === 'passport' ? 'Passport' : "Voter's Card"} (Back)`,
-  idBack,
-  () => showImagePickerOptions(setIdBack, setIdBackUploading),
-  errors.idBack,
-  idBackUploading
-)}
+          {/* ID Front Upload */}
+          {renderUploadBox(
+            `${getIdTypeName()} (Front)`,
+            idFront,
+            () => showImagePickerOptions(setIdFront, setIdFrontUploading),
+            errors.idFront,
+            idFrontUploading
+          )}
 
-{/* Proof of Address */}
-<View style={styles.inputGroup}>
-  <Text style={styles.label}>
-    Proof of Address <Text style={styles.optionalText}>(optional)</Text>
-  </Text>
-  <Text style={styles.helperText}>
-    Utility bill, bank statement, or any document with your address
-  </Text>
-  <TouchableOpacity
-    style={styles.uploadBox}
-    onPress={() => showImagePickerOptions(setProofOfAddress, setProofUploading)}
-    disabled={proofUploading}
-  >
-    {proofUploading ? (
-      <View style={styles.uploadPlaceholder}>
-        <Text style={styles.cameraIconText}>⏳</Text>
-        <Text style={styles.uploadHint}>Uploading...</Text>
-      </View>
-    ) : proofOfAddress ? (
-      <Image
-        source={{ uri: proofOfAddress }}
-        style={styles.uploadedPhoto}
-        resizeMode="cover"
-      />
-    ) : (
-      <View style={styles.uploadPlaceholder}>
-        <View style={styles.cameraIcon}>
-          <Text style={styles.cameraIconText}>📷</Text>
+          {/* ID Back Upload */}
+          {renderUploadBox(
+            `${getIdTypeName()} (Back)`,
+            idBack,
+            () => showImagePickerOptions(setIdBack, setIdBackUploading),
+            errors.idBack,
+            idBackUploading
+          )}
+
+          {/* Proof of Address */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>
+              Proof of Address <Text style={styles.optionalText}>(optional)</Text>
+            </Text>
+            <Text style={styles.helperText}>
+              Utility bill, bank statement, or any document with your address
+            </Text>
+            <TouchableOpacity
+              style={styles.uploadBox}
+              onPress={() => showImagePickerOptions(setProofOfAddress, setProofUploading)}
+              disabled={proofUploading}
+            >
+              {proofUploading ? (
+                <View style={styles.uploadPlaceholder}>
+                  <Text style={styles.cameraIconText}>⏳</Text>
+                  <Text style={styles.uploadHint}>Uploading...</Text>
+                </View>
+              ) : proofOfAddress ? (
+                <Image
+                  source={{ uri: proofOfAddress }}
+                  style={styles.uploadedPhoto}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={styles.uploadPlaceholder}>
+                  <View style={styles.cameraIcon}>
+                    <Text style={styles.cameraIconText}>📷</Text>
+                  </View>
+                  <Text style={styles.uploadHint}>
+                    Add/take a picture of proof of address
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
-        <Text style={styles.uploadHint}>
-          Add/take a picture of proof of address
-        </Text>
-      </View>
-    )}
-  </TouchableOpacity>
-</View>
-</View>
 
         {/* Continue Button */}
         <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>

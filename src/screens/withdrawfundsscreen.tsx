@@ -1,8 +1,3 @@
-// ============================================
-// ESCARDIA - WITHDRAW FUNDS SCREEN (Paystack)
-// File: src/screens/WithdrawFundsScreen.tsx
-// ============================================
-
 import React, { useState, useEffect } from 'react';
 import {
   View,

@@ -1,6 +1,47 @@
 import { collection, addDoc, getDocs, getDoc, query, where, orderBy, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
+// ============================================
+// PUSH NOTIFICATION HELPER
+// ============================================
+
+const sendPushNotification = async (
+  expoPushToken: string,
+  title: string,
+  body: string,
+  data?: any
+) => {
+  try {
+    const message = {
+      to: expoPushToken,
+      sound: 'default',
+      title,
+      body,
+      data: data || {},
+    };
+
+    const response = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(message),
+    });
+
+    const result = await response.json();
+    console.log('📨 Push notification sent:', result);
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Push notification error:', error);
+    return { success: false, error };
+  }
+};
+
+// ============================================
+// CANCELLATION LOGIC
+// ============================================
+
 interface CancellationResult {
   success: boolean;
   refundPercentage?: number;
@@ -104,6 +145,25 @@ export const cancelBooking = async (
       refundPercentage: refundPercentage,
     });
 
+    // ✅ Send notification to vendor about cancellation
+    if (booking.vendorId) {
+      try {
+        const vendorDoc = await getDoc(doc(db, 'vendors', booking.vendorId));
+        const vendorToken = vendorDoc.data()?.pushToken;
+
+        if (vendorToken) {
+          await sendPushNotification(
+            vendorToken,
+            '❌ Booking Cancelled',
+            `A booking for your ${booking.carBrand || booking.car?.brand} ${booking.carModel || booking.car?.model} was cancelled`,
+            { bookingId, type: 'booking_cancelled' }
+          );
+        }
+      } catch (notifError) {
+        console.error('Failed to send cancellation notification:', notifError);
+      }
+    }
+
     return {
       success: true,
       refundPercentage: refundPercentage,
@@ -117,7 +177,10 @@ export const cancelBooking = async (
   }
 };
 
-// Create a new booking
+// ============================================
+// CREATE BOOKING (with Push Notification)
+// ============================================
+
 export const createBooking = async (bookingData: any) => {
   try {
     console.log('🔵 Creating booking with data:', bookingData);
@@ -157,12 +220,82 @@ export const createBooking = async (bookingData: any) => {
 
     const docRef = await addDoc(collection(db, 'bookings'), booking);
     console.log('✅ Booking created with ID:', docRef.id);
+
+    // ============================================
+    // ✅ SEND PUSH NOTIFICATION TO VENDOR
+    // ============================================
+    if (vendorId) {
+      try {
+        const vendorDoc = await getDoc(doc(db, 'vendors', vendorId));
+        const vendorData = vendorDoc.data();
+        const vendorToken = vendorData?.pushToken;
+
+        if (vendorToken) {
+          const carName = `${bookingData.carBrand || bookingData.car?.brand || ''} ${bookingData.carModel || bookingData.car?.model || ''}`.trim();
+          const customerName = bookingData.customerName || 'A customer';
+          const duration = bookingData.duration && bookingData.durationType 
+            ? `${bookingData.duration} ${bookingData.durationType}${bookingData.duration > 1 ? 's' : ''}`
+            : '';
+
+          await sendPushNotification(
+            vendorToken,
+            '🚗 New Booking!',
+            `${customerName} booked your ${carName}${duration ? ` for ${duration}` : ''}`,
+            { 
+              bookingId: docRef.id, 
+              type: 'new_booking',
+              carId: bookingData.carId,
+            }
+          );
+          console.log('📨 Vendor notified of new booking');
+        } else {
+          console.log('⚠️ Vendor has no push token, notification not sent');
+        }
+      } catch (notifError) {
+        console.error('❌ Failed to send booking notification:', notifError);
+        // Don't fail the booking if notification fails
+      }
+    }
+
+    // ============================================
+    // ✅ SEND PUSH NOTIFICATION TO USER (confirmation)
+    // ============================================
+    if (bookingData.userId) {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', bookingData.userId));
+        const userData = userDoc.data();
+        const userToken = userData?.pushToken;
+
+        if (userToken) {
+          const carName = `${bookingData.carBrand || bookingData.car?.brand || ''} ${bookingData.carModel || bookingData.car?.model || ''}`.trim();
+
+          await sendPushNotification(
+            userToken,
+            '✅ Booking Confirmed!',
+            `Your ${carName} booking is confirmed. Trip ID: ${docRef.id.slice(-6).toUpperCase()}`,
+            { 
+              bookingId: docRef.id, 
+              type: 'booking_confirmed',
+            }
+          );
+          console.log('📨 User notified of booking confirmation');
+        }
+      } catch (notifError) {
+        console.error('❌ Failed to send user confirmation notification:', notifError);
+        // Don't fail the booking if notification fails
+      }
+    }
+
     return { success: true, id: docRef.id };
   } catch (error: any) {
     console.error('❌ Error creating booking:', error);
     return { success: false, error: error.message };
   }
 };
+
+// ============================================
+// UPDATE BOOKING
+// ============================================
 
 export const updateBooking = async (bookingId: string, updatedData: any) => {
   try {
@@ -174,7 +307,10 @@ export const updateBooking = async (bookingId: string, updatedData: any) => {
   }
 };
 
-// Get user's bookings
+// ============================================
+// GET USER BOOKINGS
+// ============================================
+
 export const getUserBookings = async (userId: string) => {
   try {
     const q = query(
@@ -194,7 +330,10 @@ export const getUserBookings = async (userId: string) => {
   }
 };
 
-// Get bookings by status
+// ============================================
+// GET BOOKINGS BY STATUS
+// ============================================
+
 export const getBookingsByStatus = async (userId: string, status: 'upcoming' | 'ongoing' | 'past') => {
   try {
     const bookingsRef = collection(db, 'bookings');
@@ -206,12 +345,16 @@ export const getBookingsByStatus = async (userId: string, status: 'upcoming' | '
       ...doc.data()
     }));
     
-
     // Calculate real status based on current date
     const now = new Date();
     now.setHours(0, 0, 0, 0);
 
     const calculateRealStatus = (booking: any) => {
+      // ✅ Handle cancelled bookings
+      if (booking.status === 'cancelled') {
+        return 'cancelled';
+      }
+
       const parseDate = (dateStr: string) => {
         const parts = dateStr.trim().split(' ');
         if (parts.length === 3) {
@@ -260,7 +403,11 @@ export const getBookingsByStatus = async (userId: string, status: 'upcoming' | '
     };
   }
 };
-// Recalculate booking status based on dates
+
+// ============================================
+// RECALCULATE BOOKING STATUS
+// ============================================
+
 const recalculateBookingStatus = (booking: any) => {
   const now = new Date();
   const startDate = new Date(booking.startDate);
@@ -305,7 +452,11 @@ export const getBookingsByStatusRecalculated = async (userId: string, status: st
     return { success: false, error: error.message };
   }
 };
-/*Get all bookings for a vendor's cars*/
+
+// ============================================
+// GET VENDOR BOOKINGS
+// ============================================
+
 export const getVendorBookings = async (vendorId: string) => {
   try {
     console.log('🔵 Fetching bookings for vendor:', vendorId);

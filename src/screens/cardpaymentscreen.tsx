@@ -18,18 +18,62 @@ import {
 } from '../services/paystackService';
 import { creditWallet } from '../services/walletService';
 import { auth, db } from '../config/firebase';
-import { doc, updateDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
+
+// ============================================
+// PUSH NOTIFICATION HELPER
+// ============================================
+const sendPushNotification = async (
+  expoPushToken: string,
+  title: string,
+  body: string,
+  data?: any
+) => {
+  try {
+    console.log('📨 Sending push notification to:', expoPushToken);
+    
+    const response = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: expoPushToken,
+        sound: 'default',
+        title,
+        body,
+        data: data || {},
+      }),
+    });
+    
+    const result = await response.json();
+    console.log('📨 Push notification result:', result);
+    return { success: true, result };
+  } catch (error) {
+    console.error('❌ Push notification error:', error);
+    return { success: false, error };
+  }
+};
 
 interface CardPaymentScreenProps {
   onNavigateBack: () => void;
   onPaymentComplete: (paymentMethod: string) => void;
   totalAmount: number;
   bookingData?: {
-    bookingId: string;
-    vendorId: string;
-    carId: string;
-    carName: string;
-    duration: string;
+    tripData: {
+      car: any;
+      pickupLocation: string;
+      pickupMethod: string;
+      rideMode: string;
+      startDate: string;
+      endDate: string;
+      startTime: string;
+      stopTime: string;
+      duration: number;
+      durationType: string;
+    };
+    escortData?: any;
   };
 }
 
@@ -44,17 +88,16 @@ export const CardPaymentScreen: React.FC<CardPaymentScreenProps> = ({
   const [authorizationUrl, setAuthorizationUrl] = useState('');
   const [paymentReference, setPaymentReference] = useState('');
   const [userEmail, setUserEmail] = useState('');
+  const [createdBookingId, setCreatedBookingId] = useState<string | null>(null);
 
   // Get user email on mount
   useEffect(() => {
     const fetchUserEmail = async () => {
       const user = auth.currentUser;
       if (user) {
-        // Try to get email from auth
         if (user.email) {
           setUserEmail(user.email);
         } else {
-          // Fallback: get from Firestore
           const userDoc = await getDoc(doc(db, 'users', user.uid));
           if (userDoc.exists()) {
             setUserEmail(userDoc.data().email || '');
@@ -68,6 +111,98 @@ export const CardPaymentScreen: React.FC<CardPaymentScreenProps> = ({
   // Calculate split
   const split = calculatePaymentSplit(totalAmount);
 
+  // Create booking with pending_payment status
+  const createPendingBooking = async (): Promise<string | null> => {
+    try {
+      const user = auth.currentUser;
+      if (!user || !bookingData?.tripData) return null;
+
+      // Get user profile
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      const userProfile = userDoc.exists() ? userDoc.data() : {};
+
+      // Parse dates for status
+      const parseDate = (dateStr: string) => {
+        const parts = dateStr.trim().split(' ');
+        if (parts.length === 3) {
+          const months: { [key: string]: number } = {
+            'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5,
+            'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11
+          };
+          const day = parseInt(parts[0]);
+          const month = months[parts[1]];
+          const year = parseInt(parts[2]);
+          return new Date(year, month, day);
+        }
+        return new Date();
+      };
+
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const startDate = parseDate(bookingData.tripData.startDate);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = parseDate(bookingData.tripData.endDate);
+      endDate.setHours(0, 0, 0, 0);
+
+      let status = 'upcoming';
+      if (now >= startDate && now <= endDate) {
+        status = 'ongoing';
+      } else if (now > endDate) {
+        status = 'past';
+      }
+
+      const tripData = bookingData.tripData;
+
+      const booking = {
+        userId: user.uid,
+        customerName: `${userProfile?.firstName || ''} ${userProfile?.lastName || ''}`.trim() || 'Guest',
+        customerPhone: userProfile?.phoneNumber || 'N/A',
+        customerEmail: userProfile?.email || user.email || 'N/A',
+        carId: tripData.car.id,
+        vendorId: tripData.car.vendorId,
+        carBrand: tripData.car.brand,
+        carModel: tripData.car.model,
+        carYear: tripData.car.year,
+        car: {
+          id: tripData.car.id,
+          brand: tripData.car.brand,
+          model: tripData.car.model,
+          year: tripData.car.year,
+          pricePerDay: tripData.car.pricePerDay,
+          pricePerHour: tripData.car.pricePerHour,
+          photos: tripData.car.photos || [],
+          seats: tripData.car.seats,
+          doors: tripData.car.doors,
+          transmission: tripData.car.transmission,
+          location: tripData.car.location,
+          vendorId: tripData.car.vendorId,
+        },
+        pickupLocation: tripData.pickupLocation,
+        pickupMethod: tripData.pickupMethod,
+        startDate: tripData.startDate,
+        endDate: tripData.endDate,
+        startTime: tripData.startTime,
+        stopTime: tripData.stopTime,
+        rideMode: tripData.rideMode,
+        escort: bookingData.escortData?.escorts || null,
+        totalPrice: totalAmount,
+        status: status,
+        paymentStatus: 'pending',
+        paymentMethod: 'card',
+        durationType: tripData.durationType,
+        duration: tripData.duration,
+        createdAt: serverTimestamp(),
+      };
+
+      const docRef = await addDoc(collection(db, 'bookings'), booking);
+      console.log('✅ Created pending booking:', docRef.id);
+      return docRef.id;
+    } catch (error) {
+      console.error('Error creating pending booking:', error);
+      return null;
+    }
+  };
+
   // Initialize payment
   const handlePayNow = async () => {
     if (!userEmail) {
@@ -75,7 +210,7 @@ export const CardPaymentScreen: React.FC<CardPaymentScreenProps> = ({
       return;
     }
 
-    if (!bookingData) {
+    if (!bookingData?.tripData) {
       Alert.alert('Error', 'Booking data is missing.');
       return;
     }
@@ -90,17 +225,28 @@ export const CardPaymentScreen: React.FC<CardPaymentScreenProps> = ({
         return;
       }
 
-      // Initialize payment with Paystack
+      // ✅ Step 1: Create booking with pending status FIRST
+      const bookingId = await createPendingBooking();
+      if (!bookingId) {
+        Alert.alert('Error', 'Failed to create booking. Please try again.');
+        setLoading(false);
+        return;
+      }
+      setCreatedBookingId(bookingId);
+
+      const tripData = bookingData.tripData;
+
+      // ✅ Step 2: Initialize payment with real booking ID
       const result = await initializeBookingPayment(
         userEmail,
         totalAmount,
         {
-          bookingId: bookingData.bookingId,
+          bookingId: bookingId,
           userId: user.uid,
-          vendorId: bookingData.vendorId,
-          carId: bookingData.carId,
-          carName: bookingData.carName,
-          duration: bookingData.duration,
+          vendorId: tripData.car.vendorId || '',
+          carId: tripData.car.id || '',
+          carName: `${tripData.car.brand} ${tripData.car.model}`,
+          duration: `${tripData.duration} ${tripData.durationType}${tripData.duration > 1 ? 's' : ''}`,
         }
       );
 
@@ -109,6 +255,12 @@ export const CardPaymentScreen: React.FC<CardPaymentScreenProps> = ({
         setPaymentReference(result.reference || '');
         setShowPaystack(true);
       } else {
+        // ✅ If payment init fails, mark booking as failed
+        await updateDoc(doc(db, 'bookings', bookingId), {
+          status: 'cancelled',
+          paymentStatus: 'failed',
+          cancelledAt: serverTimestamp(),
+        });
         Alert.alert('Payment Error', result.error || 'Failed to initialize payment');
       }
     } catch (error: any) {
@@ -127,28 +279,90 @@ export const CardPaymentScreen: React.FC<CardPaymentScreenProps> = ({
     try {
       // Verify payment with Paystack
       const verification = await verifyPayment(reference);
+      const tripData = bookingData?.tripData;
 
-      if (verification.success) {
-        // Update booking status
-        if (bookingData?.bookingId) {
-          await updateDoc(doc(db, 'bookings', bookingData.bookingId), {
-            paymentStatus: 'paid',
-            paymentReference: reference,
-            paymentMethod: 'card',
-            paidAt: serverTimestamp(),
-          });
-        }
+      if (verification.success && createdBookingId) {
+        // ✅ Update booking status to paid
+        await updateDoc(doc(db, 'bookings', createdBookingId), {
+          paymentStatus: 'paid',
+          paymentReference: reference,
+          paidAt: serverTimestamp(),
+        });
 
-        // Credit vendor wallet (90%)
-        if (bookingData?.vendorId) {
+        // ✅ Credit vendor wallet (90%)
+        if (tripData?.car?.vendorId) {
           await creditWallet(
-            bookingData.vendorId,
+            tripData.car.vendorId,
             split.vendorAmount,
-            `Booking payment: ${bookingData.carName}`,
+            `Booking payment: ${tripData.car.brand} ${tripData.car.model}`,
             'booking_payment',
             'card',
             reference
           );
+        }
+
+        // ============================================
+        // ✅ SEND PUSH NOTIFICATION TO VENDOR
+        // ============================================
+        if (tripData?.car?.vendorId) {
+          try {
+            console.log('🔍 Looking up vendor:', tripData.car.vendorId);
+            const vendorDoc = await getDoc(doc(db, 'vendors', tripData.car.vendorId));
+            
+            if (vendorDoc.exists()) {
+              const vendorData = vendorDoc.data();
+              const vendorToken = vendorData?.pushToken;
+              
+              console.log('🔍 Vendor data:', vendorData);
+              console.log('🔍 Vendor push token:', vendorToken);
+
+              if (vendorToken) {
+                const carName = `${tripData.car.brand} ${tripData.car.model}`;
+                await sendPushNotification(
+                  vendorToken,
+                  '🚗 New Booking!',
+                  `Someone booked your ${carName} for ₦${totalAmount.toLocaleString()}`,
+                  { 
+                    bookingId: createdBookingId, 
+                    type: 'new_booking',
+                    carId: tripData.car.id,
+                  }
+                );
+              } else {
+                console.log('⚠️ Vendor has no push token');
+              }
+            } else {
+              console.log('⚠️ Vendor document not found');
+            }
+          } catch (notifError) {
+            console.error('❌ Failed to send vendor notification:', notifError);
+          }
+        }
+
+        // ============================================
+        // ✅ SEND PUSH NOTIFICATION TO USER (confirmation)
+        // ============================================
+        try {
+          const user = auth.currentUser;
+          if (user) {
+            const userDoc = await getDoc(doc(db, 'users', user.uid));
+            const userToken = userDoc.data()?.pushToken;
+
+            if (userToken) {
+              const carName = `${tripData?.car.brand} ${tripData?.car.model}`;
+              await sendPushNotification(
+                userToken,
+                '✅ Booking Confirmed!',
+                `Your ${carName} booking is confirmed!`,
+                { 
+                  bookingId: createdBookingId, 
+                  type: 'booking_confirmed',
+                }
+              );
+            }
+          }
+        } catch (notifError) {
+          console.error('❌ Failed to send user notification:', notifError);
         }
 
         Alert.alert(
@@ -173,10 +387,20 @@ export const CardPaymentScreen: React.FC<CardPaymentScreenProps> = ({
   };
 
   // Handle cancelled payment
-  const handlePaymentCancel = () => {
+  const handlePaymentCancel = async () => {
     setShowPaystack(false);
+    
+    if (createdBookingId) {
+      await updateDoc(doc(db, 'bookings', createdBookingId), {
+        paymentStatus: 'cancelled',
+        cancelledAt: serverTimestamp(),
+      });
+    }
+    
     Alert.alert('Payment Cancelled', 'You cancelled the payment. Please try again.');
   };
+
+  const tripData = bookingData?.tripData;
 
   return (
     <View style={styles.container}>
@@ -195,35 +419,14 @@ export const CardPaymentScreen: React.FC<CardPaymentScreenProps> = ({
           <Text style={styles.amountLabel}>Amount to Pay</Text>
           <Text style={styles.amountText}>₦{totalAmount.toLocaleString()}</Text>
         </View>
-
-        {/* Payment Split Info */}
-        <View style={styles.splitCard}>
-          <Text style={styles.splitTitle}>Payment Breakdown</Text>
-          
-          <View style={styles.splitRow}>
-            <Text style={styles.splitLabel}>Car Rental</Text>
-            <Text style={styles.splitValue}>₦{split.vendorAmount.toLocaleString()}</Text>
-          </View>
-          
-          <View style={styles.splitRow}>
-            <Text style={styles.splitLabel}>Service Fee ({split.commissionRate}%)</Text>
-            <Text style={styles.splitValue}>₦{split.escardiaCommission.toLocaleString()}</Text>
-          </View>
-          
-          <View style={styles.divider} />
-          
-          <View style={styles.splitRow}>
-            <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValue}>₦{totalAmount.toLocaleString()}</Text>
-          </View>
-        </View>
-
+   
         {/* Booking Summary */}
-        {bookingData && (
+        {tripData && (
           <View style={styles.summaryCard}>
             <Text style={styles.summaryTitle}>Booking Summary</Text>
-            <Text style={styles.summaryText}>🚗 {bookingData.carName}</Text>
-            <Text style={styles.summaryText}>⏱️ {bookingData.duration}</Text>
+            <Text style={styles.summaryText}>🚗 {tripData.car.brand} {tripData.car.model}</Text>
+            <Text style={styles.summaryText}>⏱️ {tripData.duration} {tripData.durationType}{tripData.duration > 1 ? 's' : ''}</Text>
+            <Text style={styles.summaryText}>📅 {tripData.startDate} - {tripData.endDate}</Text>
           </View>
         )}
 
@@ -256,7 +459,9 @@ export const CardPaymentScreen: React.FC<CardPaymentScreenProps> = ({
         {loading && (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>Initializing payment...</Text>
+            <Text style={styles.loadingText}>
+              {createdBookingId ? 'Initializing payment...' : 'Creating booking...'}
+            </Text>
           </View>
         )}
       </ScrollView>
@@ -301,7 +506,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    fontWeight: '700',
     color: colors.text,
   },
   headerSpacer: {
@@ -325,48 +530,7 @@ const styles = StyleSheet.create({
   },
   amountText: {
     fontSize: 36,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.primary,
-  },
-  splitCard: {
-    backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-  },
-  splitTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  splitRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  splitLabel: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-  },
-  splitValue: {
-    fontSize: typography.fontSize.sm,
-    color: colors.text,
-    fontWeight: typography.fontWeight.medium,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginVertical: spacing.md,
-  },
-  totalLabel: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-  },
-  totalValue: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
+    fontWeight: '700',
     color: colors.primary,
   },
   summaryCard: {
@@ -377,7 +541,7 @@ const styles = StyleSheet.create({
   },
   summaryTitle: {
     fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
+    fontWeight: '600',
     color: colors.text,
     marginBottom: spacing.sm,
   },
@@ -387,14 +551,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   methodsCard: {
-    backgroundColor: colors.info + '15',
+    backgroundColor: '#EFF6FF',
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
     marginBottom: spacing.lg,
   },
   methodsTitle: {
     fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
+    fontWeight: '600',
     color: colors.text,
     marginBottom: spacing.sm,
   },
@@ -405,7 +569,7 @@ const styles = StyleSheet.create({
   },
   securityNote: {
     padding: spacing.md,
-    backgroundColor: colors.success + '15',
+    backgroundColor: '#D1FAE5',
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
   },

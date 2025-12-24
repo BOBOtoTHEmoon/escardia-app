@@ -63,11 +63,11 @@ import { VendorNotificationPreferencesScreen } from './src/screens/vendornotific
 import { VendorTermsAndPrivacyScreen } from './src/screens/vendortermsandprivacyscreen';
 import { VendorHelpAndSupportScreen } from './src/screens/vendorhelpandsupportscreen';
 import { AddMoneyScreen } from './src/screens/addmoneyscreen';
-
+import { WalletPaymentScreen } from './src/screens/WalletPaymentScreen';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState <
-   'splash' |'welcome' |'onboarding'| 'vendorOnboarding' | 'vendorAccountCreation' | 'myFleet' |'vendorSignIn'|'vendorPhoneVerification'| 'vendorBusinessRegistration'|'vendorIDVerification'|'vendorBookings'|'vendorBookingDetail'| 'vendorCarDetail'|'vendorDashboard'|'vendorProfile'| 'vendorEarnings'|'addCar'| 'manageDrivers'| 'withdrawFunds'|'editCar' |'signup' | 'notifications' | 'signin' | 'verify' | 'home' | 'profile' | 'carDetails' | 'tripDetails' | 'rideMode'| 'payment' | 'confirmation' | 'cars' | 'trips'| 'search' | 'favorites' | 'support' | 'contactUs' | 'faq' | 'policies'|'securityLoginSafety' | 'safetyTips' | 'changePassword'| 'chatWithUs'| 'wallet' | 'transactions'| 'tripDetail' | 'editTrip' | 'tripBooking' | 'editTrip' |'cardPayment' | 'bankTransfer'| 'vendorSettings' | 'vendorBankDetails' | 'vendorDocuments' | 'vendorAnalytics' | 'vendorNotificationPreferences' | 'vendorTermsAndPrivacy' | 'vendorHelpAndSupport'| 'addMoney' 
+   'splash' |'welcome' |'onboarding'| 'vendorOnboarding' | 'vendorAccountCreation' | 'myFleet' |'vendorSignIn'|'vendorPhoneVerification'| 'vendorBusinessRegistration'|'vendorIDVerification'|'vendorBookings'|'vendorBookingDetail'| 'vendorCarDetail'|'vendorDashboard'|'vendorProfile'| 'vendorEarnings'|'addCar'| 'manageDrivers'| 'withdrawFunds'|'editCar' |'signup' | 'notifications' | 'signin' | 'verify' | 'home' | 'profile' | 'carDetails' | 'tripDetails' | 'rideMode'| 'payment' | 'confirmation' | 'cars' | 'trips'| 'search' | 'favorites' | 'support' | 'contactUs' | 'faq' | 'policies'|'securityLoginSafety' | 'safetyTips' | 'changePassword'| 'chatWithUs'| 'wallet' | 'transactions'| 'tripDetail' | 'editTrip' | 'tripBooking' | 'editTrip' |'cardPayment' | 'bankTransfer'| 'vendorSettings' | 'vendorBankDetails' | 'vendorDocuments' | 'vendorAnalytics' | 'vendorNotificationPreferences' | 'vendorTermsAndPrivacy' | 'vendorHelpAndSupport'| 'addMoney' | 'walletPayment' 
   >('splash');
   
   const [user, setUser] = useState<any>(null);
@@ -480,12 +480,11 @@ const handleVendorAccountCreation = (data: VendorAccountData) => {
             setSelectedPaymentMethod('bank');
             setCurrentScreen('bankTransfer');
           }}
-          onNavigateToWalletPayment={(amount) => {
-            setPaymentAmount(amount);
-            setSelectedPaymentMethod('wallet');
-            alert('Wallet payment coming soon!');
-          }}
-          bookingData={bookingData}
+        onNavigateToWalletPayment={(amount: number) => {
+      setPaymentAmount(amount);
+      setCurrentScreen('walletPayment');
+    }}
+    bookingData={bookingData}
         />
       )}
       {currentScreen === 'confirmation' && (
@@ -672,32 +671,46 @@ const handleVendorAccountCreation = (data: VendorAccountData) => {
           }}
         />
       )}
-      {currentScreen === 'cardPayment' && (
+{currentScreen === 'cardPayment' && (
   <CardPaymentScreen
     onNavigateBack={() => setCurrentScreen('payment')}
-    onPaymentComplete={handleMakePayment}
-    totalAmount={paymentAmount}
-    bookingData={{
-      bookingId: bookingData?.bookingId || 'pending',
-      vendorId: bookingData?.tripData?.car?.vendorId || '',
-      carId: bookingData?.tripData?.car?.id || '',
-      carName: `${bookingData?.tripData?.car?.brand || ''} ${bookingData?.tripData?.car?.model || ''}`,
-      duration: `${bookingData?.tripData?.duration || 0} ${bookingData?.tripData?.durationType || 'day'}s`,
+    onPaymentComplete={(method: string) => {
+      setBookingFormData({
+        pickupMethod: 'vendor',
+        rateType: 'day',
+        deliveryAddress: '',
+        startDate: null,
+        endDate: null,
+        startTime: null,
+        stopTime: null,
+        escortCounts: { legion: 0, private: 0 },
+        manualHiluxCount: 0,
+      });
+      setCurrentScreen('confirmation');
     }}
+    totalAmount={paymentAmount}
+    bookingData={bookingData}
   />
 )}
-    {currentScreen === 'bankTransfer' && (
+ {currentScreen === 'bankTransfer' && (
   <BankTransferScreen
     onNavigateBack={() => setCurrentScreen('payment')}
-    onPaymentComplete={handleMakePayment}
-    totalAmount={paymentAmount}
-    bookingData={{
-      bookingId: bookingData?.bookingId || 'pending',
-      vendorId: bookingData?.tripData?.car?.vendorId || '',
-      carId: bookingData?.tripData?.car?.id || '',
-      carName: `${bookingData?.tripData?.car?.brand || ''} ${bookingData?.tripData?.car?.model || ''}`,
-      duration: `${bookingData?.tripData?.duration || 0} ${bookingData?.tripData?.durationType || 'day'}s`,
+    onPaymentComplete={(method: string) => {
+      setBookingFormData({
+        pickupMethod: 'vendor',
+        rateType: 'day',
+        deliveryAddress: '',
+        startDate: null,
+        endDate: null,
+        startTime: null,
+        stopTime: null,
+        escortCounts: { legion: 0, private: 0 },
+        manualHiluxCount: 0,
+      });
+      setCurrentScreen('confirmation');
     }}
+    totalAmount={paymentAmount}
+    bookingData={bookingData}
   />
 )}
       {currentScreen === 'vendorOnboarding' && (
@@ -946,6 +959,27 @@ const handleVendorAccountCreation = (data: VendorAccountData) => {
   <AddMoneyScreen
     onNavigateBack={() => setCurrentScreen('wallet')}
     onSuccess={() => setCurrentScreen('wallet')}
+  />
+)}
+{currentScreen === 'walletPayment' && (
+  <WalletPaymentScreen
+    onNavigateBack={() => setCurrentScreen('payment')}
+    onPaymentComplete={(method: string) => {
+      setBookingFormData({
+        pickupMethod: 'vendor',
+        rateType: 'day',
+        deliveryAddress: '',
+        startDate: null,
+        endDate: null,
+        startTime: null,
+        stopTime: null,
+        escortCounts: { legion: 0, private: 0 },
+        manualHiluxCount: 0,
+      });
+      setCurrentScreen('confirmation');
+    }}
+    totalAmount={paymentAmount}
+    bookingData={bookingData}
   />
 )}
     </>

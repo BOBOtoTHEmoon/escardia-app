@@ -1,5 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, ScrollView, Image, ActivityIndicator } from 'react-native';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  StyleSheet, 
+  Modal, 
+  ScrollView, 
+  Image, 
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface SearchModalProps {
@@ -68,55 +80,56 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   };
 
   const handleSearch = async (query: string) => {
-  const trimmedQuery = query.trim();
-  if (!trimmedQuery) return;
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return;
 
-  setLoading(true);
-  setHasSearched(true);
+    setLoading(true);
+    setHasSearched(true);
 
-  try {
-    console.log('🔍 Searching for:', trimmedQuery);
-    
-    // ✅ USE CARSERVICE (has vendor filtering!)
-    const { getAllCars } = await import('../services/carservice');
-    const carResult = await getAllCars();
+    try {
+      console.log('🔍 Searching for:', trimmedQuery);
+      
+      // ✅ USE CARSERVICE (has vendor filtering!)
+      const { getAllCars } = await import('../services/carservice');
+      const carResult = await getAllCars();
 
-    if (!carResult.success || !carResult.cars) {
-      console.error('❌ Failed to get cars');
+      if (!carResult.success || !carResult.cars) {
+        console.error('❌ Failed to get cars');
+        setSearchResults([]);
+        return;
+      }
+
+      const allCars = carResult.cars;
+
+      // ✅ Filter by search query
+      const searchLower = trimmedQuery.toLowerCase();
+      const results = allCars.filter((car: any) => {
+        const brand = (car.brand || '').toLowerCase();
+        const model = (car.model || '').toLowerCase();
+        const type = (car.type || '').toLowerCase();
+        const year = (car.year || '').toString();
+        const location = (car.location || '').toLowerCase();
+
+        return brand.includes(searchLower) ||
+               model.includes(searchLower) ||
+               type.includes(searchLower) ||
+               year.includes(searchLower) ||
+               location.includes(searchLower) ||
+               `${brand} ${model}`.includes(searchLower);
+      });
+
+      console.log(`✅ Found ${results.length} results from approved vendors`);
+      setSearchResults(results);
+      await saveRecentSearch(trimmedQuery);
+      onSearch(trimmedQuery);
+    } catch (error) {
+      console.error('❌ Search error:', error);
       setSearchResults([]);
-      return;
+    } finally {
+      setLoading(false);
     }
+  };
 
-    const allCars = carResult.cars;
-
-    // ✅ Filter by search query
-    const searchLower = trimmedQuery.toLowerCase();
-    const results = allCars.filter((car: any) => {
-      const brand = (car.brand || '').toLowerCase();
-      const model = (car.model || '').toLowerCase();
-      const type = (car.type || '').toLowerCase();
-      const year = (car.year || '').toString();
-      const location = (car.location || '').toLowerCase();
-
-      return brand.includes(searchLower) ||
-             model.includes(searchLower) ||
-             type.includes(searchLower) ||
-             year.includes(searchLower) ||
-             location.includes(searchLower) ||
-             `${brand} ${model}`.includes(searchLower);
-    });
-
-    console.log(`✅ Found ${results.length} results from approved vendors`);
-    setSearchResults(results);
-    await saveRecentSearch(trimmedQuery);
-    onSearch(trimmedQuery);
-  } catch (error) {
-    console.error('❌ Search error:', error);
-    setSearchResults([]);
-  } finally {
-    setLoading(false);
-  }
-};
   const handleCarPress = (carId: string) => {
     onNavigateToCarDetails(carId);
     onClose();
@@ -129,7 +142,10 @@ export const SearchModal: React.FC<SearchModalProps> = ({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.overlay}
+      >
         <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
         
         <View style={styles.modalContainer}>
@@ -147,7 +163,6 @@ export const SearchModal: React.FC<SearchModalProps> = ({
               value={searchQuery}
               onChangeText={setSearchQuery}
               onSubmitEditing={() => handleSearch(searchQuery)}
-             
               returnKeyType="search"
             />
             {searchQuery.length > 0 && (
@@ -157,7 +172,11 @@ export const SearchModal: React.FC<SearchModalProps> = ({
             )}
           </View>
 
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <ScrollView 
+            style={styles.content} 
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Loading */}
             {loading && (
               <View style={styles.loadingContainer}>
@@ -273,7 +292,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
             )}
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
@@ -432,3 +451,5 @@ const styles = StyleSheet.create({
     color: '#2F5FED',
   },
 });
+
+export default SearchModal;

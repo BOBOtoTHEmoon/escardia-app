@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -8,10 +7,10 @@ import {
   StyleSheet,
   Modal,
   ScrollView,
-  Image,
   ActivityIndicator,
   Alert,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import * as Location from 'expo-location';
 
@@ -173,7 +172,10 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.overlay}
+      >
         <TouchableOpacity style={styles.backdrop} onPress={onClose} activeOpacity={1} />
 
         <View style={styles.modalContainer}>
@@ -250,7 +252,11 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
             <Text style={styles.sectionTitle}>
               {searchQuery ? 'Search Results' : 'Popular Locations'}
             </Text>
-            <ScrollView style={styles.locationsList} showsVerticalScrollIndicator={false}>
+            <ScrollView 
+              style={styles.locationsList} 
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
               {/* Manual entry option when searching */}
               {searchQuery.trim().length > 2 && (
                 <TouchableOpacity
@@ -287,7 +293,7 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({
             </ScrollView>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
