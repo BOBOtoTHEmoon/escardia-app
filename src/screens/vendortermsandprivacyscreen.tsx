@@ -58,7 +58,7 @@ export const VendorTermsAndPrivacyScreen: React.FC<VendorTermsAndPrivacyScreenPr
           <Text style={styles.subheading}>4. Insurance & Liability</Text>
           <Text style={styles.paragraph}>
             • Vendors must maintain valid insurance{'\n'}
-            • Escardia is not liable for damages during rentals{'\n'}
+            • Escardia is not liable for damages during rentals{'\n'} 
             • Disputes should be resolved between vendor and customer
           </Text>
         </View>
