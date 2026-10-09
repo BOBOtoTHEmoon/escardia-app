@@ -26,34 +26,11 @@ useEffect(() => {
   const fetchBookingDetails = async () => {
     try {
       console.log('🔵 Loading booking details:', bookingId);
-      const { db } = await import('../config/firebase');
-      const { doc, getDoc, updateDoc } = await import('firebase/firestore');
-      const { calculateBookingStatus } = await import('../utils/dateHelpers'); // ✅ IMPORT
-
-      const bookingDoc = await getDoc(doc(db, 'bookings', bookingId));
-      
-      if (bookingDoc.exists()) {
-        const bookingData = bookingDoc.data();
-        
-        // ✅ USE NEW HELPER
-        const actualStatus = calculateBookingStatus(
-          bookingData.startDate,
-          bookingData.startTime,
-          bookingData.endDate,
-          bookingData.stopTime
-        );
-
-        // Update status in Firebase if it changed
-        if (actualStatus !== bookingData.status) {
-          console.log(`🔄 Updating status from ${bookingData.status} to ${actualStatus}`);
-          await updateDoc(doc(db, 'bookings', bookingId), {
-            status: actualStatus,
-          });
-          bookingData.status = actualStatus;
-        }
-
-        setBooking({ id: bookingDoc.id, ...bookingData });
-        console.log('✅ Booking loaded with status:', actualStatus);
+      const { getBooking } = await import('../services/bookingService');
+      const result = await getBooking(bookingId);
+      if (result.success && result.booking) {
+        const b = result.booking;
+        setBooking({ ...b, status: b.status === 'past' ? 'completed' : b.status });
       }
     } catch (error) {
       console.error('❌ Error loading booking:', error);
@@ -82,6 +59,44 @@ useEffect(() => {
   const getStatusText = (status: string) => {
     if (!status) return 'Unknown';
     return status.charAt(0).toUpperCase() + status.slice(1);
+  };
+
+  // Vendor confirms the car is back. Starts the 24-hour window before the money becomes withdrawable.
+  const canComplete =
+    booking &&
+    (booking.bookingStatus === 'confirmed' || booking.bookingStatus === 'ongoing') &&
+    new Date(booking.startAt) <= new Date();
+
+  const handleCompleteTrip = () => {
+    Alert.alert(
+      'Mark Trip as Completed',
+      'Confirm the car has been returned. Your earnings will be available to withdraw 24 hours after this, unless the customer reports a problem.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Yes, Completed',
+          onPress: async () => {
+            const { completeTrip } = await import('../services/bookingService');
+            const result = await completeTrip(booking.id);
+            if (result.success && result.booking) {
+              setBooking({ ...result.booking, status: 'completed' });
+              Alert.alert('Trip Completed', 'Thanks! Your earnings will be released in 24 hours.');
+            } else {
+              Alert.alert('Error', result.error || 'Could not complete the trip');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const payoutStatus = () => {
+    if (!booking) return '';
+    if (booking.bookingStatus === 'cancelled') return 'Cancelled';
+    if (booking.bookingStatus === 'disputed') return 'On hold: customer reported a problem';
+    if (booking.releasedAt) return 'Available to withdraw';
+    if (booking.releaseAt) return `On hold until ${new Date(booking.releaseAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`;
+    return 'On hold until the trip is completed';
   };
 
   const handleContactCustomer = () => {
@@ -277,8 +292,21 @@ useEffect(() => {
               <Text style={styles.totalLabel}>Total Amount</Text>
               <Text style={styles.totalValue}>₦{booking.totalPrice?.toLocaleString() || '0'}</Text>
             </View>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Your Earnings</Text>
+              <Text style={styles.totalValue}>₦{booking.vendorAmount?.toLocaleString() || '0'}</Text>
+            </View>
+            <Text style={styles.detailLabel}>{payoutStatus()}</Text>
           </View>
         </View>
+
+        {canComplete && (
+          <View style={styles.section}>
+            <TouchableOpacity style={styles.contactButton} onPress={handleCompleteTrip}>
+              <Text style={styles.contactButtonText}>Mark Trip as Completed</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={styles.bottomSpacing} />
       </ScrollView>
@@ -492,4 +520,4 @@ const styles = StyleSheet.create({
   bottomSpacing: {
     height: 40,
   },
-});
+});

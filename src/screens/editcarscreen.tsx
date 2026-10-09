@@ -50,13 +50,12 @@ export const EditCarScreen: React.FC<EditCarScreenProps> = ({
 
   const fetchCarDetails = async () => {
     try {
-      const { db } = await import('../config/firebase');
-      const { doc, getDoc } = await import('firebase/firestore');
+      const { getVendorCarById } = await import('../services/carservice');
+      const { auth } = await import('../config/supabase');
+      const result = await getVendorCarById(carId, auth.currentUser?.uid ?? '');
 
-      const carDoc = await getDoc(doc(db, 'cars', carId));
-      
-      if (carDoc.exists()) {
-        const carData = carDoc.data();
+      if (result.success && result.car) {
+        const carData: any = result.car;
         setCar(carData);
         
         // Populate form
@@ -109,39 +108,6 @@ export const EditCarScreen: React.FC<EditCarScreenProps> = ({
     }
   };
 
-  const uploadImagesToCloudinary = async (imageUris: string[]) => {
-    const uploadedUrls: string[] = [];
-
-    for (const uri of imageUris) {
-      try {
-        const formData = new FormData();
-        formData.append('file', {
-          uri,
-          type: 'image/jpeg',
-          name: 'car-photo.jpg',
-        } as any);
-        formData.append('upload_preset', 'escardia');
-
-        const response = await fetch(
-          'https://api.cloudinary.com/v1_1/dsrd8cgse/image/upload',
-          {
-            method: 'POST',
-            body: formData,
-          }
-        );
-
-        const data = await response.json();
-        if (data.secure_url) {
-          uploadedUrls.push(data.secure_url);
-        }
-      } catch (error) {
-        console.error('Error uploading image:', error);
-      }
-    }
-
-    return uploadedUrls;
-  };
-
   const handleSave = async () => {
     // Validation
     if (!brand || !model || !year || !pricePerDay || !location) {
@@ -152,33 +118,25 @@ export const EditCarScreen: React.FC<EditCarScreenProps> = ({
     setSaving(true);
 
     try {
-      // Upload new photos if any
-      let allPhotos = [...photos];
-      if (newPhotos.length > 0) {
-        const uploadedUrls = await uploadImagesToCloudinary(newPhotos);
-        allPhotos = [...allPhotos, ...uploadedUrls];
-      }
-
-      // Update Firestore
-      const { db } = await import('../config/firebase');
-      const { doc, updateDoc } = await import('firebase/firestore');
-
-      await updateDoc(doc(db, 'cars', carId), {
+      // New photos are uploaded inside updateCar(). Changing photos, brand, model or year
+      // sends the car back for admin approval.
+      const { updateCar } = await import('../services/carservice');
+      const result = await updateCar(carId, {
         brand,
         model,
-        year: parseInt(year),
+        year,
         type,
         pricePerDay: parseInt(pricePerDay),
-        pricePerHour: parseInt(pricePerHour),
+        pricePerHour: parseInt(pricePerHour || '0'),
         seats: parseInt(seats),
         doors: parseInt(doors),
         transmission,
         fuelType,
         location,
         description,
-        photos: allPhotos,
-        updatedAt: new Date().toISOString(),
+        photos: [...photos, ...newPhotos],
       });
+      if (!result.success) throw new Error(result.error);
 
       Alert.alert('Success', 'Car updated successfully!', [
         { text: 'OK', onPress: onSaveSuccess },
@@ -690,4 +648,4 @@ const styles = StyleSheet.create({
   bottomSpacing: {
     height: 40,
   },
-});
+});

@@ -15,6 +15,7 @@ import { signInWithEmail } from '../services/authservice';
 
 interface SignInScreenProps {
   onSignInSuccess: () => void;
+    onNeedsVerification?: (email: string) => void;
   onNavigateToSignUp: () => void;
   onForgotPassword: () => void;
    onNavigateBack: () => void;
@@ -22,6 +23,7 @@ interface SignInScreenProps {
 
 export const SignInScreen: React.FC<SignInScreenProps> = ({
   onSignInSuccess,
+    onNeedsVerification,
   onNavigateToSignUp,
   onForgotPassword,
   onNavigateBack,
@@ -78,33 +80,14 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
     const result = await signInWithEmail(email, password);
     setLoading(false);
 
-   if (result.success) {
-  console.log('Sign in successful!', result.user);
-  
-  // Check if this is a vendor account
-  const { getDoc, doc } = await import('firebase/firestore');
-  const { db, auth } = await import('../config/firebase');
-  
-  const user = auth.currentUser;
-  if (user) {
-    const vendorDoc = await getDoc(doc(db, 'vendors', user.uid));
-    
-    if (vendorDoc.exists()) {
-      // This is a vendor account, not allowed on user side
-      const { signOut } = await import('firebase/auth');
-      await signOut(auth);
-      alert('This is a vendor account. Please use the vendor portal to sign in.');
-      setLoading(false);
-      return;
+    if (result.success) {
+      onSignInSuccess();
+    } else if ((result as { needsVerification?: boolean }).needsVerification && onNeedsVerification) {
+      onNeedsVerification(email.trim().toLowerCase());
+    } else {
+      newErrors.email = result.error || 'Sign in failed. Please check your credentials.';
+      setErrors(newErrors);
     }
-  }
-  
-  // Not a vendor, proceed with user login
-  onSignInSuccess();
-} else {
-  newErrors.email = result.error || 'Sign in failed. Please check your credentials.';
-  setErrors(newErrors);
-}
   };
 
   // Handle Social Sign In

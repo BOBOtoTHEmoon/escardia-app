@@ -15,8 +15,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { colors, typography, spacing, borderRadius } from '../constants';
-import { doc, getDoc } from 'firebase/firestore';
-import { db, auth } from '../config/firebase';
+import { supabase, auth } from '../config/supabase';
 import { SearchableDropdown } from '../components/SearchableDropdown';
 import { CAR_BRANDS, getModelsForBrand } from '../data/carData';
 
@@ -88,11 +87,10 @@ export const AddCarScreen: React.FC<AddCarScreenProps> = ({
         return;
       }
 
-      const vendorDocRef = doc(db, 'vendors', user.uid);
-      const vendorDoc = await getDoc(vendorDocRef);
+      const { data: vendorRow } = await supabase.from('vendors').select('status').eq('id', user.uid).maybeSingle();
 
-      if (vendorDoc.exists()) {
-        const status = vendorDoc.data().status || 'pending';
+      if (vendorRow) {
+        const status = vendorRow.status || 'pending';
         setVendorStatus(status);
         
         if (status === 'rejected') {
@@ -245,12 +243,8 @@ export const AddCarScreen: React.FC<AddCarScreenProps> = ({
 
     setIsSubmitting(true); // ✅ Show loading
 
-    console.log('🔵 Adding car to Firebase...');
 
     try {
-      const { auth } = await import('../config/firebase');
-      const { uploadToCloudinary } = await import('../config/cloudinary');
-      
       const vendorId = auth.currentUser?.uid;
 
       if (!vendorId) {
@@ -259,20 +253,8 @@ export const AddCarScreen: React.FC<AddCarScreenProps> = ({
         return;
       }
 
-      // Upload photos to Cloudinary
-      console.log('📸 Uploading photos to Cloudinary...');
-      const photoUrls: string[] = [];
-      
-      for (let i = 0; i < photos.length; i++) {
-        const photoUri = photos[i];
-        console.log(`Uploading photo ${i + 1}/${photos.length}...`);
-        
-        const cloudinaryUrl = await uploadToCloudinary(photoUri);
-        photoUrls.push(cloudinaryUrl);
-        console.log(`✅ Photo ${i + 1} uploaded:`, cloudinaryUrl);
-      }
-
-      console.log('✅ All photos uploaded to Cloudinary!');
+      // Photos are uploaded to Supabase Storage inside addCar().
+      const photoUrls: string[] = photos;
 
       const carData = {
         brand,
@@ -945,4 +927,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
-});
+});

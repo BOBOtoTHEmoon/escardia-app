@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { colors, typography, spacing, borderRadius } from '../constants';
-import { uploadToCloudinary } from '../config/cloudinary';
 
 interface VendorIDVerificationScreenProps {
   onComplete: (data: IDVerificationData) => void;
@@ -81,25 +80,9 @@ export const VendorIDVerificationScreen: React.FC<VendorIDVerificationScreenProp
     if (!result.canceled && result.assets[0]) {
       const localUri = result.assets[0].uri;
       console.log('📸 Local image URI:', localUri);
-      setUploading(true);
 
-      try {
-        console.log('🔵 Uploading ID to Cloudinary...');
-        const cloudinaryUrl = await uploadToCloudinary(localUri, 'vendor_ids');
-        console.log('✅ ID uploaded successfully:', cloudinaryUrl);
-        setter(cloudinaryUrl);
-        Alert.alert('Success', 'Image uploaded successfully!');
-      } catch (error: any) {
-        console.error('❌ Upload failed - Full error:', error);
-        console.error('❌ Error message:', error.message);
-        console.error('❌ Error stack:', error.stack);
-        Alert.alert(
-          'Upload Failed',
-          `Failed to upload image: ${error.message || 'Unknown error'}. Please try again.`
-        );
-      } finally {
-        setUploading(false);
-      }
+      // The photo is uploaded securely when the vendor submits this screen.
+      setter(localUri);
     }
   };
 

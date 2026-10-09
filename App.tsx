@@ -9,8 +9,7 @@ import { HomeScreen } from './src/screens/homescreen';
 import { ProfileScreen } from './src/screens/profilescreen';
 import { CarDetailsScreen } from './src/screens/cardetailsscreen';
 import { useEffect, useState } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from './src/config/firebase';
+import { auth, onAuthStateChanged } from './src/config/supabase';
 import { getUserProfile } from './src/services/authservice';
 import { TripDetailScreen } from './src/screens/tripdetailsscreen';
 import { RideModeScreen } from './src/screens/ridemodescreen';
@@ -79,6 +78,7 @@ export default function App() {
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
   const [vendorData, setVendorData] = useState<any>(null);
+  const [pendingEmail, setPendingEmail] = useState('');
   const [vendorProfile, setVendorProfile] = useState<any>(null);
   const [selectedCarId, setSelectedCarId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
@@ -99,7 +99,7 @@ export default function App() {
 
   // Listen for auth state changes
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
         const profileResult = await getUserProfile(firebaseUser.uid);
@@ -119,7 +119,13 @@ export default function App() {
     setCurrentScreen('signup');
   };
 
-  const handleSignUpSuccess = () => {
+  const handleSignUpSuccess = (email: string, needsVerification: boolean) => {
+    if (!needsVerification) {
+      // Email confirmation is switched off in Supabase: the user is already signed in.
+      handleVerifySuccess();
+      return;
+    }
+    setPendingEmail(email);
     setCurrentScreen('verify');
   };
 
@@ -148,7 +154,14 @@ export default function App() {
     console.log('Navigate to Forgot Password');
   };
 
-  const handleVerifySuccess = () => {
+  const handleVerifySuccess = async () => {
+    try {
+      const { savePushToken } = await import('./src/services/notificationService');
+      const u = auth.currentUser;
+      if (u) await savePushToken(u.uid, 'user');
+    } catch (error) {
+      console.log('Push token error:', error);
+    }
     setCurrentScreen('home');
   };
 
@@ -201,10 +214,12 @@ export default function App() {
 
   const handleDeleteCar = async (carId: string) => {
     try {
-      const { db } = await import('./src/config/firebase');
-      const { doc, deleteDoc } = await import('firebase/firestore');
-
-      await deleteDoc(doc(db, 'cars', carId));
+      const { deleteCar } = await import('./src/services/carservice');
+      const result = await deleteCar(carId);
+      if (!result.success) {
+        alert(result.error || 'Failed to delete car');
+        return;
+      }
 
       alert('Car deleted successfully!');
       setSelectedCarId(null);
@@ -377,11 +392,17 @@ const handleContinueToPayment = (rideModeData: any) => {
   setCurrentScreen('payment');
 };
 
-const handleVendorAccountCreation = (data: VendorAccountData) => {
-  console.log('🔵 App.tsx received vendor data:', data);
+const handleVendorAccountCreation = async (data: VendorAccountData) => {
+  // Creates the vendor login and emails a 6-digit code.
+  const { startVendorSignUp } = await import('./src/services/vendorauthservice');
+  const result = await startVendorSignUp(data);
+  if (!result.success) {
+    alert(result.error || 'Could not create your account');
+    return;
+  }
   setVendorData(data);
-  console.log('✅ Navigating to phone verification');
-  setCurrentScreen('vendorPhoneVerification');
+  // Skip the code screen while email confirmation is switched off in Supabase.
+  setCurrentScreen(result.needsVerification ? 'vendorPhoneVerification' : 'vendorBusinessRegistration');
 };
 
   return (
@@ -406,12 +427,16 @@ const handleVendorAccountCreation = (data: VendorAccountData) => {
       {currentScreen === 'signin' && (
         <SignInScreen
           onSignInSuccess={handleSignInSuccess}
+          onNeedsVerification={(email: string) => {
+            setPendingEmail(email);
+            setCurrentScreen('verify');
+          }}
           onNavigateToSignUp={handleNavigateToSignUp}
           onForgotPassword={handleForgotPassword}
           onNavigateBack={() => setCurrentScreen('signup')}
         />
       )}
-      {currentScreen === 'verify' && <VerifyCodeScreen onVerifySuccess={handleVerifySuccess} />}
+      {currentScreen === 'verify' && <VerifyCodeScreen email={pendingEmail} onVerifySuccess={handleVerifySuccess} />}
       {currentScreen === 'home' && (
         <HomeScreen
           userName={userProfile?.firstName || 'Guest'}
@@ -642,7 +667,6 @@ const handleVendorAccountCreation = (data: VendorAccountData) => {
         <TripDetailScreen
           tripData={selectedTrip}
           onNavigateBack={() => setCurrentScreen('trips')}
-          onEditTrip={() => setCurrentScreen('editTrip')}
         />
       )}
     {currentScreen === 'tripBooking' && selectedCar && (
@@ -734,12 +758,10 @@ const handleVendorAccountCreation = (data: VendorAccountData) => {
         />
       )}
       {currentScreen === 'vendorPhoneVerification' && vendorData && (
-        <VendorPhoneVerificationScreen
-          onNavigateBack={() => setCurrentScreen('vendorAccountCreation')}
-          phoneNumber={vendorData.phoneNumber}
-          onContinue={() => {
-            setCurrentScreen('vendorBusinessRegistration');
-          }}
+        // Vendors confirm their email with a 6-digit code before uploading documents.
+        <VerifyCodeScreen
+          email={vendorData.email}
+          onVerifySuccess={() => setCurrentScreen('vendorBusinessRegistration')}
         />
       )}
       {currentScreen === 'vendorBusinessRegistration' && (

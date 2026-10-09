@@ -258,46 +258,23 @@ useEffect(() => {
   // ✅ CHECK AVAILABILITY FUNCTION
   const checkCarAvailability = async () => {
     try {
-      const { db } = await import('../config/firebase');
-      const { collection, query, where, getDocs } = await import('firebase/firestore');
+      const { checkCarAvailability: checkOnServer } = await import('../services/carservice');
       const { parseDateTime } = await import('../utils/dateHelpers');
 
-      const requestStart = parseDateTime(
-        formatDate(startDate),
-        formatTime(startTime)
-      );
-      const requestEnd = parseDateTime(
-        formatDate(endDate),
-        formatTime(stopTime)
-      );
+      const requestStart = parseDateTime(formatDate(startDate), formatTime(startTime));
+      const requestEnd = parseDateTime(formatDate(endDate), formatTime(stopTime));
 
-      const bookingsQuery = query(
-        collection(db, 'bookings'),
-        where('carId', '==', carData.id),
-        where('status', 'in', ['upcoming', 'ongoing'])
-      );
-
-      const snapshot = await getDocs(bookingsQuery);
-      
-      for (const docSnapshot of snapshot.docs) {
-        const booking = docSnapshot.data();
-        
-        const bookingStart = parseDateTime(
-          booking.startDate,
-          booking.startTime
+      const result = await checkOnServer(carData.id, requestStart, requestEnd);
+      if (!result.available) {
+        const from = result.conflictStart ? new Date(result.conflictStart) : null;
+        const to = result.conflictEnd ? new Date(result.conflictEnd) : null;
+        Alert.alert(
+          'Not Available',
+          from && to
+            ? `This car is already booked from ${formatDate(from)} ${formatTime(from)} to ${formatDate(to)} ${formatTime(to)}. Please select different dates.`
+            : result.message || 'This car is not available for those dates.'
         );
-        const bookingEnd = parseDateTime(
-          booking.endDate,
-          booking.stopTime
-        );
-
-        if (requestStart < bookingEnd && requestEnd > bookingStart) {
-          Alert.alert(
-            'Not Available',
-            `This car is already booked from ${booking.startDate} to ${booking.endDate}. Please select different dates.`
-          );
-          return false;
-        }
+        return false;
       }
 
       return true;
@@ -1071,4 +1048,4 @@ const styles = StyleSheet.create({
     color: '#991B1B',
     lineHeight: 18,
   },
-});
+});

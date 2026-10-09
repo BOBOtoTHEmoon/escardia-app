@@ -1,91 +1,38 @@
-import { db, auth } from '../config/firebase';
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  deleteDoc, 
-  getDocs, 
-  query, 
-  where 
-} from 'firebase/firestore';
+// ============================================
+// ESCARDIA - Favourites (Supabase)
+// ============================================
+import { supabase, auth } from '../config/supabase';
 
 export const addToFavorites = async (carId: string) => {
-  try {
-    const user = auth.currentUser;
-    if (!user) {
-      return { success: false, error: 'User not logged in' };
-    }
-
-    // Create a unique document ID combining userId and carId
-    const favoriteId = `${user.uid}_${carId}`;
-    
-    await setDoc(doc(db, 'favorites', favoriteId), {
-      userId: user.uid,
-      carId: carId,
-      createdAt: new Date().toISOString(),
-    });
-
-    console.log('✅ Added to favorites:', carId);
-    return { success: true };
-  } catch (error) {
-    console.error('❌ Error adding to favorites:', error);
-    return { success: false, error: String(error) };
-  }
+  const user = auth.currentUser;
+  if (!user) return { success: false, error: 'User not logged in' };
+  const { error } = await supabase.from('favorites').upsert({ user_id: user.uid, car_id: carId }, { onConflict: 'user_id,car_id', ignoreDuplicates: true });
+  return error ? { success: false, error: error.message } : { success: true };
 };
 
 export const removeFromFavorites = async (carId: string) => {
-  try {
-    const user = auth.currentUser;
-    if (!user) {
-      return { success: false, error: 'User not logged in' };
-    }
-
-    const favoriteId = `${user.uid}_${carId}`;
-    await deleteDoc(doc(db, 'favorites', favoriteId));
-
-    console.log('✅ Removed from favorites:', carId);
-    return { success: true };
-  } catch (error) {
-    console.error('❌ Error removing from favorites:', error);
-    return { success: false, error: String(error) };
-  }
+  const user = auth.currentUser;
+  if (!user) return { success: false, error: 'User not logged in' };
+  const { error } = await supabase.from('favorites').delete().eq('user_id', user.uid).eq('car_id', carId);
+  return error ? { success: false, error: error.message } : { success: true };
 };
 
+/** Returns the ids of the user's favourite cars. */
 export const getUserFavorites = async () => {
-  try {
-    const user = auth.currentUser;
-    if (!user) {
-      return { success: false, error: 'User not logged in', favorites: [] };
-    }
-
-    const q = query(
-      collection(db, 'favorites'),
-      where('userId', '==', user.uid)
-    );
-
-    const snapshot = await getDocs(q);
-    const favoriteCarIds = snapshot.docs.map(doc => doc.data().carId);
-
-    console.log(`✅ Loaded ${favoriteCarIds.length} favorites`);
-    return { success: true, favorites: favoriteCarIds };
-  } catch (error) {
-    console.error('❌ Error loading favorites:', error);
-    return { success: false, error: String(error), favorites: [] };
-  }
+  const user = auth.currentUser;
+  if (!user) return { success: false, error: 'User not logged in', favorites: [] as string[] };
+  const { data, error } = await supabase.from('favorites').select('car_id').eq('user_id', user.uid).order('created_at', { ascending: false });
+  if (error) return { success: false, error: error.message, favorites: [] as string[] };
+  return { success: true, favorites: (data ?? []).map((r) => r.car_id as string) };
 };
 
 export const isFavorite = async (carId: string): Promise<boolean> => {
-  try {
-    const user = auth.currentUser;
-    if (!user) return false;
-
-    const favoriteId = `${user.uid}_${carId}`;
-    const docRef = doc(db, 'favorites', favoriteId);
-    const docSnap = await getDocs(query(collection(db, 'favorites'), where('__name__', '==', favoriteId)));
-
-    return !docSnap.empty;
-  } catch (error) {
-    console.error('Error checking favorite:', error);
-    return false;
-  }
+  const user = auth.currentUser;
+  if (!user) return false;
+  const { count } = await supabase
+    .from('favorites')
+    .select('car_id', { count: 'exact', head: true })
+    .eq('user_id', user.uid)
+    .eq('car_id', carId);
+  return (count ?? 0) > 0;
 };

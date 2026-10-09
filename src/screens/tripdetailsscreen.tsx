@@ -9,7 +9,7 @@ import {
   Linking,
   Alert,
 } from 'react-native';
-import { cancelBooking } from '../services/bookingService';
+import { cancelBooking, reportProblem } from '../services/bookingService';
 import { StaticMap } from '../components/StaticMap';
 
 interface TripDetailScreenProps {
@@ -17,6 +17,9 @@ interface TripDetailScreenProps {
     id: string;
     vendorId?: string;
     status: 'upcoming' | 'ongoing' | 'past';
+    bookingStatus?: string;
+    releaseAt?: string | null;
+    releasedAt?: string | null;
     rideMode: 'Driver' | 'Self-Drive';
     durationType: 'hour' | 'day';
     durationValue: number;
@@ -78,34 +81,12 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
 
   const loadVendorDetails = async () => {
     try {
-      const { db } = await import('../config/firebase');
-      const { doc, getDoc } = await import('firebase/firestore');
-
       const vendorId = tripData.vendorId || tripData.car?.vendorId;
-
-      console.log('🔍 Full tripData:', tripData);
-      console.log('🔍 tripData.vendorId:', tripData.vendorId);
-      console.log('🔍 tripData.car?.vendorId:', tripData.car?.vendorId);
-      console.log('🔍 Using vendorId:', vendorId);
-
-      if (!vendorId) {
-        console.log('⚠️ No vendorId found in booking data');
-        setLoadingVendor(false);
-        return;
-      }
-
-      console.log('🔍 Loading vendor:', vendorId);
-      const vendorDoc = await getDoc(doc(db, 'vendors', vendorId));
-
-      if (vendorDoc.exists()) {
-        const data = vendorDoc.data();
-        console.log('✅ Vendor loaded:', data);
-        setVendorDetails(data);
-      } else {
-        console.log('❌ Vendor not found');
-      }
+      if (!vendorId) return;
+      const { getPublicVendorDetails } = await import('../services/vendorauthservice');
+      setVendorDetails(await getPublicVendorDetails(vendorId));
     } catch (error) {
-      console.error('❌ Error loading vendor:', error);
+      console.error('Error loading vendor:', error);
     } finally {
       setLoadingVendor(false);
     }
@@ -132,6 +113,8 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
   } = tripData;
 
   const calculateRealStatus = () => {
+    // The server keeps the status up to date (upcoming, ongoing, past, cancelled, disputed).
+    if (status) return status as string;
     const parseDate = (dateStr: string) => {
       const parts = dateStr.trim().split(' ');
       if (parts.length === 3) {
@@ -209,7 +192,7 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
             if (result.success) {
               Alert.alert(
                 '✅ Trip Cancelled',
-                `Your trip has been cancelled successfully.\n\nRefund: ${result.refundPercentage}% of total cost will be processed within 3-5 business days.`,
+                `Your trip has been cancelled.\n\nRefund: ${result.refundPercentage}% (₦${(result.refundAmount ?? 0).toLocaleString()}) has been added to your Escardia wallet.`,
                 [
                   {
                     text: 'OK',
@@ -224,6 +207,32 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
         },
       ]
     );
+  };
+
+  // Customers can report a problem during the trip or up to 24 hours after it ends.
+  // This pauses the vendor's payout until Escardia reviews it.
+  const canReportProblem =
+    tripData.bookingStatus === 'ongoing' ||
+    (tripData.bookingStatus === 'completed' && !tripData.releasedAt && tripData.releaseAt && new Date(tripData.releaseAt) > new Date());
+
+  const submitProblem = async (reason: string) => {
+    const result = await reportProblem(id, reason);
+    if (result.success) {
+      Alert.alert('Problem Reported', 'Thanks for letting us know. Escardia will contact you shortly.', [
+        { text: 'OK', onPress: () => onNavigateBack() },
+      ]);
+    } else {
+      Alert.alert('Error', result.error || 'Could not report the problem');
+    }
+  };
+
+  const handleReportProblem = () => {
+    Alert.alert('Report a Problem', 'What went wrong?', [
+      { text: 'Car condition', onPress: () => submitProblem('Car condition was not as described') },
+      { text: 'Driver issue', onPress: () => submitProblem('Problem with the driver') },
+      { text: 'Car was late or did not arrive', onPress: () => submitProblem('Car was late or did not arrive') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   return (
@@ -246,7 +255,7 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
       <ScrollView style={styles.content}>
         {/* Status Badge */}
         <View style={styles.statusContainer}>
-          <View style={[styles.statusBadge, styles[`${realStatus}Badge`]]}>
+          <View style={[styles.statusBadge, (styles as any)[`${realStatus}Badge`]]}>
             <Text style={styles.statusText}>
               {realStatus.charAt(0).toUpperCase() + realStatus.slice(1)}
             </Text>
@@ -403,6 +412,17 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
             </View>
           </View>
         </View>
+
+        {canReportProblem && (
+          <View style={styles.cancelButtonSection}>
+            <TouchableOpacity style={styles.cancelButton} onPress={handleReportProblem}>
+              <Text style={styles.cancelButtonText}>Report a Problem</Text>
+            </TouchableOpacity>
+            <Text style={styles.cancelPolicyText}>
+              You can report a problem up to 24 hours after your trip ends
+            </Text>
+          </View>
+        )}
 
         {realStatus === 'upcoming' && (
           <View style={styles.cancelButtonSection}>
@@ -820,4 +840,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default TripDetailScreen;
+export default TripDetailScreen;

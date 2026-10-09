@@ -21,7 +21,7 @@ import { signUpWithEmail } from '../services/authservice';
 
 
 interface SignUpScreenProps {
-  onSignUpSuccess: () => void;
+    onSignUpSuccess: (email: string, needsVerification: boolean) => void;
   onNavigateToSignIn: () => void;
   onNavigateBack: () => void; 
 }
@@ -137,8 +137,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({
     setLoading(false);
 
     if (result.success) {
-      console.log('Sign up successful!', result.user);
-      onSignUpSuccess();
+            onSignUpSuccess(email.trim().toLowerCase(), result.needsVerification !== false);
     } else {
       newErrors.email = result.error || 'Sign up failed. Please try again.';
       setErrors(newErrors);

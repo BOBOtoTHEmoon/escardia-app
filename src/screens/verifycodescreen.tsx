@@ -11,6 +11,7 @@ import {
 import { Image } from 'react-native';
 import { Button } from '../components';
 import { colors, typography, spacing, borderRadius } from '../constants';
+import { verifyEmailCode, resendVerificationCode } from '../services/authservice';
 
 interface VerifyCodeScreenProps {
   onVerifySuccess: () => void;
@@ -64,30 +65,40 @@ export const VerifyCodeScreen: React.FC<VerifyCodeScreenProps> = ({
     }
   };
 
-  // Handle verify
-  const handleVerify = () => {
+    // Handle verify
+  const handleVerify = async () => {
     const fullCode = code.join('');
 
-     if (fullCode.length !== 6) {
+    if (fullCode.length !== 6) {
       setError('Please enter the complete 6-digit code');
       return;
     }
+    if (!email) {
+      setError('Missing email address. Please go back and sign up again.');
+      return;
+    }
 
-    // TODO: Integrate Firebase verification here
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      console.log('Verification successful!', fullCode);
+    const result = await verifyEmailCode(email, fullCode);
+    setLoading(false);
+
+    if (result.success) {
       onVerifySuccess();
-    }, 2000);
+    } else {
+      setError(result.error || 'That code is wrong or has expired');
+    }
   };
 
   // Handle resend code
-  const handleResend = () => {
-    if (!canResend) return;
+  const handleResend = async () => {
+    if (!canResend || !email) return;
 
-    console.log('Resending code...');
-    // TODO: Integrate resend logic here
+    const result = await resendVerificationCode(email);
+    if (!result.success) {
+      setError(result.error || 'Could not resend the code');
+      return;
+    }
+    setError('');
     setTimer(60);
     setCanResend(false);
     setCode(['', '', '', '', '', '']);

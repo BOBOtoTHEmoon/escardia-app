@@ -60,30 +60,13 @@ export const VendorProfileScreen: React.FC<VendorProfileScreenProps> = ({
 
   const loadStats = async () => {
     try {
-      const { auth, db } = await import('../config/firebase');
-      const { collection, query, where, getDocs } = await import('firebase/firestore');
-      
-      const vendorId = auth.currentUser?.uid;
-      if (!vendorId) return;
-
-      // Get total cars
-      const carsQuery = query(
-        collection(db, 'cars'),
-        where('vendorId', '==', vendorId)
-      );
-      const carsSnapshot = await getDocs(carsQuery);
-      const totalCars = carsSnapshot.size;
-
-      // Get total bookings
-      const bookingsQuery = query(
-        collection(db, 'bookings'),
-        where('vendorId', '==', vendorId)
-      );
-      const bookingsSnapshot = await getDocs(bookingsQuery);
-      const totalBookings = bookingsSnapshot.size;
-
-      // Calculate average rating (placeholder - you can add reviews collection later)
-      const averageRating = 4.8; // TODO: Calculate from reviews
+      const { supabase } = await import('../config/supabase');
+      // One call returns the vendor's numbers (cars, bookings, rating, balances).
+      const { data, error } = await supabase.rpc('vendor_stats');
+      if (error) throw error;
+      const totalCars = data.totalCars ?? 0;
+      const totalBookings = data.totalBookings ?? 0;
+      const averageRating = Number(data.averageRating ?? 0);
 
       setStats({
         totalCars,
@@ -544,4 +527,4 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: typography.fontWeight.semiBold,
   },
-});
+});

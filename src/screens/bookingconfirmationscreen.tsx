@@ -72,17 +72,10 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
 
   const loadVendorDetails = async () => {
     try {
-      const { db } = await import('../config/firebase');
-      const { doc, getDoc } = await import('firebase/firestore');
-
       const vendorId = bookingData.tripData.car.vendorId;
-      
       if (vendorId) {
-        const vendorDoc = await getDoc(doc(db, 'vendors', vendorId));
-        
-        if (vendorDoc.exists()) {
-          setVendorDetails(vendorDoc.data());
-        }
+        const { getPublicVendorDetails } = await import('../services/vendorauthservice');
+        setVendorDetails(await getPublicVendorDetails(vendorId));
       }
     } catch (error) {
       console.error('Error loading vendor:', error);
@@ -636,4 +629,4 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: typography.fontWeight.semiBold,
   },
-});
+});

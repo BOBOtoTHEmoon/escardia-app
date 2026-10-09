@@ -1,8 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
-import { db, auth } from '../config/firebase';
-import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '../config/supabase';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -77,22 +76,9 @@ export const savePushToken = async (
       return false;
     }
 
-    // Save to pushTokens collection
-    await setDoc(doc(db, 'pushTokens', userId), {
-      token: pushToken,
-      userType,
-      userId,
-      platform: Platform.OS,
-      updatedAt: serverTimestamp(),
-      createdAt: serverTimestamp(),
-    }, { merge: true });
-
-    // Also save token in user/vendor document for easy access
-    const collectionName = userType === 'vendor' ? 'vendors' : 'users';
-    await updateDoc(doc(db, collectionName, userId), {
-      pushToken,
-      pushTokenUpdatedAt: serverTimestamp(),
-    });
+    // Save on the user's profile. The server reads it when sending notifications.
+    const { error } = await supabase.from('profiles').update({ push_token: pushToken }).eq('id', userId);
+    if (error) throw error;
 
     console.log(`✅ Push token saved for ${userType}: ${userId}`);
     return true;
@@ -148,4 +134,58 @@ export const getBadgeCount = async (): Promise<number> => {
 
 export const setBadgeCount = async (count: number) => {
   await Notifications.setBadgeCountAsync(count);
+};
+// ---------------- In-app notifications (created by the server) ----------------
+
+export interface AppNotification {
+  id: string;
+  type: 'booking' | 'payment' | 'withdrawal' | 'cancellation' | 'approval' | 'general';
+  rawType: string;
+  title: string;
+  message: string;
+  read: boolean;
+  bookingId?: string;
+  createdAt: Date;
+}
+
+const notificationKind = (t: string | null): AppNotification['type'] => {
+  const v = (t ?? '').toLowerCase();
+  if (v.includes('withdrawal')) return 'withdrawal';
+  if (v.includes('cancel') || v.includes('refund')) return 'cancellation';
+  if (v.includes('approval') || v.includes('vendor_status')) return 'approval';
+  if (v.includes('wallet') || v.includes('earning') || v.includes('payment')) return 'payment';
+  if (v.includes('booking') || v.includes('trip') || v.includes('dispute')) return 'booking';
+  return 'general';
+};
+
+export const getMyNotifications = async (limitCount = 50): Promise<AppNotification[]> => {
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limitCount);
+  if (error) return [];
+  return (data ?? []).map((n) => ({
+    id: n.id,
+    type: notificationKind(n.type),
+    rawType: n.type ?? '',
+    title: n.title,
+    message: n.body ?? '',
+    read: n.read,
+    bookingId: n.data?.bookingId,
+    createdAt: new Date(n.created_at),
+  }));
+};
+
+export const markNotificationRead = async (id: string) => {
+  await supabase.from('notifications').update({ read: true }).eq('id', id);
+};
+
+export const markAllNotificationsRead = async () => {
+  await supabase.from('notifications').update({ read: true }).eq('read', false);
+};
+
+export const getUnreadNotificationCount = async (): Promise<number> => {
+  const { count } = await supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('read', false);
+  return count ?? 0;
 };

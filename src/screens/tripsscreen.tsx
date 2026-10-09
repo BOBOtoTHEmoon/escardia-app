@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '../constants';
 import { getBookingsByStatus } from '../services/bookingService';
-import { auth } from '../config/firebase';
+import { auth } from '../config/supabase';
 import RatingModal from '../components/ratingmodal';
 import ratingService from '../services/ratingservice';
 
@@ -39,56 +39,17 @@ export const TripsScreen: React.FC<TripsScreenProps> = ({
 useEffect(() => {
   const fetchTrips = async () => {
     try {
-      console.log('🔵 Loading user trips...');
-      const { auth, db } = await import('../config/firebase');
-      const { collection, query, where, getDocs, doc, updateDoc } = await import('firebase/firestore');
-      const { calculateBookingStatus } = await import('../utils/dateHelpers');
-
+      const { getUserBookings } = await import('../services/bookingService');
       const userId = auth.currentUser?.uid;
       if (!userId) {
-        console.log('❌ No user logged in');
         setLoading(false);
         return;
       }
-
-      // Fetch user's bookings
-      const bookingsQuery = query(
-        collection(db, 'bookings'),
-        where('userId', '==', userId)
-      );
-
-      const snapshot = await getDocs(bookingsQuery);
-      
-      // ✅ Update statuses with TIME
-      const bookingsList = await Promise.all(
-        snapshot.docs.map(async (docSnapshot) => {
-          const booking = docSnapshot.data();
-          const bookingId = docSnapshot.id;
-
-          // Calculate status with TIME
-          const actualStatus = calculateBookingStatus(
-            booking.startDate,
-            booking.startTime,
-            booking.endDate,
-            booking.stopTime
-          );
-
-          // Update Firebase if status changed
-          if (actualStatus !== booking.status) {
-            console.log(`🔄 User trips: Updating ${bookingId} from ${booking.status} to ${actualStatus}`);
-            await updateDoc(doc(db, 'bookings', bookingId), {
-              status: actualStatus,
-            });
-          }
-
-          return { id: bookingId, ...booking, status: actualStatus };
-        })
-      );
-
-      console.log(`✅ Loaded ${bookingsList.length} trips`);
-      setTrips(bookingsList);
+      // Statuses are kept up to date by the server.
+      const result = await getUserBookings(userId);
+      setTrips(result.bookings);
     } catch (error) {
-      console.error('❌ Error loading trips:', error);
+      console.error('Error loading trips:', error);
     } finally {
       setLoading(false);
     }
@@ -104,7 +65,8 @@ useEffect(() => {
   } else if (selectedTab === 'upcoming') {
     return trip.status === 'upcoming';
   } else {
-    return trip.status === 'completed'; // past = completed
+    // past = completed, under review or cancelled
+    return ['past', 'completed', 'disputed', 'cancelled'].includes(trip.status);
   }
 });
 
@@ -340,7 +302,7 @@ useEffect(() => {
             </TouchableOpacity>
 
             {/* Rate Trip Button - Only show for past trips that haven't been rated */}
-            {selectedTab === 'past' && !trip.rated && (
+            {selectedTab === 'past' && trip.status === 'past' && !trip.rated && (
               <TouchableOpacity 
                 style={styles.rateButton}
                 onPress={() => handleRateTrip(trip)}
@@ -712,4 +674,4 @@ const styles = StyleSheet.create({
   height: '100%',
   borderRadius: borderRadius.md,
 },
-});
+});

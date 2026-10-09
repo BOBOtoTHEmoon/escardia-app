@@ -40,19 +40,10 @@ export const VendorNotificationPreferencesScreen: React.FC<VendorNotificationPre
 
   const loadPreferences = async () => {
     try {
-      const { db, auth } = await import('../config/firebase');
-      const { doc, getDoc } = await import('firebase/firestore');
-      
-      const vendorId = auth.currentUser?.uid;
-      if (!vendorId) return;
-
-      const vendorDoc = await getDoc(doc(db, 'vendors', vendorId));
-      if (vendorDoc.exists()) {
-        const data = vendorDoc.data();
-        if (data.notificationPreferences) {
-          setPreferences(data.notificationPreferences);
-        }
-      }
+      // Preferences are saved on this phone.
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      const saved = await AsyncStorage.getItem('escardia.vendorNotificationPreferences');
+      if (saved) setPreferences(JSON.parse(saved));
     } catch (error) {
       console.error('Error loading preferences:', error);
     } finally {
@@ -62,16 +53,8 @@ export const VendorNotificationPreferencesScreen: React.FC<VendorNotificationPre
 
   const handleSave = async () => {
     try {
-      const { db, auth } = await import('../config/firebase');
-      const { doc, updateDoc } = await import('firebase/firestore');
-      
-      const vendorId = auth.currentUser?.uid;
-      if (!vendorId) return;
-
-      await updateDoc(doc(db, 'vendors', vendorId), {
-        notificationPreferences: preferences,
-        updatedAt: new Date().toISOString(),
-      });
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      await AsyncStorage.setItem('escardia.vendorNotificationPreferences', JSON.stringify(preferences));
 
       Alert.alert('Success', 'Preferences saved successfully!');
     } catch (error) {
@@ -285,4 +268,4 @@ const styles = StyleSheet.create({
   bottomSpacing: {
     height: 40,
   },
-});
+});

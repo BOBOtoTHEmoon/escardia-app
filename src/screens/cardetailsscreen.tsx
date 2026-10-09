@@ -36,13 +36,11 @@ export const CarDetailsScreen: React.FC<CarDetailsScreenProps> = ({
     const fetchCar = async () => {
       try {
         console.log('🔵 Loading car details for:', carId);
-        const { db } = await import('../config/firebase');
-        const { doc, getDoc } = await import('firebase/firestore');
+        const { getCar } = await import('../services/carservice');
+        const result = await getCar(carId);
 
-        const carDoc = await getDoc(doc(db, 'cars', carId));
-        
-        if (carDoc.exists()) {
-          const car = { id: carDoc.id, ...carDoc.data() };
+        if (result.success && result.car) {
+          const car = result.car;
           console.log('✅ Car loaded:', car);
           setCarData(car);
         } else {
@@ -481,4 +479,4 @@ const styles = StyleSheet.create({
   height: 20,
   tintColor: colors.primary,
 },
-});
+});

@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '../constants';
-import { auth } from '../config/firebase';
+import { auth } from '../config/supabase';
 import {
   getUserTransactions,
   formatAmount,
@@ -495,4 +495,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default TransactionsScreen;
+export default TransactionsScreen;

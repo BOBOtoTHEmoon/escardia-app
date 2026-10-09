@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import * as Notifications from 'expo-notifications';
 import { savePushToken } from '../services/notificationService';
-import { auth } from '../config/firebase';
+import { auth } from '../config/supabase';
 
 export const useNotifications = (userType: 'user' | 'vendor' | 'admin') => {
   const [expoPushToken, setExpoPushToken] = useState<string | null>(null);

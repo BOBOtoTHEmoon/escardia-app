@@ -63,15 +63,9 @@ export const MyFleetScreen: React.FC<MyFleetScreenProps> = ({
   useEffect(() => {
     const fetchCars = async () => {
       try {
-        console.log('🔵 Loading vendor cars...');
-        const { auth, db } = await import('../config/firebase');
-        const { collection, query, where, getDocs } = await import('firebase/firestore');
-        const { calculateBookingStatus } = await import('../utils/dateHelpers');
-        
+        const { auth } = await import('../config/supabase');
         const vendorId = auth.currentUser?.uid;
-
         if (!vendorId) {
-          console.log('❌ No vendor logged in');
           setLoading(false);
           return;
         }
@@ -79,55 +73,24 @@ export const MyFleetScreen: React.FC<MyFleetScreenProps> = ({
         // 1. Get all vendor's cars
         const { getVendorCars } = await import('../services/carservice');
         const result = await getVendorCars(vendorId);
-
         if (!result.success || !result.cars) {
           setLoading(false);
           return;
         }
 
-        // 2. Get all bookings for this vendor
-        const bookingsQuery = query(
-          collection(db, 'bookings'),
-          where('vendorId', '==', vendorId)
-        );
-        
-        const bookingsSnapshot = await getDocs(bookingsQuery);
-        
-        // Track active bookings (for status) with TIME CHECK
-        const activeBookings = new Set<string>();
-        
-        // Track bookings & earnings per car
-        const carStats: { [carId: string]: { bookings: number; earnings: number } } = {};
+        // 2. Bookings for this vendor (statuses are kept up to date by the server)
+        const { getVendorBookings } = await import('../services/bookingService');
+        const { bookings } = await getVendorBookings(vendorId);
 
-        bookingsSnapshot.docs.forEach(doc => {
-          const booking = doc.data();
+        const activeBookings = new Set<string>();
+        const carStats: { [carId: string]: { bookings: number; earnings: number } } = {};
+        bookings.forEach((booking) => {
           const carId = booking.carId;
-          
-          // Calculate status with TIME
-          const actualStatus = calculateBookingStatus(
-            booking.startDate,
-            booking.startTime,
-            booking.endDate,
-            booking.stopTime
-          );
-          
-          // Count for status (upcoming/ongoing only)
-          if (actualStatus === 'upcoming' || actualStatus === 'ongoing') {
-            activeBookings.add(carId);
-          }
-          
-          // Initialize stats for this car if not exists
-          if (!carStats[carId]) {
-            carStats[carId] = { bookings: 0, earnings: 0 };
-          }
-          
-          // Count all bookings
-          carStats[carId].bookings += 1;
-          
-          // Count earnings from completed bookings only
-          if (actualStatus === 'completed') {
-            carStats[carId].earnings += booking.totalPrice || 0;
-          }
+          if (booking.status === 'upcoming' || booking.status === 'ongoing') activeBookings.add(carId);
+          if (!carStats[carId]) carStats[carId] = { bookings: 0, earnings: 0 };
+          if (booking.status !== 'cancelled') carStats[carId].bookings += 1;
+          // Vendor's share of completed trips
+          if (booking.status === 'past') carStats[carId].earnings += booking.vendorAmount || 0;
         });
 
         // 3. Merge car data with calculated stats
@@ -824,4 +787,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
-});
+});

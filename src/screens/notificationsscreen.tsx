@@ -18,18 +18,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '../constants';
-import { auth, db } from '../config/firebase';
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  orderBy,
-  doc,
-  updateDoc,
-  limit,
-  Timestamp,
-} from 'firebase/firestore';
+import { auth } from '../config/supabase';
+import { getMyNotifications, markNotificationRead, markAllNotificationsRead } from '../services/notificationService';
 
 interface NotificationsScreenProps {
   onNavigateBack: () => void;
@@ -96,291 +86,19 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
         return;
       }
 
-      const allNotifications: Notification[] = [];
-
-      // ============================================
-      // 1. FETCH FROM NOTIFICATIONS COLLECTION
-      // ============================================
-      try {
-        const notificationsQuery = query(
-          collection(db, 'notifications'),
-          where('userId', '==', userId),
-          orderBy('createdAt', 'desc'),
-          limit(50)
-        );
-
-        const notifSnapshot = await getDocs(notificationsQuery);
-
-        notifSnapshot.docs.forEach((docSnap) => {
-          const data = docSnap.data();
-          const createdAt = toDate(data.createdAt);
-
-          // Determine type from notification data
-          let type: Notification['type'] = 'general';
-          if (data.type?.includes('PAYMENT') || data.type?.includes('payment')) {
-            type = 'payment';
-          } else if (data.type?.includes('BOOKING') || data.type?.includes('booking')) {
-            type = 'booking';
-          } else if (data.type?.includes('WITHDRAWAL') || data.type?.includes('withdrawal')) {
-            type = 'withdrawal';
-          } else if (data.type?.includes('APPROVAL') || data.type?.includes('approval')) {
-            type = 'approval';
-          } else if (data.type?.includes('CANCEL') || data.type?.includes('cancel')) {
-            type = 'cancellation';
-          }
-
-          allNotifications.push({
-            id: docSnap.id,
-            type,
-            title: data.title || 'Notification',
-            message: data.body || data.message || '',
-            timestamp: formatTimestamp(createdAt),
-            read: data.read || false,
-            source: 'notification',
-            bookingId: data.data?.bookingId,
-            createdAt,
-          });
-        });
-
-        console.log(`✅ Loaded ${notifSnapshot.docs.length} from notifications collection`);
-      } catch (error: any) {
-        // Index might not exist, that's okay
-        console.log('Note: notifications query failed (index may be needed):', error.message);
-      }
-
-      // ============================================
-      // 2. FETCH FROM BOOKINGS COLLECTION
-      // ============================================
-      try {
-        const bookingField = userType === 'vendor' ? 'vendorId' : 'userId';
-        
-        const bookingsQuery = query(
-          collection(db, 'bookings'),
-          where(bookingField, '==', userId),
-          orderBy('createdAt', 'desc'),
-          limit(30)
-        );
-
-        const bookingsSnapshot = await getDocs(bookingsQuery);
-
-        for (const docSnap of bookingsSnapshot.docs) {
-          const booking = docSnap.data();
-          const createdAt = toDate(booking.createdAt);
-
-          // Skip if we already have a notification for this booking
-          const existingNotif = allNotifications.find(n => n.bookingId === docSnap.id);
-          if (existingNotif) continue;
-
-          // Get car name
-          let carName = 'your car';
-          if (booking.car) {
-            carName = `${booking.car.brand || ''} ${booking.car.model || ''}`.trim() || 'your car';
-          } else if (booking.carBrand && booking.carModel) {
-            carName = `${booking.carBrand} ${booking.carModel}`;
-          }
-
-          // Get customer name (for vendors)
-          let customerName = booking.customerName || 'A customer';
-
-          // Generate notification based on status
-          let title = '';
-          let message = '';
-          let type: Notification['type'] = 'booking';
-
-          if (userType === 'vendor') {
-            // Vendor notifications
-            switch (booking.status) {
-              case 'pending':
-                title = '📅 New Booking Request';
-                message = `${customerName} wants to book ${carName}`;
-                break;
-              case 'confirmed':
-                title = '✅ Booking Confirmed';
-                message = `Booking for ${carName} is confirmed`;
-                break;
-              case 'ongoing':
-                title = '🚗 Trip Started';
-                message = `${customerName} started their trip with ${carName}`;
-                break;
-              case 'completed':
-              case 'past':
-                title = '🏁 Trip Completed';
-                message = `${customerName} completed their trip. Earnings: ₦${((booking.totalPrice || 0) * 0.9).toLocaleString()}`;
-                type = 'payment';
-                break;
-              case 'cancelled':
-                title = '❌ Booking Cancelled';
-                message = `${customerName} cancelled the booking for ${carName}`;
-                type = 'cancellation';
-                break;
-              default:
-                title = '🔔 Booking Update';
-                message = `Update on ${carName} booking`;
-            }
-          } else {
-            // User notifications
-            switch (booking.status) {
-              case 'pending':
-                title = '⏳ Booking Pending';
-                message = `Your booking for ${carName} is awaiting confirmation`;
-                break;
-              case 'confirmed':
-                title = '✅ Booking Confirmed!';
-                message = `Your booking for ${carName} has been confirmed`;
-                break;
-              case 'ongoing':
-                title = '🚗 Trip In Progress';
-                message = `Enjoy your trip with ${carName}!`;
-                break;
-              case 'completed':
-              case 'past':
-                title = '🏁 Trip Completed';
-                message = `Thanks for riding with ${carName}!`;
-                break;
-              case 'cancelled':
-                title = '❌ Booking Cancelled';
-                message = `Your booking for ${carName} was cancelled`;
-                type = 'cancellation';
-                break;
-              default:
-                title = '🔔 Booking Update';
-                message = `Update on your ${carName} booking`;
-            }
-          }
-
-          allNotifications.push({
-            id: `booking-${docSnap.id}`,
-            type,
-            title,
-            message,
-            timestamp: formatTimestamp(createdAt),
-            read: booking.notificationRead || false,
-            source: 'booking',
-            bookingId: docSnap.id,
-            createdAt,
-          });
-        }
-
-        console.log(`✅ Loaded ${bookingsSnapshot.docs.length} from bookings collection`);
-      } catch (error: any) {
-        console.log('Note: bookings query failed:', error.message);
-      }
-
-      // ============================================
-      // 3. FETCH WITHDRAWAL NOTIFICATIONS (Vendors)
-      // ============================================
-      if (userType === 'vendor') {
-        try {
-          const withdrawalsQuery = query(
-            collection(db, 'withdrawals'),
-            where('vendorId', '==', userId),
-            orderBy('createdAt', 'desc'),
-            limit(10)
-          );
-
-          const withdrawalsSnapshot = await getDocs(withdrawalsQuery);
-
-          withdrawalsSnapshot.docs.forEach((docSnap) => {
-            const withdrawal = docSnap.data();
-            const createdAt = toDate(withdrawal.createdAt);
-
-            let title = '';
-            let message = '';
-
-            switch (withdrawal.status) {
-              case 'success':
-                title = '💰 Withdrawal Successful';
-                message = `₦${(withdrawal.amount || 0).toLocaleString()} sent to your bank account`;
-                break;
-              case 'processing':
-                title = '⏳ Withdrawal Processing';
-                message = `₦${(withdrawal.amount || 0).toLocaleString()} is being processed`;
-                break;
-              case 'failed':
-                title = '❌ Withdrawal Failed';
-                message = `₦${(withdrawal.amount || 0).toLocaleString()} withdrawal failed. Amount refunded to wallet.`;
-                break;
-              default:
-                title = '💸 Withdrawal Update';
-                message = `Update on your ₦${(withdrawal.amount || 0).toLocaleString()} withdrawal`;
-            }
-
-            allNotifications.push({
-              id: `withdrawal-${docSnap.id}`,
-              type: 'withdrawal',
-              title,
-              message,
-              timestamp: formatTimestamp(createdAt),
-              read: withdrawal.notificationRead || false,
-              source: 'notification',
-              createdAt,
-            });
-          });
-
-          console.log(`✅ Loaded ${withdrawalsSnapshot.docs.length} withdrawals`);
-        } catch (error: any) {
-          console.log('Note: withdrawals query failed:', error.message);
-        }
-      }
-
-      // ============================================
-      // 4. FETCH TRANSACTION NOTIFICATIONS (Wallet)
-      // ============================================
-      try {
-        const transactionsQuery = query(
-          collection(db, 'transactions'),
-          where('userId', '==', userId),
-          orderBy('createdAt', 'desc'),
-          limit(10)
-        );
-
-        const transactionsSnapshot = await getDocs(transactionsQuery);
-
-        transactionsSnapshot.docs.forEach((docSnap) => {
-          const txn = docSnap.data();
-          const createdAt = toDate(txn.createdAt);
-
-          // Only show wallet funding and booking payments
-          if (txn.category === 'wallet_funding' || txn.category === 'booking_payment') {
-            let title = '';
-            let message = '';
-
-            if (txn.category === 'wallet_funding') {
-              title = '💳 Wallet Funded';
-              message = `₦${(txn.amount || 0).toLocaleString()} added to your wallet`;
-            } else if (txn.category === 'booking_payment' && txn.type === 'credit') {
-              title = '💰 Payment Received';
-              message = `₦${(txn.amount || 0).toLocaleString()} credited for ${txn.description || 'booking'}`;
-            }
-
-            if (title) {
-              allNotifications.push({
-                id: `txn-${docSnap.id}`,
-                type: 'payment',
-                title,
-                message,
-                timestamp: formatTimestamp(createdAt),
-                read: txn.notificationRead || false,
-                source: 'notification',
-                createdAt,
-              });
-            }
-          }
-        });
-      } catch (error: any) {
-        console.log('Note: transactions query failed:', error.message);
-      }
-
-      // ============================================
-      // SORT ALL BY DATE (newest first)
-      // ============================================
-      allNotifications.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-
-      // Remove duplicates (keep first occurrence)
-      const uniqueNotifications = allNotifications.filter(
-        (notif, index, self) =>
-          index === self.findIndex(n => n.title === notif.title && n.message === notif.message)
-      );
+      // Every booking, payment and payout event creates a notification on the server.
+      const rows = await getMyNotifications(50);
+      const uniqueNotifications: Notification[] = rows.map((n) => ({
+        id: n.id,
+        type: n.type,
+        title: n.title,
+        message: n.message,
+        timestamp: formatTimestamp(n.createdAt),
+        read: n.read,
+        source: 'notification',
+        bookingId: n.bookingId,
+        createdAt: n.createdAt,
+      }));
 
       setNotifications(uniqueNotifications);
       console.log(`✅ Total notifications: ${uniqueNotifications.length}`);
@@ -404,52 +122,15 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
 
   // Mark notification as read
   const markAsRead = async (notification: Notification) => {
-    try {
-      if (notification.read) return;
-
-      if (notification.source === 'booking' && notification.bookingId) {
-        await updateDoc(doc(db, 'bookings', notification.bookingId), {
-          notificationRead: true,
-        });
-      } else if (notification.source === 'notification') {
-        const realId = notification.id.replace('withdrawal-', '').replace('txn-', '');
-        
-        if (notification.id.startsWith('withdrawal-')) {
-          await updateDoc(doc(db, 'withdrawals', realId), {
-            notificationRead: true,
-          });
-        } else if (notification.id.startsWith('txn-')) {
-          await updateDoc(doc(db, 'transactions', realId), {
-            notificationRead: true,
-          });
-        } else {
-          await updateDoc(doc(db, 'notifications', notification.id), {
-            read: true,
-          });
-        }
-      }
-
-      setNotifications(notifications.map(n =>
-        n.id === notification.id ? { ...n, read: true } : n
-      ));
-    } catch (error) {
-      console.error('Error marking notification as read:', error);
-    }
+    if (notification.read) return;
+    await markNotificationRead(notification.id);
+    setNotifications((prev) => prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n)));
   };
 
   // Mark all as read
   const markAllAsRead = async () => {
-    try {
-      const unreadNotifications = notifications.filter(n => !n.read);
-      
-      for (const notif of unreadNotifications) {
-        await markAsRead(notif);
-      }
-
-      setNotifications(notifications.map(n => ({ ...n, read: true })));
-    } catch (error) {
-      console.error('Error marking all as read:', error);
-    }
+    await markAllNotificationsRead();
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   };
 
   // Get icon for notification type
@@ -720,4 +401,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default NotificationsScreen;
+export default NotificationsScreen;

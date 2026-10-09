@@ -16,7 +16,7 @@ import {
   Alert,
 } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '../constants';
-import { auth } from '../config/firebase';
+import { auth } from '../config/supabase';
 import {
   getOrCreateWallet,
   getRecentTransactions,
@@ -553,4 +553,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default WalletScreen;
+export default WalletScreen;

@@ -59,86 +59,35 @@ export const VendorDashboardScreen: React.FC<VendorDashboardScreenProps> = ({
 const loadDashboardData = async () => {
   try {
     console.log('🔵 Loading vendor dashboard data...');
-    const { auth, db } = await import('../config/firebase');
-    const { collection, query, where, getDocs, doc, updateDoc } = await import('firebase/firestore');
-    const { calculateBookingStatus } = await import('../utils/dateHelpers'); // ✅ IMPORT
-
+    const { auth } = await import('../config/supabase');
     const vendorId = auth.currentUser?.uid;
     if (!vendorId) {
-      console.log('❌ No vendor logged in');
       setLoading(false);
       return;
     }
 
-    // 1. Get total cars
-    const carsQuery = query(collection(db, 'cars'), where('vendorId', '==', vendorId));
-    const carsSnapshot = await getDocs(carsQuery);
-    const totalCars = carsSnapshot.size;
-
-    // 2. Get all bookings
-    const bookingsQuery = query(collection(db, 'bookings'), where('vendorId', '==', vendorId));
-    const bookingsSnapshot = await getDocs(bookingsQuery);
+    const { getVendorCars } = await import('../services/carservice');
+    const { getVendorBookings } = await import('../services/bookingService');
+    const [carsRes, bookingsRes] = await Promise.all([getVendorCars(vendorId), getVendorBookings(vendorId)]);
+    const totalCars = carsRes.cars?.length ?? 0;
 
     let activeBookings = 0;
     let totalEarnings = 0;
     let thisMonthEarnings = 0;
-    const recentBookingsList: any[] = [];
-
     const today = new Date();
-    const currentMonth = today.getMonth();
-    const currentYear = today.getFullYear();
 
-    // ✅ Process each booking with TIME
-    for (const docSnapshot of bookingsSnapshot.docs) {
-      const booking = docSnapshot.data();
-      const bookingId = docSnapshot.id;
-
-      // Calculate status with TIME
-      const actualStatus = calculateBookingStatus(
-        booking.startDate,
-        booking.startTime,
-        booking.endDate,
-        booking.stopTime
-      );
-
-      // Update Firebase if status changed
-      if (actualStatus !== booking.status) {
-        console.log(`🔄 Dashboard: Updating ${bookingId} from ${booking.status} to ${actualStatus}`);
-        await updateDoc(doc(db, 'bookings', bookingId), {
-          status: actualStatus,
-        });
-        booking.status = actualStatus;
-      }
-
-      // Count active bookings (upcoming or ongoing)
-      if (booking.status === 'upcoming' || booking.status === 'ongoing') {
-        activeBookings++;
-      }
-
-      // Calculate earnings from completed bookings
-      if (booking.status === 'completed') {
-        const amount = booking.totalPrice || 0;
-        totalEarnings += amount;
-
-        // Check if booking is from this month
-        const { parseDateTime } = await import('../utils/dateHelpers');
-        const startDateTime = parseDateTime(booking.startDate, booking.startTime);
-        
-        if (startDateTime.getMonth() === currentMonth && startDateTime.getFullYear() === currentYear) {
-          thisMonthEarnings += amount;
+    // Statuses are kept up to date by the server. Earnings = vendor's share of completed trips.
+    for (const booking of bookingsRes.bookings) {
+      if (booking.status === 'upcoming' || booking.status === 'ongoing') activeBookings++;
+      if (booking.status === 'past') {
+        totalEarnings += booking.vendorAmount;
+        const start = new Date(booking.startAt);
+        if (start.getMonth() === today.getMonth() && start.getFullYear() === today.getFullYear()) {
+          thisMonthEarnings += booking.vendorAmount;
         }
       }
-
-      // Add to recent bookings
-      recentBookingsList.push({ id: bookingId, ...booking });
     }
-
-    // Sort recent bookings by creation date
-    recentBookingsList.sort((a, b) => {
-      const dateA = new Date(a.createdAt || 0);
-      const dateB = new Date(b.createdAt || 0);
-      return dateB.getTime() - dateA.getTime();
-    });
+    const recentBookingsList = bookingsRes.bookings.map((b) => ({ ...b, status: b.status === 'past' ? 'completed' : b.status }));
 
     setDashboardData({
       totalCars,
@@ -887,4 +836,4 @@ bookingCarPlaceholder: {
   justifyContent: 'center',
   alignItems: 'center',
 },
-});
+});

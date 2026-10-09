@@ -34,70 +34,59 @@ export const VendorAnalyticsScreen: React.FC<VendorAnalyticsScreenProps> = ({
   const loadAnalytics = async () => {
     setLoading(true);
     try {
-      const { auth, db } = await import('../config/firebase');
-      const { collection, query, where, getDocs } = await import('firebase/firestore');
-      
+      const { supabase, auth } = await import('../config/supabase');
       const vendorId = auth.currentUser?.uid;
       if (!vendorId) return;
 
-      // Calculate date range
       const now = new Date();
-      let startDate = new Date();
-      
-      if (timeframe === 'week') {
-        startDate.setDate(now.getDate() - 7);
-      } else if (timeframe === 'month') {
-        startDate.setMonth(now.getMonth() - 1);
-      } else {
-        startDate.setFullYear(now.getFullYear() - 1);
-      }
+      const startDate = new Date();
+      if (timeframe === 'week') startDate.setDate(now.getDate() - 7);
+      else if (timeframe === 'month') startDate.setMonth(now.getMonth() - 1);
+      else startDate.setFullYear(now.getFullYear() - 1);
+      const periodLength = now.getTime() - startDate.getTime();
+      const previousStart = new Date(startDate.getTime() - periodLength);
 
-      // Fetch bookings
-      const bookingsQuery = query(
-        collection(db, 'bookings'),
-        where('vendorId', '==', vendorId)
-      );
-      
-      const snapshot = await getDocs(bookingsQuery);
-      const bookings = snapshot.docs.map(doc => doc.data());
+      const { getVendorBookings } = await import('../services/bookingService');
+      const { bookings } = await getVendorBookings(vendorId);
 
-      // Filter by timeframe
-      const filteredBookings = bookings.filter((b: any) => {
-        const bookingDate = new Date(b.createdAt);
-        return bookingDate >= startDate;
-      });
+      const inRange = (b: { createdAt: string }, from: Date, to: Date) => {
+        const d = new Date(b.createdAt);
+        return d >= from && d < to;
+      };
+      const filteredBookings = bookings.filter((b) => inRange(b, startDate, now));
+      const previousBookings = bookings.filter((b) => inRange(b, previousStart, startDate));
 
-      // Calculate metrics
-      const totalRevenue = filteredBookings
-        .filter((b: any) => b.status === 'completed')
-        .reduce((sum, b: any) => sum + (b.totalPrice || 0), 0);
+      // Revenue = vendor's share of completed trips
+      const revenue = (list: typeof bookings) => list.filter((b) => b.status === 'past').reduce((sum, b) => sum + b.vendorAmount, 0);
+      const totalRevenue = revenue(filteredBookings);
+      const previousRevenue = revenue(previousBookings);
+      const revenueGrowth = previousRevenue > 0 ? Math.round(((totalRevenue - previousRevenue) / previousRevenue) * 100) : 0;
 
       const totalBookings = filteredBookings.length;
+      const completedBookings = filteredBookings.filter((b) => b.status === 'past');
+      const completionRate = totalBookings > 0 ? Math.round((completedBookings.length / totalBookings) * 100) : 0;
 
-      const completedBookings = filteredBookings.filter((b: any) => b.status === 'completed');
-      const completionRate = totalBookings > 0 
-        ? Math.round((completedBookings.length / totalBookings) * 100)
-        : 0;
-
-      // Find top car
       const carBookings: { [key: string]: number } = {};
-      filteredBookings.forEach((b: any) => {
+      filteredBookings.forEach((b) => {
         const carKey = `${b.car?.brand} ${b.car?.model}`;
         carBookings[carKey] = (carBookings[carKey] || 0) + 1;
       });
+      const topCarEntry = Object.entries(carBookings).sort((x, y) => y[1] - x[1])[0];
+      const topCar = topCarEntry ? { name: topCarEntry[0], bookings: topCarEntry[1] } : { name: 'N/A', bookings: 0 };
 
-      const topCarEntry = Object.entries(carBookings).sort((a, b) => b[1] - a[1])[0];
-      const topCar = topCarEntry 
-        ? { name: topCarEntry[0], bookings: topCarEntry[1] }
-        : { name: 'N/A', bookings: 0 };
+      // Real rating from customer reviews
+      const { data: ratings } = await supabase.from('ratings').select('overall').eq('vendor_id', vendorId);
+      const averageRating = ratings && ratings.length
+        ? Math.round((ratings.reduce((sum, r) => sum + r.overall, 0) / ratings.length) * 10) / 10
+        : 0;
 
       setAnalytics({
         totalRevenue,
         totalBookings,
-        averageRating: 4.8, // TODO: Calculate from reviews
+        averageRating,
         completionRate,
         topCar,
-        revenueGrowth: 15, // TODO: Calculate actual growth
+        revenueGrowth,
       });
     } catch (error) {
       console.error('Error loading analytics:', error);
@@ -355,4 +344,4 @@ const styles = StyleSheet.create({
   bottomSpacing: {
     height: 40,
   },
-});
+});

@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Button } from '../components';
 import { colors, typography, spacing, borderRadius } from '../constants';
-import { calculateTripPrice, formatCurrency } from '../services/pricingservice';
+import { calculateTripPrice, getServerTripPrice, formatCurrency } from '../services/pricingservice';
 
 interface PaymentDetailsScreenProps {
   onNavigateBack: () => void;
@@ -79,8 +79,12 @@ const PaymentDetailsScreen: React.FC<PaymentDetailsScreenProps> = ({
       hiluxCost: bookingData.escortData?.hiluxCost || 0, // ✅ NEW
     });
     
-    console.log('💰 Calculated Pricing:', calculatedPricing); // ✅ Debug log
     setPricing(calculatedPricing);
+
+    // Replace the estimate with the real server price (what the customer will actually pay).
+    getServerTripPrice(bookingData)
+      .then((serverPricing) => setPricing(serverPricing))
+      .catch((error) => console.warn('Could not load server price:', error?.message));
   }, [bookingData]);
 
   const paymentMethods = [
@@ -497,4 +501,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default PaymentDetailsScreen;
+export default PaymentDetailsScreen;

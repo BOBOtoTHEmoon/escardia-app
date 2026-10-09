@@ -33,50 +33,19 @@ useEffect(() => {
   const fetchBookings = async () => {
     try {
       console.log('🔵 Loading vendor bookings...');
-      const { auth, db } = await import('../config/firebase');
-      const { collection, query, where, getDocs, doc, updateDoc } = await import('firebase/firestore');
-      const { calculateBookingStatus } = await import('../utils/dateHelpers'); // ✅ IMPORT
-      
+      const { auth } = await import('../config/supabase');
       const vendorId = auth.currentUser?.uid;
-
       if (!vendorId) {
-        console.log('❌ No vendor logged in');
         setLoading(false);
         return;
       }
 
+      // Statuses are kept up to date by the server ('past' is shown as 'completed' here).
       const { getVendorBookings } = await import('../services/bookingService');
       const result = await getVendorBookings(vendorId);
-
-      if (result.success && result.bookings) {
-        // ✅ UPDATE STATUSES WITH TIME
-        const updatedBookings = await Promise.all(
-          result.bookings.map(async (booking: any) => {
-            const actualStatus = calculateBookingStatus(
-              booking.startDate,
-              booking.startTime,
-              booking.endDate,
-              booking.stopTime
-            );
-
-            // Update Firebase if status changed
-            if (actualStatus !== booking.status) {
-              console.log(`🔄 Updating ${booking.id} from ${booking.status} to ${actualStatus}`);
-              await updateDoc(doc(db, 'bookings', booking.id), {
-                status: actualStatus,
-              });
-            }
-
-            return { ...booking, status: actualStatus };
-          })
-        );
-
-        console.log(`✅ Loaded ${updatedBookings.length} bookings`);
-        setBookings(updatedBookings);
-      } else {
-        console.log('❌ No bookings found');
-        setBookings([]);
-      }
+      setBookings(
+        (result.bookings ?? []).map((b) => ({ ...b, status: b.status === 'past' ? 'completed' : b.status }))
+      );
     } catch (error) {
       console.error('❌ Error loading bookings:', error);
       setBookings([]);
@@ -637,4 +606,4 @@ statusBadge: {
   borderRadius: borderRadius.sm,
   zIndex: 10, // ✅ Add this if not there
 },
-});
+});

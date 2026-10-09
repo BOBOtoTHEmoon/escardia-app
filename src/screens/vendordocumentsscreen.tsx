@@ -32,50 +32,39 @@ export const VendorDocumentsScreen: React.FC<VendorDocumentsScreenProps> = ({
     loadDocuments();
   }, []);
 
+  const COLUMN = {
+    idFront: 'id_front_path',
+    idBack: 'id_back_path',
+    cacCertificate: 'cac_certificate_path',
+    proofOfAddress: 'proof_of_address_path',
+  } as const;
+
+  // Documents are private: show them with short-lived signed links.
   const loadDocuments = async () => {
     try {
-      const { db, auth } = await import('../config/firebase');
-      const { doc, getDoc } = await import('firebase/firestore');
-      
+      const { supabase, auth, getPrivateFileUrl } = await import('../config/supabase');
       const vendorId = auth.currentUser?.uid;
       if (!vendorId) return;
 
-      const vendorDoc = await getDoc(doc(db, 'vendors', vendorId));
-      if (vendorDoc.exists()) {
-        const data = vendorDoc.data();
-        setDocuments({
-          idFront: data.idFront || null,
-          idBack: data.idBack || null,
-          cacCertificate: data.cacCertificate || null,
-          proofOfAddress: data.proofOfAddress || null,
-        });
+      const { data } = await supabase
+        .from('vendor_private')
+        .select('id_front_path, id_back_path, cac_certificate_path, proof_of_address_path')
+        .eq('vendor_id', vendorId)
+        .maybeSingle();
+      if (data) {
+        const [idFront, idBack, cacCertificate, proofOfAddress] = await Promise.all([
+          getPrivateFileUrl(data.id_front_path ?? ''),
+          getPrivateFileUrl(data.id_back_path ?? ''),
+          getPrivateFileUrl(data.cac_certificate_path ?? ''),
+          getPrivateFileUrl(data.proof_of_address_path ?? ''),
+        ]);
+        setDocuments({ idFront, idBack, cacCertificate, proofOfAddress });
       }
     } catch (error) {
       console.error('Error loading documents:', error);
     } finally {
       setLoading(false);
     }
-  };
-
-  const uploadToCloudinary = async (uri: string) => {
-    const formData = new FormData();
-    formData.append('file', {
-      uri,
-      type: 'image/jpeg',
-      name: 'document.jpg',
-    } as any);
-    formData.append('upload_preset', 'escardia');
-
-    const response = await fetch(
-      'https://api.cloudinary.com/v1_1/dsrd8cgse/image/upload',
-      {
-        method: 'POST',
-        body: formData,
-      }
-    );
-
-    const data = await response.json();
-    return data.secure_url;
   };
 
   const pickDocument = async (type: 'idFront' | 'idBack' | 'cacCertificate' | 'proofOfAddress') => {
@@ -88,21 +77,16 @@ export const VendorDocumentsScreen: React.FC<VendorDocumentsScreenProps> = ({
 
       if (!result.canceled && result.assets[0]) {
         setUploading(true);
-        const uploadedUrl = await uploadToCloudinary(result.assets[0].uri);
-
-        // Save to Firebase
-        const { db, auth } = await import('../config/firebase');
-        const { doc, updateDoc } = await import('firebase/firestore');
-        
+        const { supabase, auth, uploadImage, getPrivateFileUrl } = await import('../config/supabase');
         const vendorId = auth.currentUser?.uid;
         if (!vendorId) return;
 
-        await updateDoc(doc(db, 'vendors', vendorId), {
-          [type]: uploadedUrl,
-          updatedAt: new Date().toISOString(),
-        });
+        const path = await uploadImage(result.assets[0].uri, 'vendor-docs', type);
+        const { error } = await supabase.from('vendor_private').update({ [COLUMN[type]]: path }).eq('vendor_id', vendorId);
+        if (error) throw error;
 
-        setDocuments(prev => ({ ...prev, [type]: uploadedUrl }));
+        const url = await getPrivateFileUrl(path);
+        setDocuments((prev) => ({ ...prev, [type]: url }));
         Alert.alert('Success', 'Document uploaded successfully!');
       }
     } catch (error) {
@@ -424,4 +408,4 @@ const styles = StyleSheet.create({
   bottomSpacing: {
     height: 40,
   },
-});
+});

@@ -37,25 +37,15 @@ export const VendorSettingsScreen: React.FC<VendorSettingsScreenProps> = ({
   const handleSave = async () => {
     setSaving(true);
     try {
-      const { db, auth } = await import('../config/firebase');
-      const { doc, updateDoc } = await import('firebase/firestore');
-      
+      const { supabase, auth } = await import('../config/supabase');
       const vendorId = auth.currentUser?.uid;
       if (!vendorId) return;
 
-      await updateDoc(doc(db, 'vendors', vendorId), {
-        firstName,
-        lastName,
-        businessName,
-        phoneNumber,
-        settings: {
-          emailNotifications,
-          pushNotifications,
-          bookingAlerts,
-          paymentAlerts,
-        },
-        updatedAt: new Date().toISOString(),
-      });
+      const [{ error: pErr }, { error: vErr }] = await Promise.all([
+        supabase.from('profiles').update({ first_name: firstName, last_name: lastName, phone: phoneNumber }).eq('id', vendorId),
+        supabase.from('vendors').update({ business_name: businessName, business_phone: phoneNumber }).eq('id', vendorId),
+      ]);
+      if (pErr || vErr) throw pErr || vErr;
 
       Alert.alert('Success', 'Settings updated successfully!');
     } catch (error) {
@@ -313,4 +303,4 @@ const styles = StyleSheet.create({
   bottomSpacing: {
     height: 40,
   },
-});
+});

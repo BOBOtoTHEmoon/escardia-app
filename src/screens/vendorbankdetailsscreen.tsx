@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '../constants';
+import { NIGERIAN_BANKS } from '../services/paystackService';
 
 interface VendorBankDetailsScreenProps {
   onNavigateBack: () => void;
@@ -30,18 +31,19 @@ export const VendorBankDetailsScreen: React.FC<VendorBankDetailsScreenProps> = (
 
   const loadBankDetails = async () => {
     try {
-      const { db, auth } = await import('../config/firebase');
-      const { doc, getDoc } = await import('firebase/firestore');
-      
+      const { supabase, auth } = await import('../config/supabase');
       const vendorId = auth.currentUser?.uid;
       if (!vendorId) return;
 
-      const vendorDoc = await getDoc(doc(db, 'vendors', vendorId));
-      if (vendorDoc.exists()) {
-        const data = vendorDoc.data();
-        setAccountNumber(data.bankDetails?.accountNumber || '');
-        setAccountName(data.bankDetails?.accountName || '');
-        setBankName(data.bankDetails?.bankName || '');
+      const { data } = await supabase
+        .from('vendor_private')
+        .select('bank_name, account_number, account_name')
+        .eq('vendor_id', vendorId)
+        .maybeSingle();
+      if (data) {
+        setAccountNumber(data.account_number || '');
+        setAccountName(data.account_name || '');
+        setBankName(data.bank_name || '');
       }
     } catch (error) {
       console.error('Error loading bank details:', error);
@@ -51,8 +53,8 @@ export const VendorBankDetailsScreen: React.FC<VendorBankDetailsScreenProps> = (
   };
 
   const handleSave = async () => {
-    if (!accountNumber || !accountName || !bankName) {
-      Alert.alert('Error', 'Please fill in all fields');
+    if (!accountNumber || !bankName) {
+      Alert.alert('Error', 'Please choose your bank and enter your account number');
       return;
     }
 
@@ -63,36 +65,25 @@ export const VendorBankDetailsScreen: React.FC<VendorBankDetailsScreenProps> = (
 
     setSaving(true);
     try {
-      const { db, auth } = await import('../config/firebase');
-      const { doc, updateDoc } = await import('firebase/firestore');
-      
-      const vendorId = auth.currentUser?.uid;
-      if (!vendorId) return;
+      // The bank confirms the account name; payouts can only go to a verified account.
+      const { saveVendorBankAccount, NIGERIAN_BANKS } = await import('../services/paystackService');
+      const bank = NIGERIAN_BANKS.find((b) => b.name === bankName);
+      if (!bank) throw new Error('Please choose your bank from the list');
 
-      await updateDoc(doc(db, 'vendors', vendorId), {
-        bankDetails: {
-          accountNumber,
-          accountName,
-          bankName,
-          updatedAt: new Date().toISOString(),
-        },
-      });
+      const result = await saveVendorBankAccount(accountNumber, bank.code, bank.name);
+      if (!result.success) throw new Error(result.error);
+      setAccountName(result.accountName || accountName);
 
-      Alert.alert('Success', 'Bank details saved successfully!');
+      Alert.alert('Success', `Bank details saved.\n\nAccount name: ${result.accountName}`);
     } catch (error) {
       console.error('Error saving bank details:', error);
-      Alert.alert('Error', 'Failed to save bank details');
+      Alert.alert('Error', (error as Error)?.message || 'Failed to save bank details');
     } finally {
       setSaving(false);
     }
   };
 
-  const nigerianBanks = [
-    'Access Bank', 'GTBank', 'Zenith Bank', 'First Bank', 'UBA',
-    'Polaris Bank', 'Fidelity Bank', 'Ecobank', 'Sterling Bank', 
-    'Union Bank', 'Stanbic IBTC', 'Wema Bank', 'Keystone Bank',
-    'FCMB', 'Heritage Bank', 'Jaiz Bank', 'Kuda Bank', 'OPay',
-  ];
+  const nigerianBanks = NIGERIAN_BANKS.map((b) => b.name);
 
   if (loading) {
     return (
@@ -178,8 +169,8 @@ export const VendorBankDetailsScreen: React.FC<VendorBankDetailsScreenProps> = (
             <TextInput
               style={styles.input}
               value={accountName}
-              onChangeText={setAccountName}
-              placeholder="Enter account name"
+              editable={false}
+              placeholder="Filled in automatically by your bank"
               autoCapitalize="words"
             />
           </View>
@@ -346,4 +337,4 @@ const styles = StyleSheet.create({
   bottomSpacing: {
     height: 40,
   },
-});
+});

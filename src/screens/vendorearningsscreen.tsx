@@ -26,12 +26,13 @@ export const VendorEarningsScreen: React.FC<VendorEarningsScreenProps> = ({
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'year'>('month');
   const [earnings, setEarnings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [periodTotals, setPeriodTotals] = useState({ week: 0, month: 0, year: 0 });
 
   useEffect(() => {
     const fetchEarnings = async () => {
       try {
         console.log('🔵 Loading earnings data...');
-        const { auth } = await import('../config/firebase');
+        const { auth } = await import('../config/supabase');
         const vendorId = auth.currentUser?.uid;
 
         if (!vendorId) {
@@ -45,32 +46,30 @@ export const VendorEarningsScreen: React.FC<VendorEarningsScreenProps> = ({
         const result = await getVendorBookings(vendorId);
 
         if (result.success && result.bookings) {
-          const bookings = result.bookings;
-          
-          // Calculate total earnings
-          const totalEarnings = bookings.reduce((sum: number, booking: any) => {
-            return sum + (booking.totalPrice || 0);
-          }, 0);
+          // Earnings = the vendor's share (after Escardia's commission), not the customer's total.
+          const bookings = result.bookings.filter((b) => b.status !== 'cancelled');
+          const { getWalletBalances } = await import('../services/walletService');
+          const wallet = await getWalletBalances(vendorId);
 
-          // Calculate completed bookings earnings
-          const completedBookings = bookings.filter((b: any) => b.status === 'past' || b.status === 'completed');
-          const completedEarnings = completedBookings.reduce((sum: number, booking: any) => {
-            return sum + (booking.totalPrice || 0);
-          }, 0);
+          const completedBookings = bookings.filter((b) => b.status === 'past');
+          const completedEarnings = completedBookings.reduce((sum, b) => sum + (b.vendorAmount || 0), 0);
+          const totalEarnings = bookings.reduce((sum, b) => sum + (b.vendorAmount || 0), 0);
 
-          // Calculate pending earnings (upcoming/ongoing)
-          const pendingEarnings = totalEarnings - completedEarnings;
+          const now = new Date();
+          const since = (days: number) => new Date(now.getTime() - days * 86400000);
+          const sumSince = (from: Date) =>
+            completedBookings.filter((b) => new Date(b.startAt) >= from).reduce((sum, b) => sum + (b.vendorAmount || 0), 0);
+          setPeriodTotals({ week: sumSince(since(7)), month: sumSince(since(30)), year: sumSince(since(365)) });
 
           setEarnings({
             total: totalEarnings,
             completed: completedEarnings,
-            pending: pendingEarnings,
+            pending: wallet.pending, // on hold until trips complete + 24h
+            available: wallet.available,
             totalBookings: bookings.length,
             completedBookings: completedBookings.length,
-            recentTransactions: bookings.slice(0, 10), // Last 10 bookings
+            recentTransactions: bookings.slice(0, 10).map((b) => ({ ...b, totalPrice: b.vendorAmount })),
           });
-
-          console.log('✅ Earnings loaded');
         }
       } catch (error) {
         console.error('❌ Error loading earnings:', error);
@@ -83,9 +82,9 @@ export const VendorEarningsScreen: React.FC<VendorEarningsScreenProps> = ({
   }, [selectedPeriod]);
 
   const periodData = {
-    week: { label: 'This Week', earnings: earnings?.total || 0 },
-    month: { label: 'This Month', earnings: earnings?.total || 0 },
-    year: { label: 'This Year', earnings: earnings?.total || 0 },
+    week: { label: 'Last 7 Days', earnings: periodTotals.week },
+    month: { label: 'Last 30 Days', earnings: periodTotals.month },
+    year: { label: 'Last 12 Months', earnings: periodTotals.year },
   };
 
   return (
@@ -580,4 +579,4 @@ paddingBottom: 60,
     color: colors.primary,
     fontWeight: typography.fontWeight.semiBold,
   },
-});
+});

@@ -60,24 +60,26 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
   const fetchDrivers = async () => {
     try {
       console.log('🔵 Loading drivers...');
-      const { auth, db } = await import('../config/firebase');
-      const { collection, query, where, getDocs } = await import('firebase/firestore');
-      
+      const { supabase, auth } = await import('../config/supabase');
       const vendorId = auth.currentUser?.uid;
       if (!vendorId) {
         setLoading(false);
         return;
       }
 
-      const q = query(
-        collection(db, 'drivers'),
-        where('vendorId', '==', vendorId)
-      );
-      
-      const snapshot = await getDocs(q);
-      const driversList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+      const { data, error } = await supabase.from('drivers').select('*').eq('vendor_id', vendorId).order('created_at');
+      if (error) throw error;
+      const driversList = (data ?? []).map((d) => ({
+        id: d.id,
+        name: d.name,
+        phone: d.phone ?? '',
+        email: d.email ?? '',
+        licenseNumber: d.license_number ?? '',
+        experience: d.experience ?? '',
+        status: d.status,
+        totalTrips: d.total_trips ?? 0,
+        rating: Number(d.rating ?? 0),
+        photo: d.photo_url ?? undefined,
       })) as Driver[];
 
       setDrivers(driversList);
@@ -105,27 +107,21 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
     }
 
     try {
-      const { auth, db } = await import('../config/firebase');
-      const { collection, addDoc } = await import('firebase/firestore');
-      
+      const { supabase, auth } = await import('../config/supabase');
       const vendorId = auth.currentUser?.uid;
       if (!vendorId) return;
 
-      const driverData = {
-        vendorId,
+      const { error } = await supabase.from('drivers').insert({
+        vendor_id: vendorId,
         name,
         phone,
         email,
-        licenseNumber,
+        license_number: licenseNumber,
         experience,
         status: 'available',
-        totalTrips: 0,
-        rating: 5.0,
-        createdAt: new Date().toISOString(),
-      };
-
-      const docRef = await addDoc(collection(db, 'drivers'), driverData);
-      console.log('✅ Driver added:', docRef.id);
+        rating: 5,
+      });
+      if (error) throw error;
 
       Alert.alert('Success', 'Driver added successfully!');
       setShowAddModal(false);
@@ -144,17 +140,12 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
     }
 
     try {
-      const { db } = await import('../config/firebase');
-      const { doc, updateDoc } = await import('firebase/firestore');
-
-      await updateDoc(doc(db, 'drivers', editingDriver.id), {
-        name,
-        phone,
-        email,
-        licenseNumber,
-        experience,
-        updatedAt: new Date().toISOString(),
-      });
+      const { supabase } = await import('../config/supabase');
+      const { error } = await supabase
+        .from('drivers')
+        .update({ name, phone, email, license_number: licenseNumber, experience })
+        .eq('id', editingDriver.id);
+      if (error) throw error;
 
       Alert.alert('Success', 'Driver updated successfully!');
       setShowAddModal(false);
@@ -177,10 +168,9 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({
           style: 'destructive',
           onPress: async () => {
             try {
-              const { db } = await import('../config/firebase');
-              const { doc, deleteDoc } = await import('firebase/firestore');
-
-              await deleteDoc(doc(db, 'drivers', driver.id));
+              const { supabase } = await import('../config/supabase');
+              const { error } = await supabase.from('drivers').delete().eq('id', driver.id);
+              if (error) throw error;
               Alert.alert('Success', 'Driver removed successfully');
               fetchDrivers();
             } catch (error) {
@@ -811,4 +801,4 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: typography.fontWeight.semiBold,
   },
-});
+});

@@ -10,46 +10,9 @@ import {
 } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '../constants';
 import { Button } from '../components';
-import { auth, db } from '../config/firebase';
-import { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp, increment } from 'firebase/firestore';
-import { calculatePaymentSplit, generateReference } from '../services/paystackService';
-import { creditWallet } from '../services/walletService';
-
-// ============================================
-// PUSH NOTIFICATION HELPER
-// ============================================
-const sendPushNotification = async (
-  expoPushToken: string,
-  title: string,
-  body: string,
-  data?: any
-) => {
-  try {
-    console.log('📨 Sending push notification to:', expoPushToken);
-    
-    const response = await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        to: expoPushToken,
-        sound: 'default',
-        title,
-        body,
-        data: data || {},
-      }),
-    });
-    
-    const result = await response.json();
-    console.log('📨 Push notification result:', result);
-    return { success: true, result };
-  } catch (error) {
-    console.error('❌ Push notification error:', error);
-    return { success: false, error };
-  }
-};
+import { auth } from '../config/supabase';
+import { getWalletBalance } from '../services/walletService';
+import { useBookingPayment } from '../hooks/useBookingPayment';
 
 interface WalletPaymentScreenProps {
   onNavigateBack: () => void;
@@ -91,13 +54,7 @@ export const WalletPaymentScreen: React.FC<WalletPaymentScreenProps> = ({
     try {
       const user = auth.currentUser;
       if (!user) return;
-
-      const walletDoc = await getDoc(doc(db, 'wallets', user.uid));
-      if (walletDoc.exists()) {
-        setWalletBalance(walletDoc.data().balance || 0);
-      } else {
-        setWalletBalance(0);
-      }
+      setWalletBalance(await getWalletBalance(user.uid));
     } catch (error) {
       console.error('Error fetching wallet:', error);
       setWalletBalance(0);
@@ -106,9 +63,10 @@ export const WalletPaymentScreen: React.FC<WalletPaymentScreenProps> = ({
     }
   };
 
+  const pay = useBookingPayment(bookingData);
+
   const hasSufficientBalance = walletBalance >= totalAmount;
   const balanceAfterPayment = walletBalance - totalAmount;
-  const split = calculatePaymentSplit(totalAmount);
 
   // Create booking and process wallet payment
   const handlePayWithWallet = async () => {
@@ -141,219 +99,22 @@ export const WalletPaymentScreen: React.FC<WalletPaymentScreenProps> = ({
 
   const processWalletPayment = async () => {
     setProcessing(true);
+    // The database creates the booking, checks the price and takes the money in one step.
+    const result = await pay.payWithWallet();
+    setProcessing(false);
 
-    try {
-      const user = auth.currentUser;
-      if (!user) {
-        Alert.alert('Error', 'Please log in to continue.');
-        setProcessing(false);
-        return;
-      }
-
-      const tripData = bookingData!.tripData;
-
-      // Get user profile
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      const userProfile = userDoc.exists() ? userDoc.data() : {};
-
-      // Parse dates for status
-      const parseDate = (dateStr: string) => {
-        const parts = dateStr.trim().split(' ');
-        if (parts.length === 3) {
-          const months: { [key: string]: number } = {
-            'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5,
-            'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11
-          };
-          const day = parseInt(parts[0]);
-          const month = months[parts[1]];
-          const year = parseInt(parts[2]);
-          return new Date(year, month, day);
-        }
-        return new Date();
-      };
-
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-      const startDate = parseDate(tripData.startDate);
-      startDate.setHours(0, 0, 0, 0);
-      const endDate = parseDate(tripData.endDate);
-      endDate.setHours(0, 0, 0, 0);
-
-      let status = 'upcoming';
-      if (now >= startDate && now <= endDate) {
-        status = 'ongoing';
-      } else if (now > endDate) {
-        status = 'past';
-      }
-
-      const paymentReference = generateReference('WLT-BKG');
-
-      // ✅ Step 1: Create booking
-      const booking = {
-        userId: user.uid,
-        customerName: `${userProfile?.firstName || ''} ${userProfile?.lastName || ''}`.trim() || 'Guest',
-        customerPhone: userProfile?.phoneNumber || 'N/A',
-        customerEmail: userProfile?.email || user.email || 'N/A',
-        carId: tripData.car.id,
-        vendorId: tripData.car.vendorId,
-        carBrand: tripData.car.brand,
-        carModel: tripData.car.model,
-        carYear: tripData.car.year,
-        car: {
-          id: tripData.car.id,
-          brand: tripData.car.brand,
-          model: tripData.car.model,
-          year: tripData.car.year,
-          pricePerDay: tripData.car.pricePerDay,
-          pricePerHour: tripData.car.pricePerHour,
-          photos: tripData.car.photos || [],
-          seats: tripData.car.seats,
-          doors: tripData.car.doors,
-          transmission: tripData.car.transmission,
-          location: tripData.car.location,
-          vendorId: tripData.car.vendorId,
-        },
-        pickupLocation: tripData.pickupLocation,
-        pickupMethod: tripData.pickupMethod,
-        startDate: tripData.startDate,
-        endDate: tripData.endDate,
-        startTime: tripData.startTime,
-        stopTime: tripData.stopTime,
-        rideMode: tripData.rideMode,
-        escort: bookingData!.escortData?.escorts || null,
-        totalPrice: totalAmount,
-        status: status,
-        paymentStatus: 'paid',
-        paymentMethod: 'wallet',
-        paymentReference: paymentReference,
-        durationType: tripData.durationType,
-        duration: tripData.duration,
-        paidAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
-      };
-
-      const bookingRef = await addDoc(collection(db, 'bookings'), booking);
-      console.log('✅ Booking created:', bookingRef.id);
-
-      // ✅ Step 2: Deduct from user wallet
-      await updateDoc(doc(db, 'wallets', user.uid), {
-        balance: increment(-totalAmount),
-        updatedAt: serverTimestamp(),
-      });
-
-      // ✅ Step 3: Record transaction in user's wallet
-      await addDoc(collection(db, 'transactions'), {
-        userId: user.uid,
-        type: 'debit',
-        amount: totalAmount,
-        description: `Booking payment: ${tripData.car.brand} ${tripData.car.model}`,
-        reference: paymentReference,
-        bookingId: bookingRef.id,
-        status: 'completed',
-        createdAt: serverTimestamp(),
-      });
-
-      // ✅ Step 4: Credit vendor wallet (90%)
-      if (tripData.car.vendorId) {
-        await creditWallet(
-          tripData.car.vendorId,
-          split.vendorAmount,
-          `Booking payment: ${tripData.car.brand} ${tripData.car.model}`,
-          'booking_payment',
-          'wallet',
-          paymentReference
-        );
-      }
-
-      // ✅ Step 5: Record Escardia commission
-      await addDoc(collection(db, 'commissions'), {
-        bookingId: bookingRef.id,
-        vendorId: tripData.car.vendorId,
-        userId: user.uid,
-        totalAmount: totalAmount,
-        commissionAmount: split.escardiaCommission,
-        vendorAmount: split.vendorAmount,
-        commissionRate: 0.13,
-        paymentMethod: 'wallet',
-        reference: paymentReference,
-        createdAt: serverTimestamp(),
-      });
-
-      // ============================================
-      // ✅ SEND PUSH NOTIFICATION TO VENDOR
-      // ============================================
-      if (tripData.car.vendorId) {
-        try {
-          console.log('🔍 Looking up vendor:', tripData.car.vendorId);
-          const vendorDoc = await getDoc(doc(db, 'vendors', tripData.car.vendorId));
-          
-          if (vendorDoc.exists()) {
-            const vendorData = vendorDoc.data();
-            const vendorToken = vendorData?.pushToken;
-            
-            console.log('🔍 Vendor push token:', vendorToken);
-
-            if (vendorToken) {
-              const carName = `${tripData.car.brand} ${tripData.car.model}`;
-              await sendPushNotification(
-                vendorToken,
-                '🚗 New Booking!',
-                `Someone booked your ${carName} for ₦${totalAmount.toLocaleString()}`,
-                { 
-                  bookingId: bookingRef.id, 
-                  type: 'new_booking',
-                  carId: tripData.car.id,
-                }
-              );
-            } else {
-              console.log('⚠️ Vendor has no push token');
-            }
-          } else {
-            console.log('⚠️ Vendor document not found');
-          }
-        } catch (notifError) {
-          console.error('❌ Failed to send vendor notification:', notifError);
-        }
-      }
-
-      // ============================================
-      // ✅ SEND PUSH NOTIFICATION TO USER (confirmation)
-      // ============================================
-      try {
-        const userToken = userProfile?.pushToken;
-
-        if (userToken) {
-          const carName = `${tripData.car.brand} ${tripData.car.model}`;
-          await sendPushNotification(
-            userToken,
-            '✅ Booking Confirmed!',
-            `Your ${carName} booking is confirmed!`,
-            { 
-              bookingId: bookingRef.id, 
-              type: 'booking_confirmed',
-            }
-          );
-        }
-      } catch (notifError) {
-        console.error('❌ Failed to send user notification:', notifError);
-      }
-
-      Alert.alert(
-        '✅ Payment Successful!',
-        `₦${totalAmount.toLocaleString()} has been deducted from your wallet.\n\nNew balance: ₦${balanceAfterPayment.toLocaleString()}`,
-        [
-          {
-            text: 'Continue',
-            onPress: () => onPaymentComplete('wallet'),
-          },
-        ]
-      );
-    } catch (error: any) {
-      console.error('Wallet payment error:', error);
-      Alert.alert('Payment Failed', error.message || 'Something went wrong. Please try again.');
-    } finally {
-      setProcessing(false);
+    if (!result.ok) {
+      Alert.alert('Payment Failed', result.error || 'Something went wrong. Please try again.');
+      fetchWalletBalance();
+      return;
     }
+
+    const newBalance = await getWalletBalance(auth.currentUser?.uid ?? '');
+    Alert.alert(
+      'Payment Successful',
+      `₦${(pay.serverTotal ?? totalAmount).toLocaleString()} has been deducted from your wallet.\n\nNew balance: ₦${newBalance.toLocaleString()}`,
+      [{ text: 'Continue', onPress: () => onPaymentComplete('wallet') }]
+    );
   };
 
   const tripData = bookingData?.tripData;
@@ -627,4 +388,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default WalletPaymentScreen;
+export default WalletPaymentScreen;

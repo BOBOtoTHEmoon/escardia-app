@@ -31,13 +31,12 @@ export const VendorCarDetailScreen: React.FC<VendorCarDetailScreenProps> = ({
     const fetchCarDetails = async () => {
       try {
         console.log('🔵 Loading car details:', carId);
-        const { db } = await import('../config/firebase');
-        const { doc, getDoc } = await import('firebase/firestore');
+        const { getVendorCarById } = await import('../services/carservice');
+        const { auth } = await import('../config/supabase');
+        const result = await getVendorCarById(carId, auth.currentUser?.uid ?? '');
 
-        const carDoc = await getDoc(doc(db, 'cars', carId));
-        
-        if (carDoc.exists()) {
-          setCar({ id: carDoc.id, ...carDoc.data() });
+        if (result.success && result.car) {
+          setCar(result.car);
           console.log('✅ Car loaded');
         }
       } catch (error) {
@@ -527,4 +526,4 @@ const styles = StyleSheet.create({
   bottomSpacing: {
     height: 40,
   },
-});
+});

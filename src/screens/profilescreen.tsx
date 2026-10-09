@@ -9,8 +9,7 @@ import {
 } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '../constants';
 import { LogoutModal } from '../components/logoutmodal';
-import { signOut } from 'firebase/auth';
-import { auth } from '../config/firebase';
+import { auth } from '../config/supabase';
 
 
 
@@ -253,7 +252,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   visible={showLogoutModal}
   onConfirm={async () => {
     try {
-      await signOut(auth);
+      await (await import('../config/supabase')).supabase.auth.signOut();
       setShowLogoutModal(false);
       alert('Logged out successfully!');
       onNavigateToWelcome(); // ✅ ADD THIS - need to add this prop

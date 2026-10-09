@@ -13,9 +13,8 @@ import { colors, typography, spacing, borderRadius } from '../constants';
 import { Button } from '../components';
 import { PaystackWebView } from '../components/PaystackWebView';
 import { initializeWalletFunding, verifyPayment } from '../services/paystackService';
-import { creditWallet, getWalletBalance, formatAmount } from '../services/walletService';
-import { auth, db } from '../config/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { getWalletBalance, formatAmount } from '../services/walletService';
+import { auth } from '../config/supabase';
 
 interface AddMoneyScreenProps {
   onNavigateBack: () => void;
@@ -41,15 +40,8 @@ export const AddMoneyScreen: React.FC<AddMoneyScreenProps> = ({
     const loadUserData = async () => {
       const user = auth.currentUser;
       if (user) {
-        // Get email
-        if (user.email) {
-          setUserEmail(user.email);
-        } else {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          if (userDoc.exists()) {
-            setUserEmail(userDoc.data().email || '');
-          }
-        }
+        // Email is only shown on the Paystack page; the server fills it in.
+        setUserEmail(user.email || 'customer');
 
         // Get current balance
         const balance = await getWalletBalance(user.uid);
@@ -136,42 +128,29 @@ export const AddMoneyScreen: React.FC<AddMoneyScreenProps> = ({
       const verification = await verifyPayment(reference);
 
       if (verification.success) {
+        // The server has already credited the wallet.
         const numericAmount = getNumericAmount();
+        const newBalance = await getWalletBalance(user.uid);
+        setCurrentBalance(newBalance);
 
-        // Credit user's wallet
-        const creditResult = await creditWallet(
-          user.uid,
-          numericAmount,
-          'Wallet funding via Paystack',
-          'wallet_funding',
-          'card',
-          reference
-        );
-
-        if (creditResult.success) {
-          // Update balance display
-          const newBalance = await getWalletBalance(user.uid);
-          setCurrentBalance(newBalance);
-
-          Alert.alert(
-            '✅ Wallet Funded!',
-            `₦${numericAmount.toLocaleString()} has been added to your wallet.\n\nNew balance: ₦${newBalance.toLocaleString()}`,
-            [
-              {
-                text: 'Done',
-                onPress: () => {
-                  setAmount('');
-                  if (onSuccess) onSuccess();
-                  onNavigateBack();
-                },
+        Alert.alert(
+          'Wallet Funded',
+          `₦${numericAmount.toLocaleString()} has been added to your wallet.\n\nNew balance: ₦${newBalance.toLocaleString()}`,
+          [
+            {
+              text: 'Done',
+              onPress: () => {
+                setAmount('');
+                if (onSuccess) onSuccess();
+                onNavigateBack();
               },
-            ]
-          );
-        } else {
-          Alert.alert('Error', 'Payment received but failed to credit wallet. Please contact support.');
-        }
+            },
+          ]
+        );
+      } else if (verification.pending) {
+        Alert.alert('Payment Processing', verification.error || 'Your wallet will be credited as soon as the payment is confirmed.');
       } else {
-        Alert.alert('Payment Verification Failed', verification.error || 'Please contact support.');
+        Alert.alert('Payment Not Confirmed', verification.error || 'Please contact support.');
       }
     } catch (error: any) {
       console.error('Payment verification error:', error);
@@ -539,4 +518,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default AddMoneyScreen;
+export default AddMoneyScreen;

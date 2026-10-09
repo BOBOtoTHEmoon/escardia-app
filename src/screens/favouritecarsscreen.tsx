@@ -34,15 +34,10 @@ export const FavoriteCarsScreen: React.FC<FavoriteCarsScreenProps> = ({
       
       if (result.success && result.favorites.length > 0) {
         // Fetch car details for each favorite
-        const { db } = await import('../config/firebase');
-        const { doc, getDoc } = await import('firebase/firestore');
-        
+        const { getCar } = await import('../services/carservice');
         const carPromises = result.favorites.map(async (carId: string) => {
-          const carDoc = await getDoc(doc(db, 'cars', carId));
-          if (carDoc.exists()) {
-            return { id: carDoc.id, ...carDoc.data() };
-          }
-          return null;
+          const r = await getCar(carId);
+          return r.success ? r.car : null;
         });
 
         const cars = await Promise.all(carPromises);
@@ -327,4 +322,4 @@ const styles = StyleSheet.create({
   bottomSpacing: {
     height: 20,
   },
-});
+});

@@ -12,32 +12,15 @@ import {
 } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '../constants';
 import { Button } from '../components';
-import { 
-  NIGERIAN_BANKS, 
-  verifyBankAccount, 
-  createTransferRecipient,
-  initiateTransfer,
-  generateReference,
+import {
+  NIGERIAN_BANKS,
+  getBankList,
+  verifyBankAccount,
+  saveVendorBankAccount,
+  requestWithdrawal,
 } from '../services/paystackService';
-import { 
-  getWalletBalance, 
-  debitWallet,
-  formatAmount,
-} from '../services/walletService';
-import { auth, db } from '../config/firebase';
-import { 
-  doc, 
-  getDoc, 
-  updateDoc, 
-  collection, 
-  addDoc, 
-  query, 
-  where, 
-  orderBy, 
-  limit, 
-  getDocs,
-  serverTimestamp,
-} from 'firebase/firestore';
+import { getWalletBalances, formatAmount } from '../services/walletService';
+import { supabase, auth } from '../config/supabase';
 
 interface WithdrawFundsScreenProps {
   onNavigateBack: () => void;
@@ -47,7 +30,7 @@ interface WithdrawFundsScreenProps {
 interface Withdrawal {
   id: string;
   amount: number;
-  status: 'pending' | 'processing' | 'success' | 'failed';
+  status: string;
   bankName: string;
   accountNumber: string;
   createdAt: any;
@@ -59,6 +42,9 @@ export const WithdrawFundsScreen: React.FC<WithdrawFundsScreenProps> = ({
 }) => {
   // State
   const [availableBalance, setAvailableBalance] = useState(0);
+  const [onHoldBalance, setOnHoldBalance] = useState(0);
+  const [banks, setBanks] = useState<{ name: string; code: string }[]>(NIGERIAN_BANKS);
+  const [savedAccount, setSavedAccount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -96,66 +82,27 @@ export const WithdrawFundsScreen: React.FC<WithdrawFundsScreenProps> = ({
         return;
       }
 
-      // Load wallet balance
-      let walletBalance = await getWalletBalance(user.uid);
+      // Available = withdrawable now. On hold = trips not yet completed + 24h window.
+      const { available, pending } = await getWalletBalances(user.uid);
+      setAvailableBalance(available);
+      setOnHoldBalance(pending);
 
-      // If wallet is empty, calculate from completed bookings (legacy support)
-      if (walletBalance === 0) {
-        const { collection, query: firestoreQuery, where, getDocs } = await import('firebase/firestore');
-        
-        const bookingsQuery = firestoreQuery(
-          collection(db, 'bookings'),
-          where('vendorId', '==', user.uid),
-          where('status', 'in', ['past', 'completed'])
-        );
-        
-        const snapshot = await getDocs(bookingsQuery);
-        
-        let totalEarnings = 0;
-        snapshot.docs.forEach(doc => {
-          const booking = doc.data();
-          // Vendor gets 90% (after 10% platform fee)
-          const vendorEarnings = (booking.totalPrice || 0) * 0.9;
-          totalEarnings += vendorEarnings;
-        });
+      // Full Paystack bank list (falls back to the common banks).
+      getBankList().then((r) => r.banks?.length && setBanks(r.banks));
 
-        // TODO: Subtract already withdrawn amounts from withdrawals collection
-        const withdrawalsQuery = firestoreQuery(
-          collection(db, 'withdrawals'),
-          where('vendorId', '==', user.uid),
-          where('status', '==', 'success')
-        );
-        
-        try {
-          const withdrawalsSnapshot = await getDocs(withdrawalsQuery);
-          withdrawalsSnapshot.docs.forEach(doc => {
-            totalEarnings -= doc.data().amount || 0;
-          });
-        } catch (e) {
-          // Index might not exist yet, ignore
-        }
-
-        walletBalance = Math.max(0, totalEarnings);
+      // Saved payout account
+      const { data: vp } = await supabase
+        .from('vendor_private')
+        .select('bank_name, bank_code, account_number, account_name, paystack_recipient_code')
+        .eq('vendor_id', user.uid)
+        .maybeSingle();
+      if (vp?.account_number) {
+        setSelectedBank({ name: vp.bank_name ?? '', code: vp.bank_code ?? '' });
+        setAccountNumber(vp.account_number);
+        setAccountName(vp.account_name ?? '');
+        setSavedAccount(`${vp.bank_code}:${vp.account_number}`);
       }
 
-      setAvailableBalance(walletBalance);
-
-      // Load saved bank details
-      const vendorDoc = await getDoc(doc(db, 'vendors', user.uid));
-      if (vendorDoc.exists()) {
-        const data = vendorDoc.data();
-        if (data.bankDetails) {
-          setAccountNumber(data.bankDetails.accountNumber || '');
-          setAccountName(data.bankDetails.accountName || '');
-          setRecipientCode(data.bankDetails.recipientCode || '');
-          
-          // Find bank by name
-          const bank = NIGERIAN_BANKS.find(b => b.name === data.bankDetails.bankName);
-          if (bank) setSelectedBank(bank);
-        }
-      }
-
-      // Load recent withdrawals
       await loadRecentWithdrawals(user.uid);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -165,58 +112,39 @@ export const WithdrawFundsScreen: React.FC<WithdrawFundsScreenProps> = ({
   };
 
   const loadRecentWithdrawals = async (vendorId: string) => {
-    try {
-      const q = query(
-        collection(db, 'withdrawals'),
-        where('vendorId', '==', vendorId),
-        orderBy('createdAt', 'desc'),
-        limit(5)
-      );
-      
-      const snapshot = await getDocs(q);
-      const withdrawals = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Withdrawal[];
-      
-      setRecentWithdrawals(withdrawals);
-    } catch (error) {
-      console.error('Error loading withdrawals:', error);
-    }
+    const { data, error } = await supabase
+      .from('withdrawals')
+      .select('id, amount, status, bank_name, account_number, created_at')
+      .eq('vendor_id', vendorId)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    if (error) return;
+    setRecentWithdrawals(
+      (data ?? []).map((w) => ({
+        id: w.id,
+        amount: Number(w.amount),
+        status: w.status === 'pending_approval' ? 'pending' : w.status === 'approved' ? 'processing' : w.status,
+        bankName: w.bank_name ?? '',
+        accountNumber: w.account_number ?? '',
+        createdAt: w.created_at,
+      }))
+    );
   };
 
-  // Verify bank account with Paystack
+  // Check the account name with the bank (Paystack, via the server)
   const verifyAccount = async () => {
     if (!selectedBank || accountNumber.length !== 10) return;
+    if (savedAccount === `${selectedBank.code}:${accountNumber}` && accountName) return; // already saved
 
     setVerifyingAccount(true);
     setAccountName('');
-
     try {
       const result = await verifyBankAccount(accountNumber, selectedBank.code);
-      
       if (result.success && result.accountName) {
         setAccountName(result.accountName);
-        
-        // Save bank details
-        const user = auth.currentUser;
-        if (user) {
-          await updateDoc(doc(db, 'vendors', user.uid), {
-            bankDetails: {
-              bankName: selectedBank.name,
-              bankCode: selectedBank.code,
-              accountNumber,
-              accountName: result.accountName,
-              updatedAt: serverTimestamp(),
-            },
-          });
-        }
       } else {
         Alert.alert('Verification Failed', result.error || 'Could not verify account');
       }
-    } catch (error: any) {
-      console.error('Account verification error:', error);
-      Alert.alert('Error', 'Failed to verify account. Please try again.');
     } finally {
       setVerifyingAccount(false);
     }
@@ -226,22 +154,18 @@ export const WithdrawFundsScreen: React.FC<WithdrawFundsScreenProps> = ({
   const handleWithdraw = async () => {
     const amount = parseFloat(withdrawAmount);
 
-    // Validations
     if (!withdrawAmount || isNaN(amount) || amount <= 0) {
       Alert.alert('Invalid Amount', 'Please enter a valid amount');
       return;
     }
-
     if (amount < 1000) {
       Alert.alert('Minimum Amount', 'Minimum withdrawal is ₦1,000');
       return;
     }
-
     if (amount > availableBalance) {
       Alert.alert('Insufficient Balance', 'You cannot withdraw more than your available balance');
       return;
     }
-
     if (!selectedBank || !accountNumber || !accountName) {
       Alert.alert('Bank Details Required', 'Please add and verify your bank details first');
       return;
@@ -257,104 +181,35 @@ export const WithdrawFundsScreen: React.FC<WithdrawFundsScreenProps> = ({
     );
   };
 
-  // Process the actual withdrawal
+  // Request the payout. Escardia reviews it and the server sends the money.
   const processWithdrawal = async () => {
     setProcessing(true);
     const amount = parseFloat(withdrawAmount);
-    const reference = generateReference('WDR');
-
     try {
-      const user = auth.currentUser;
-      if (!user) throw new Error('Not logged in');
-
-      // Step 1: Create or get transfer recipient
-      let currentRecipientCode = recipientCode;
-      
-      if (!currentRecipientCode) {
-        const recipientResult = await createTransferRecipient(
-          selectedBank!.code,
-          accountNumber,
-          accountName
-        );
-
-        if (!recipientResult.success) {
-          throw new Error(recipientResult.error || 'Failed to create recipient');
-        }
-
-        currentRecipientCode = recipientResult.recipientCode!;
-        setRecipientCode(currentRecipientCode);
-
-        // Save recipient code
-        await updateDoc(doc(db, 'vendors', user.uid), {
-          'bankDetails.recipientCode': currentRecipientCode,
-        });
+      // Save the account first if it is new or changed.
+      if (savedAccount !== `${selectedBank!.code}:${accountNumber}`) {
+        const saved = await saveVendorBankAccount(accountNumber, selectedBank!.code, selectedBank!.name);
+        if (!saved.success) throw new Error(saved.error || 'Could not save your bank account');
+        setSavedAccount(`${selectedBank!.code}:${accountNumber}`);
       }
 
-      // Step 2: Debit vendor wallet first
-      const debitResult = await debitWallet(
-        user.uid,
-        amount,
-        `Withdrawal to ${selectedBank!.name}`,
-        'withdrawal',
-        undefined,
-        reference
-      );
+      const result = await requestWithdrawal(amount);
+      if (!result.success) throw new Error(result.error || 'Withdrawal failed');
 
-      if (!debitResult.success) {
-        throw new Error(debitResult.error || 'Failed to debit wallet');
-      }
-
-      // Step 3: Create withdrawal record
-      const withdrawalRef = await addDoc(collection(db, 'withdrawals'), {
-        vendorId: user.uid,
-        amount,
-        fee: 50, // Paystack/Bank transfer fee
-        netAmount: amount - 50,
-        bankName: selectedBank!.name,
-        bankCode: selectedBank!.code,
-        accountNumber,
-        accountName,
-        recipientCode: currentRecipientCode,
-        reference,
-        status: 'processing',
-        createdAt: serverTimestamp(),
-      });
-
-      // Step 4: Initiate Paystack transfer
-      const transferResult = await initiateTransfer(
-        amount - 50, // Deduct transfer fee
-        currentRecipientCode,
-        `Escardia earnings withdrawal`,
-        reference
-      );
-
-      if (transferResult.success) {
-        // Update withdrawal status
-        await updateDoc(doc(db, 'withdrawals', withdrawalRef.id), {
-          transferCode: transferResult.transferCode,
-          status: 'processing', // Will be updated to 'success' by webhook
-        });
-
-        Alert.alert(
-          '✅ Withdrawal Initiated!',
-          `₦${(amount - 50).toLocaleString()} is being transferred to your account.\n\nYou'll receive it within minutes.`,
-          [
-            {
-              text: 'Done',
-              onPress: () => {
-                setWithdrawAmount('');
-                loadData();
-              },
+      Alert.alert(
+        'Withdrawal Requested',
+        `₦${(amount - 50).toLocaleString()} will be sent to your account once Escardia approves it, usually within 24 hours.`,
+        [
+          {
+            text: 'Done',
+            onPress: () => {
+              setWithdrawAmount('');
+              loadData();
             },
-          ]
-        );
-      } else {
-        // Transfer failed - refund wallet
-        // Note: In production, this should be handled more carefully
-        throw new Error(transferResult.error || 'Transfer failed');
-      }
+          },
+        ]
+      );
     } catch (error: any) {
-      console.error('Withdrawal error:', error);
       Alert.alert('Withdrawal Failed', error.message || 'Please try again later');
     } finally {
       setProcessing(false);
@@ -423,6 +278,11 @@ export const WithdrawFundsScreen: React.FC<WithdrawFundsScreenProps> = ({
           <Text style={styles.balanceLabel}>Available Balance</Text>
           <Text style={styles.balanceAmount}>₦{formatAmount(availableBalance)}</Text>
           <Text style={styles.balanceNote}>Ready to withdraw</Text>
+          {onHoldBalance > 0 && (
+            <Text style={styles.balanceNote}>
+              ₦{formatAmount(onHoldBalance)} on hold until trips are completed
+            </Text>
+          )}
         </View>
 
         {/* Withdrawal Amount */}
@@ -469,7 +329,7 @@ export const WithdrawFundsScreen: React.FC<WithdrawFundsScreenProps> = ({
           {showBankPicker && (
             <View style={styles.bankList}>
               <ScrollView style={styles.bankListScroll} nestedScrollEnabled>
-                {NIGERIAN_BANKS.map((bank) => (
+                {banks.map((bank) => (
                   <TouchableOpacity
                     key={bank.code}
                     style={[
@@ -957,4 +817,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default WithdrawFundsScreen;
+export default WithdrawFundsScreen;

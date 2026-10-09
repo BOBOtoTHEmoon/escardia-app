@@ -181,3 +181,34 @@ export const getQuickPrice = (
   
   return total;
 };
+/**
+ * The real price, calculated by the database (the same numbers the customer will be charged).
+ * Falls back to the local estimate if the server can't be reached.
+ */
+export const getServerTripPrice = async (bookingData: any): Promise<PricingBreakdown> => {
+  const { quoteBooking } = await import('./bookingService');
+  const t = bookingData.tripData;
+  const q = await quoteBooking(bookingData);
+  const escorts: Array<{ type: string; count: number }> = bookingData.escortData?.escorts ?? [];
+  const legionCount = escorts.filter((e) => e.type === 'legion').reduce((n, e) => n + e.count, 0);
+  const privateCount = escorts.filter((e) => e.type === 'private').reduce((n, e) => n + e.count, 0);
+  const persons = legionCount + privateCount;
+
+  const breakdown: Array<{ label: string; amount: number }> = [
+    { label: `Car Rental (${t.duration} ${t.durationType}${t.duration > 1 ? 's' : ''})`, amount: Number(q.baseRental) },
+  ];
+  if (Number(q.deliveryFee) > 0) breakdown.push({ label: 'Delivery Fee', amount: Number(q.deliveryFee) });
+  if (Number(q.escortFee) > 0) breakdown.push({ label: `Security (${persons} personnel)`, amount: Number(q.escortFee) });
+  if (Number(q.hiluxFee) > 0) breakdown.push({ label: `Transport (${q.hiluxCount} Hilux)`, amount: Number(q.hiluxFee) });
+  breakdown.push({ label: 'Service Fee', amount: Number(q.serviceFee) });
+
+  return {
+    baseRental: Number(q.baseRental),
+    deliveryFee: Number(q.deliveryFee),
+    escortFees: { legion: 0, private: 0, hilux: Number(q.hiluxFee), total: Number(q.escortFee) + Number(q.hiluxFee) },
+    subtotal: Number(q.baseRental) + Number(q.deliveryFee) + Number(q.escortFee) + Number(q.hiluxFee),
+    serviceFee: Number(q.serviceFee),
+    total: Number(q.total),
+    breakdown,
+  };
+};
