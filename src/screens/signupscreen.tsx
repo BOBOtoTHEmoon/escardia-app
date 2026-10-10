@@ -1,661 +1,317 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  Image,
-  Modal,
-  Linking,
-  Alert,
-} from 'react-native';
-import { Button, Input, SocialButton } from '../components';
-import { colors, typography, spacing } from '../constants';
+import React, { useRef, useState } from 'react';
+import { Linking, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { signUpWithEmail } from '../services/authservice';
-// ✅ Import for Google Sign In (install: npx expo install expo-auth-session expo-crypto)
-// import * as Google from 'expo-auth-session/providers/google';
-// import * as AppleAuthentication from 'expo-apple-authentication';
-
+import { AppText, Banner, Button, Checkbox, IconButton, LinkText, TextField } from '../ui';
+import { AuthLayout } from '../ui/AuthLayout';
+import { color, gutter, themed } from '../theme';
 
 interface SignUpScreenProps {
-    onSignUpSuccess: (email: string, needsVerification: boolean) => void;
+  onSignUpSuccess: (email: string, needsVerification: boolean) => void;
   onNavigateToSignIn: () => void;
-  onNavigateBack: () => void; 
+  onNavigateBack: () => void;
 }
 
-export const SignUpScreen: React.FC<SignUpScreenProps> = ({
-  onSignUpSuccess,
-  onNavigateToSignIn,
-  onNavigateBack,
-}) => {
-  const [email, setEmail] = useState('');
+const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+
+const RULES = [
+  { label: '8 or more characters', test: (p: string) => p.length >= 8 },
+  { label: 'A number', test: (p: string) => /\d/.test(p) },
+  { label: 'A special character, like ! or @', test: (p: string) => /[!@#$%^&*(),.?":{}|<>_\-+=~`[\]\\/;']/.test(p) },
+];
+
+type Errors = Partial<Record<'firstName' | 'lastName' | 'email' | 'password' | 'confirmPassword' | 'terms', string>>;
+
+export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onNavigateToSignIn, onNavigateBack }) => {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [agreed, setAgreed] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
   const [loading, setLoading] = useState(false);
-  
-  // Terms & Conditions state
-  const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [errors, setErrors] = useState<Errors>({});
+  const [formError, setFormError] = useState('');
 
-  // Validation errors
-  const [errors, setErrors] = useState({
-    email: '',
-    firstName: '',
-    lastName: '',
-    password: '',
-    confirmPassword: '',
-    terms: '',
-  });
+  const lastRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+  const confirmRef = useRef<TextInput>(null);
 
-  // Validate email
-  const validateEmail = (email: string) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  };
+  const clear = (key: keyof Errors) => errors[key] && setErrors({ ...errors, [key]: undefined });
 
-  // Validate password (min 8 chars, at least 1 number, 1 special char)
-  const validatePassword = (password: string) => {
-    const minLength = password.length >= 8;
-    const hasNumber = /\d/.test(password);
-    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
-    return minLength && hasNumber && hasSpecialChar;
-  };
-
-  // Handle Sign Up
   const handleSignUp = async () => {
-    // Clear previous errors
-    setErrors({
-      email: '',
-      firstName: '',
-      lastName: '',
-      password: '',
-      confirmPassword: '',
-      terms: '',
-    });
+    const next: Errors = {};
+    if (!firstName.trim()) next.firstName = 'Required';
+    if (!lastName.trim()) next.lastName = 'Required';
+    if (!email.trim()) next.email = 'Enter your email';
+    else if (!isEmail(email)) next.email = 'That email does not look right';
+    if (!password) next.password = 'Choose a password';
+    else if (!RULES.every((r) => r.test(password))) next.password = 'Your password needs everything in the list below';
+    if (!confirmPassword) next.confirmPassword = 'Type your password again';
+    else if (password !== confirmPassword) next.confirmPassword = 'Passwords do not match';
+    if (!agreed) next.terms = 'Please accept the terms to continue';
+    setErrors(next);
+    setFormError('');
+    if (Object.keys(next).length) return;
 
-    let isValid = true;
-    const newErrors = { ...errors };
-
-    // Validate email
-    if (!email) {
-      newErrors.email = 'Email is required';
-      isValid = false;
-    } else if (!validateEmail(email)) {
-      newErrors.email = 'Please enter a valid email';
-      isValid = false;
-    }
-
-    // Validate first name
-    if (!firstName) {
-      newErrors.firstName = 'First name is required';
-      isValid = false;
-    }
-
-    // Validate last name
-    if (!lastName) {
-      newErrors.lastName = 'Last name is required';
-      isValid = false;
-    }
-
-    // Validate password
-    if (!password) {
-      newErrors.password = 'Password is required';
-      isValid = false;
-    } else if (!validatePassword(password)) {
-      newErrors.password = 'Password must be 8+ chars with number & special char';
-      isValid = false;
-    }
-
-    // Validate confirm password
-    if (!confirmPassword) {
-      newErrors.confirmPassword = 'Please confirm your password';
-      isValid = false;
-    } else if (password !== confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
-      isValid = false;
-    }
-
-    // Validate terms agreement
-    if (!agreedToTerms) {
-      newErrors.terms = 'You must agree to the Terms & Conditions';
-      isValid = false;
-    }
-
-    if (!isValid) {
-      setErrors(newErrors);
-      return;
-    }
-
-    // Sign up with Firebase
     setLoading(true);
-    const result = await signUpWithEmail(email, password, firstName, lastName);
+    const result = await signUpWithEmail(email, password, firstName.trim(), lastName.trim());
     setLoading(false);
 
     if (result.success) {
-            onSignUpSuccess(email.trim().toLowerCase(), result.needsVerification !== false);
+      onSignUpSuccess(email.trim().toLowerCase(), result.needsVerification !== false);
     } else {
-      newErrors.email = result.error || 'Sign up failed. Please try again.';
-      setErrors(newErrors);
+      setFormError(result.error || 'We could not create your account. Please try again.');
     }
-  };
-
-  // ✅ Handle Google Sign Up
-  const handleGoogleSignUp = async () => {
-    // TODO: Implement Google Sign In
-    // 1. Install: npx expo install expo-auth-session expo-crypto
-    // 2. Configure Google Cloud Console
-    // 3. Add Google OAuth credentials
-    Alert.alert(
-      'Coming Soon',
-      'Google Sign In will be available soon!',
-      [{ text: 'OK' }]
-    );
-    
-    /* 
-    // Example implementation:
-    const [request, response, promptAsync] = Google.useAuthRequest({
-      expoClientId: 'YOUR_EXPO_CLIENT_ID',
-      iosClientId: 'YOUR_IOS_CLIENT_ID',
-      androidClientId: 'YOUR_ANDROID_CLIENT_ID',
-    });
-
-    if (response?.type === 'success') {
-      const { authentication } = response;
-      // Sign in with Firebase using Google credential
-    }
-    */
-  };
-
-  // ✅ Handle Apple Sign Up
-  const handleAppleSignUp = async () => {
-    // TODO: Implement Apple Sign In
-    // 1. Install: npx expo install expo-apple-authentication
-    // 2. Configure Apple Developer Account
-    // 3. Enable Sign In with Apple capability
-    Alert.alert(
-      'Coming Soon',
-      'Apple Sign In will be available soon!',
-      [{ text: 'OK' }]
-    );
-
-    /*
-    // Example implementation:
-    try {
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-      });
-      // Sign in with Firebase using Apple credential
-    } catch (e) {
-      console.error(e);
-    }
-    */
-  };
-
-  // Open external link
-  const openExternalLink = (url: string) => {
-    Linking.openURL(url).catch(err => console.error('Error opening URL:', err));
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+    <AuthLayout
+      title="Create your account"
+      subtitle="Book premium cars and security across Lagos in minutes."
+      onBack={onNavigateBack}
+      footer={
+        <AppText variant="body" color={color.muted}>
+          Already have an account? <LinkText onPress={onNavigateToSignIn}>Sign in</LinkText>
+        </AppText>
+      }
     >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Back Button */}
-        <TouchableOpacity style={styles.backButton} onPress={onNavigateBack}>
-          <Text style={styles.backArrow}>←</Text>
-        </TouchableOpacity>
+      {!!formError && <Banner text={formError} />}
 
-        {/* Header */}
-        <View style={styles.header}>
-          <Image
-            source={require('../../assets/images/logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <Text style={styles.title}>Sign Up</Text>
-        </View>
+      <View style={{ flexDirection: 'row', gap: 12 }}>
+        <TextField
+          label="First name"
+          placeholder="Nifemi"
+          value={firstName}
+          onChangeText={(v) => {
+            setFirstName(v);
+            clear('firstName');
+          }}
+          autoCapitalize="words"
+          autoComplete="given-name"
+          textContentType="givenName"
+          returnKeyType="next"
+          onSubmitEditing={() => lastRef.current?.focus()}
+          error={errors.firstName}
+          containerStyle={{ flex: 1 }}
+        />
+        <TextField
+          ref={lastRef}
+          label="Last name"
+          placeholder="Idowu"
+          value={lastName}
+          onChangeText={(v) => {
+            setLastName(v);
+            clear('lastName');
+          }}
+          autoCapitalize="words"
+          autoComplete="family-name"
+          textContentType="familyName"
+          returnKeyType="next"
+          onSubmitEditing={() => emailRef.current?.focus()}
+          error={errors.lastName}
+          containerStyle={{ flex: 1 }}
+        />
+      </View>
 
-        {/* Form */}
-        <View style={styles.form}>
-          {/* Email Input - Full Width */}
-          <Input
-            label="Email"
-            placeholder="Enter your email"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            error={errors.email}
-          />
+      <TextField
+        ref={emailRef}
+        label="Email"
+        icon="mail"
+        placeholder="you@example.com"
+        value={email}
+        onChangeText={(v) => {
+          setEmail(v);
+          clear('email');
+        }}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoComplete="email"
+        textContentType="emailAddress"
+        returnKeyType="next"
+        onSubmitEditing={() => passwordRef.current?.focus()}
+        error={errors.email}
+      />
 
-          {/* First Name and Last Name - Side by Side */}
-          <View style={styles.nameRow}>
-            <View style={styles.nameInputContainer}>
-              <Input
-                label="First Name"
-                placeholder="First Name"
-                value={firstName}
-                onChangeText={setFirstName}
-                autoCapitalize="words"
-                error={errors.firstName}
-              />
+      <TextField
+        ref={passwordRef}
+        label="Password"
+        icon="lock"
+        placeholder="Create a password"
+        value={password}
+        onChangeText={(v) => {
+          setPassword(v);
+          clear('password');
+        }}
+        isPassword
+        autoComplete="new-password"
+        textContentType="newPassword"
+        returnKeyType="next"
+        onSubmitEditing={() => confirmRef.current?.focus()}
+        error={errors.password}
+        containerStyle={{ marginBottom: 10 }}
+      />
+
+      <View style={styles.rules}>
+        {RULES.map((r) => {
+          const ok = r.test(password);
+          return (
+            <View key={r.label} style={styles.rule}>
+              <View style={[styles.ruleDot, ok && styles.ruleDotOk]}>{ok && <Feather name="check" size={10} color="#FFFFFF" />}</View>
+              <AppText variant="small" color={ok ? color.ink : color.muted}>
+                {r.label}
+              </AppText>
             </View>
-            <View style={styles.nameInputContainer}>
-              <Input
-                label="Last Name"
-                placeholder="Last Name"
-                value={lastName}
-                onChangeText={setLastName}
-                autoCapitalize="words"
-                error={errors.lastName}
-              />
-            </View>
-          </View>
+          );
+        })}
+      </View>
 
-          {/* Password Input */}
-          <Input
-            label="Password"
-            placeholder="Enter your password"
-            value={password}
-            onChangeText={setPassword}
-            isPassword
-            error={errors.password}
-          />
+      <TextField
+        ref={confirmRef}
+        label="Confirm password"
+        icon="lock"
+        placeholder="Type it again"
+        value={confirmPassword}
+        onChangeText={(v) => {
+          setConfirmPassword(v);
+          clear('confirmPassword');
+        }}
+        isPassword
+        autoComplete="new-password"
+        textContentType="newPassword"
+        returnKeyType="done"
+        error={errors.confirmPassword}
+      />
 
-          {/* Confirm Password Input */}
-          <Input
-            label="Confirm Password"
-            placeholder="Confirm your password"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            isPassword
-            error={errors.confirmPassword}
-          />
+      <View style={{ marginBottom: 24 }}>
+        <Checkbox
+          checked={agreed}
+          onPress={() => {
+            setAgreed(!agreed);
+            clear('terms');
+          }}
+        >
+          <AppText variant="small" color={color.text} style={{ lineHeight: 20 }}>
+            I agree to Escardia&apos;s{' '}
+            <LinkText style={{ fontSize: 13 }} onPress={() => setShowTerms(true)}>
+              Terms and Conditions
+            </LinkText>{' '}
+            and{' '}
+            <LinkText style={{ fontSize: 13 }} onPress={() => Linking.openURL('https://www.escardia.com/privacy').catch(() => {})}>
+              Privacy Policy
+            </LinkText>
+          </AppText>
+        </Checkbox>
+        {!!errors.terms && (
+          <AppText variant="small" color={color.danger} style={{ marginTop: 8, marginLeft: 34 }}>
+            {errors.terms}
+          </AppText>
+        )}
+      </View>
 
-          {/* Terms & Conditions Checkbox */}
-          <View style={styles.termsContainer}>
-            <TouchableOpacity
-              style={styles.checkboxContainer}
-              onPress={() => setAgreedToTerms(!agreedToTerms)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]}>
-                {agreedToTerms && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-              <Text style={styles.termsText}>
-                I agree to the{' '}
-                <Text 
-                  style={styles.termsLink} 
-                  onPress={() => setShowTermsModal(true)}
-                >
-                  Terms & Conditions
-                </Text>
-                {' '}and{' '}
-                <Text 
-                  style={styles.termsLink} 
-                  onPress={() => openExternalLink('https://www.escardia.com/privacy')}
-                >
-                  Privacy Policy
-                </Text>
-              </Text>
-            </TouchableOpacity>
-            {errors.terms && <Text style={styles.errorText}>{errors.terms}</Text>}
-          </View>
+      <Button title="Create account" iconRight="arrow-right" onPress={handleSignUp} loading={loading} />
 
-          {/* Sign Up Button */}
-          <Button
-            title="Sign Up"
-            onPress={handleSignUp}
-            loading={loading}
-            style={styles.signUpButton}
-          />
-
-          {/* Divider */}
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Social Sign Up - ✅ CLOSER SPACING */}
-          <View style={styles.socialContainer}>
-            <SocialButton
-              provider="apple"
-              onPress={handleAppleSignUp}
-            />
-            <View style={styles.socialGap} />
-            <SocialButton
-              provider="google"
-              onPress={handleGoogleSignUp}
-            />
-          </View>
-
-          {/* Sign In Link - ✅ BETTER POSITIONING */}
-          <TouchableOpacity
-            onPress={onNavigateToSignIn}
-            style={styles.signInContainer}
-          >
-            <Text style={styles.signInText}>
-              Already have an account?{' '}
-              <Text style={styles.signInLink}>Sign In</Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-
-      {/* Terms & Conditions Modal */}
-      <Modal
-        visible={showTermsModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowTermsModal(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Terms & Conditions</Text>
-            <TouchableOpacity 
-              onPress={() => setShowTermsModal(false)}
-              style={styles.modalCloseButton}
-            >
-              <Text style={styles.modalCloseText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-          
-          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-            <Text style={styles.modalSectionTitle}>1. Acceptance of Terms</Text>
-            <Text style={styles.modalText}>
-              By accessing and using the Escardia mobile application ("App"), you agree to be bound by these Terms and Conditions. If you do not agree to these terms, please do not use our services.
-            </Text>
-
-            <Text style={styles.modalSectionTitle}>2. Eligibility</Text>
-            <Text style={styles.modalText}>
-              You must be at least 18 years old and possess a valid driver's license to rent a vehicle through Escardia. By using our services, you confirm that you meet these requirements.
-            </Text>
-
-            <Text style={styles.modalSectionTitle}>3. Account Registration</Text>
-            <Text style={styles.modalText}>
-              You agree to provide accurate, current, and complete information during registration. You are responsible for maintaining the confidentiality of your account credentials and for all activities under your account.
-            </Text>
-
-            <Text style={styles.modalSectionTitle}>4. Booking and Payments</Text>
-            <Text style={styles.modalText}>
-              • All bookings are subject to vehicle availability{'\n'}
-              • Prices displayed include platform fees{'\n'}
-              • Payment must be made in full before the rental period begins{'\n'}
-              • Cancellation policies vary by vendor; please review before booking{'\n'}
-              • Escardia charges a 10% service fee on all transactions
-            </Text>
-
-            <Text style={styles.modalSectionTitle}>5. Vehicle Use</Text>
-            <Text style={styles.modalText}>
-              • Vehicles must be used in accordance with Nigerian traffic laws{'\n'}
-              • Smoking, pets, and illegal activities are prohibited in rental vehicles{'\n'}
-              • You are responsible for any damage during your rental period{'\n'}
-              • Vehicles must be returned in the same condition as received{'\n'}
-              • Late returns may incur additional charges
-            </Text>
-
-            <Text style={styles.modalSectionTitle}>6. Contact Us</Text>
-            <Text style={styles.modalText}>
-              For questions about these Terms & Conditions, please contact us at:{'\n\n'}
-              Email: support@escardia.com{'\n'}
-              Website: www.escardia.com
-            </Text>
-
-            <Text style={styles.modalLastUpdated}>
-              Last updated: December 2024
-            </Text>
-          </ScrollView>
-
-          <View style={styles.modalFooter}>
-            <TouchableOpacity
-              style={styles.modalAcceptButton}
-              onPress={() => {
-                setAgreedToTerms(true);
-                setShowTermsModal(false);
-              }}
-            >
-              <Text style={styles.modalAcceptButtonText}>I Accept</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-    </KeyboardAvoidingView>
+      <TermsSheet
+        visible={showTerms}
+        onClose={() => setShowTerms(false)}
+        onAccept={() => {
+          setAgreed(true);
+          clear('terms');
+          setShowTerms(false);
+        }}
+      />
+    </AuthLayout>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
+const TERMS: { title: string; body: string }[] = [
+  {
+    title: '1. Acceptance of terms',
+    body: 'By using the Escardia app, you agree to these Terms and Conditions. If you do not agree, please do not use our services.',
   },
-  scrollContent: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: 50,
-    paddingBottom: 30, // ✅ Added bottom padding
+  {
+    title: '2. Eligibility',
+    body: "You must be at least 18 years old and hold a valid driver's licence to rent a vehicle through Escardia.",
   },
-  header: {
-    alignItems: 'center',
-    marginBottom: spacing.md,
-    marginTop: -70,
+  {
+    title: '3. Your account',
+    body: 'Give accurate information when you sign up. You are responsible for keeping your login details safe and for everything done with your account.',
   },
-  logo: {
-    width: 50,
-    height: 85,
-    marginTop: spacing['2xl'],
+  {
+    title: '4. Bookings and payments',
+    body:
+      '• All bookings depend on the car being available\n• The price you see at checkout includes Escardia’s service fee\n• You pay in full before the trip starts\n• Refunds depend on how early you cancel, as shown before you book',
   },
-  title: {
-    fontSize: typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: 0,
+  {
+    title: '5. Using the vehicle',
+    body:
+      '• Follow Nigerian traffic laws\n• No smoking, pets or illegal activity in any vehicle\n• You are responsible for damage during your trip\n• Return the car in the condition you received it\n• Late returns may cost extra',
   },
-  form: {
-    flex: 1,
+  {
+    title: '6. Contact us',
+    body: 'Questions about these terms? Email support@escardia.com.',
   },
-  signUpButton: {
-    marginTop: spacing.md,
-  },
-  
-  // ✅ FIXED: Divider styles
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: spacing.lg,
-    marginBottom: spacing.md,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.border,
-  },
-  dividerText: {
-    marginHorizontal: spacing.md,
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-  },
+];
 
-  // ✅ FIXED: Social buttons closer together
-  socialContainer: {
-    flexDirection: 'row',
+const TermsSheet = ({ visible, onClose, onAccept }: { visible: boolean; onClose: () => void; onAccept: () => void }) => {
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: color.bg }}>
+        <View style={styles.sheetHeader}>
+          <AppText variant="heading">Terms and Conditions</AppText>
+          <IconButton icon="x" size={38} onPress={onClose} accessibilityLabel="Close" />
+        </View>
+        <ScrollView contentContainerStyle={{ padding: gutter, paddingBottom: 32 }}>
+          {TERMS.map((t) => (
+            <View key={t.title} style={{ marginBottom: 20 }}>
+              <AppText variant="subheading" style={{ marginBottom: 6 }}>
+                {t.title}
+              </AppText>
+              <AppText variant="body" color={color.text}>
+                {t.body}
+              </AppText>
+            </View>
+          ))}
+          <AppText variant="small" color={color.subtle}>
+            Last updated October 2026
+          </AppText>
+        </ScrollView>
+        <View style={[styles.sheetFooter, { paddingBottom: insets.bottom + 16 }]}>
+          <Button title="I accept" onPress={onAccept} />
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+const styles = themed(() => StyleSheet.create({
+  rules: { gap: 6, marginBottom: 20, paddingLeft: 2 },
+  rule: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  ruleDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: color.borderStrong,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  socialGap: {
-    width: spacing.md, // Gap between buttons
-  },
-
-  // ✅ FIXED: Sign in link better positioned
-  signInContainer: {
-    alignItems: 'center',
-    marginTop: spacing.xl,
-    paddingBottom: spacing.md,
-  },
-  signInText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  signInLink: {
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-
-  nameRow: {
+  ruleDotOk: { backgroundColor: color.success, borderColor: color.success },
+  sheetHeader: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: 0,
-  },
-  nameInputContainer: {
-    flex: 1,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-    marginBottom: spacing.md,
-    marginTop: spacing.sm,
-  },
-  backArrow: {
-    fontSize: 28,
-    color: colors.text,
-  },
-
-  // Terms & Conditions styles
-  termsContainer: {
-    marginTop: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  checkboxContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: colors.border,
-    backgroundColor: colors.inputBackground,
-    justifyContent: 'center',
     alignItems: 'center',
-    marginRight: spacing.sm,
-    marginTop: 2,
-  },
-  checkboxChecked: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  checkmark: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  termsText: {
-    flex: 1,
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
-  termsLink: {
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  errorText: {
-    fontSize: typography.fontSize.xs,
-    color: '#EF4444',
-    marginTop: spacing.xs,
-    marginLeft: 30,
-  },
-
-  // Modal styles
-  modalContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  modalHeader: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: 60,
-    paddingBottom: spacing.md,
+    paddingHorizontal: gutter,
+    paddingTop: 20,
+    paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: color.border,
+    backgroundColor: color.surface,
   },
-  modalTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-  },
-  modalCloseButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.inputBackground,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalCloseText: {
-    fontSize: 18,
-    color: colors.textSecondary,
-  },
-  modalContent: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-  },
-  modalSectionTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  modalText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    lineHeight: 22,
-  },
-  modalLastUpdated: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-    fontStyle: 'italic',
-    marginTop: spacing.xl,
-    marginBottom: spacing.xl,
-    textAlign: 'center',
-  },
-  modalFooter: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  modalAcceptButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  modalAcceptButtonText: {
-    color: '#fff',
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-});
+  sheetFooter: { paddingHorizontal: gutter, paddingTop: 12, borderTopWidth: 1, borderTopColor: color.border, backgroundColor: color.surface },
+}));
 
-export default SignUpScreen;

@@ -18,8 +18,10 @@ export const useBookingPayment = (bookingData: any) => {
   const [showPaystack, setShowPaystack] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [serverTotal, setServerTotal] = useState<number | null>(null);
+  const [bookingCode, setBookingCode] = useState<string | null>(null);
   const bookingRef = useRef<string | null>(null);
   const totalRef = useRef<number>(0);
+  const codeRef = useRef<string | null>(null);
   const confirmingRef = useRef(false);
 
   const loading = stage !== 'idle' && stage !== 'paying';
@@ -34,6 +36,8 @@ export const useBookingPayment = (bookingData: any) => {
     totalRef.current = res.booking.totalPrice;
     setBookingId(res.id);
     setServerTotal(res.booking.totalPrice);
+    codeRef.current = (res.booking as { code?: string }).code ?? null;
+    setBookingCode(codeRef.current);
     return { id: res.id, total: res.booking.totalPrice };
   };
 
@@ -104,13 +108,18 @@ export const useBookingPayment = (bookingData: any) => {
     }
   };
 
+  /** The booking that was just paid (read from refs, so it is never stale). */
+  const paidBooking = () => ({ id: bookingRef.current, code: codeRef.current, total: totalRef.current });
+
   return {
+    paidBooking,
     stage,
     loading,
     showPaystack,
     authorizationUrl,
     reference,
     bookingId,
+    bookingCode,
     serverTotal,
     startPaystack,
     confirmPaystack,

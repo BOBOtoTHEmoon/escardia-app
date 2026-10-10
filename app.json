@@ -1,31 +1,36 @@
 {
   "expo": {
-    "name": "Escardiaapp",
+    "name": "Escardia",
     "slug": "Escardiaapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0D1A3F"
     },
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "We need your location to show nearby cars and set pickup points."
-      }
+      },
+      "userInterfaceStyle": "automatic"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0B1530"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
+      "userInterfaceStyle": "automatic"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -35,13 +40,21 @@
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
-          "color": "#3B82F6"
+          "color": "#2F5FED"
         }
       ],
       [
         "expo-location",
         {
           "locationWhenInUsePermission": "We need your location to show nearby cars and set pickup points."
+        }
+      ],
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Escardia uses your photos so you can add a profile picture and car photos.",
+          "cameraPermission": "Escardia uses your camera so you can take a profile picture and car photos."
         }
       ]
     ],

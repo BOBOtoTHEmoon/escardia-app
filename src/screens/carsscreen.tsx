@@ -1,622 +1,251 @@
-import React, { useState, useEffect } from 'react';
-import { LinearGradient } from 'expo-linear-gradient';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Image,
-} from 'react-native';
-import { colors, typography, spacing, borderRadius } from '../constants';
-import { FilterModal } from '../components/filtermodal';
-import { getUserFavorites, addToFavorites, removeFromFavorites } from '../services/favoritesservice';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FilterModal, FilterOptions, Chip } from '../components/filtermodal';
+import { useFavorites } from '../hooks/useFavorites';
+import { DEFAULT_FILTERS, applyCarFilters, countActiveFilters } from '../utils/carFilters';
+import { AppText } from '../ui';
+import { CarLike, CarListCard } from '../ui/CarCard';
+import { TabBar, TAB_BAR_SPACE, CustomerTab } from '../ui/TabBar';
+import { color, font, gutter, radius, themed, statusBarStyle, isDark } from '../theme';
 
+type Sort = 'recommended' | 'rating' | 'price';
 
 interface CarsScreenProps {
   onNavigateToCarDetails: (carId: string) => void;
   onNavigateToHome: () => void;
   onNavigateToProfile: () => void;
   onNavigateToTrips: () => void;
+  /** Focus the search box or open filters straight away (from Home). */
+  initialFocus?: 'search' | 'filters' | null;
 }
 
-export const CarsScreen: React.FC<CarsScreenProps> = ({ 
-  onNavigateToCarDetails,
-  onNavigateToHome,
-  onNavigateToProfile,
-  onNavigateToTrips,
-  
-}) => {
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'popular' | 'deals'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [favorites, setFavorites] = useState<string[]>([]);
-  const [showFilterModal, setShowFilterModal] = useState(false);
-  const [cars, setCars] = useState<any[]>([]);
+export const CarsScreen: React.FC<CarsScreenProps> = ({ onNavigateToCarDetails, onNavigateToHome, onNavigateToProfile, onNavigateToTrips, initialFocus }) => {
+  const insets = useSafeAreaInsets();
+  const [cars, setCars] = useState<CarLike[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<Sort>('recommended');
+  const [filters, setFilters] = useState<FilterOptions>(DEFAULT_FILTERS);
+  const [showFilters, setShowFilters] = useState(initialFocus === 'filters');
+  const searchRef = useRef<TextInput>(null);
+  const { isFavorite, toggle } = useFavorites();
 
-  useEffect(() => {
-    fetchCars();
-    loadFavorites();
-  }, []);
-
-const fetchCars = async () => {
-  try {
-    console.log('🔵 Fetching all cars...');
-    
-    // ✅ USE THE SERVICE FUNCTION (has vendor filtering!)
+  const load = useCallback(async () => {
     const { getAllCars } = await import('../services/carservice');
     const result = await getAllCars();
-
-    if (result.success && result.cars) {
-      console.log(`✅ Fetched ${result.cars.length} cars from approved vendors`);
-      setCars(result.cars);
-    } else {
-      console.error('❌ Error:', result.error);
-    }
-  } catch (error) {
-    console.error('❌ Error fetching cars:', error);
-  } finally {
+    if (result.success && result.cars) setCars(result.cars as CarLike[]);
     setLoading(false);
-  }
-};
+    setRefreshing(false);
+  }, []);
 
-      const applyFilters = (filters: any) => {
-  let filtered = cars;
+  useEffect(() => {
+    load();
+    if (initialFocus === 'search') setTimeout(() => searchRef.current?.focus(), 350);
+  }, [load, initialFocus]);
 
-  // Brand filter
-  if (filters.brand !== 'All') {
-    filtered = filtered.filter(car => 
-      car.brand?.toLowerCase() === filters.brand.toLowerCase()
-    );
-  }
+  const brands = useMemo(() => Array.from(new Set(cars.map((c) => c.brand).filter(Boolean) as string[])).sort(), [cars]);
+  const activeCount = countActiveFilters(filters);
 
-  // Car type filter
-  if (filters.carType !== 'All') {
-    filtered = filtered.filter(car => 
-      car.type?.toLowerCase() === filters.carType.toLowerCase()
-    );
-  }
-
-  // Transmission filter
-  if (filters.transmission !== 'All') {
-    filtered = filtered.filter(car => 
-      car.transmission?.toLowerCase() === filters.transmission.toLowerCase()
-    );
-  }
-
-  // Seats filter
-  if (filters.seats !== 'All') {
-    if (filters.seats === '6+') {
-      filtered = filtered.filter(car => (car.seats || 0) >= 6);
-    } else {
-      filtered = filtered.filter(car => car.seats === parseInt(filters.seats));
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let list = applyCarFilters(cars, filters);
+    if (q) {
+      list = list.filter((c) => [c.brand, c.model, c.type, c.location, c.vendorName].some((v) => v?.toLowerCase().includes(q)));
     }
-  }
+    if (sort === 'rating') list = [...list].sort((a, b) => (b.rating?.averageOverall ?? 0) - (a.rating?.averageOverall ?? 0));
+    if (sort === 'price') list = [...list].sort((a, b) => (a.pricePerDay ?? 0) - (b.pricePerDay ?? 0));
+    return list;
+  }, [cars, filters, query, sort]);
 
-  // Price filter
-  filtered = filtered.filter(car => {
-    const price = car.pricePerDay || 0;
-    return price >= filters.minPrice && price <= filters.maxPrice;
-  });
+  const navigate = (tab: CustomerTab) => {
+    if (tab === 'home') onNavigateToHome();
+    else if (tab === 'trips') onNavigateToTrips();
+    else if (tab === 'profile') onNavigateToProfile();
+  };
 
-  setCars(filtered);
-};
+  const header = (
+    <View>
+      <AppText variant="title">Find your car</AppText>
+      <AppText variant="body" color={color.muted} style={{ marginTop: 2 }}>
+        {loading ? 'Loading cars…' : `${visible.length} of ${cars.length} car${cars.length === 1 ? '' : 's'} available`}
+      </AppText>
 
-const toggleFavorite = async (carId: string) => {
-  const isFav = favorites.includes(carId);
-  
-  if (isFav) {
-    // Remove from favorites
-    setFavorites((prev) => prev.filter((id) => id !== carId));
-    await removeFromFavorites(carId);
-  } else {
-    // Add to favorites
-    setFavorites((prev) => [...prev, carId]);
-    await addToFavorites(carId);
-  }
-};
-
-  // Filter cars based on selection
- const getFilteredCars = () => {
-  let filtered = cars;
-
-  // Apply tab filter
-  if (selectedFilter === 'popular') {
-    // Sort by rating (highest rated)
-    filtered = [...cars].sort((a, b) => {
-      const ratingA = a.rating?.averageOverall || 0;
-      const ratingB = b.rating?.averageOverall || 0;
-      return ratingB - ratingA;
-    });
-  } else if (selectedFilter === 'deals') {
-    // Sort by lowest price
-    filtered = [...cars].sort((a, b) => {
-      const priceA = a.pricePerDay || 0;
-      const priceB = b.pricePerDay || 0;
-      return priceA - priceB;
-    });
-  }
-
-  // Apply search filter
-  if (searchQuery) {
-    filtered = filtered.filter(
-      (car) =>
-        car.brand?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        car.model?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        car.type?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }
-  
-
-  return filtered;
-};
-
-const loadFavorites = async () => {
-  const result = await getUserFavorites();
-  if (result.success) {
-    setFavorites(result.favorites);
-  }
-};
-
-  const filteredCars = getFilteredCars();
-
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <LinearGradient
-          colors={['#2F5FED', '#1E3A8A', '#0F3460']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.headerGradient}
-        >
-          <Image
-            source={require('../../assets/images/headerpattern.png')}
-            style={styles.headerPattern}
-            resizeMode="cover"
+      <View style={styles.searchRow}>
+        <View style={styles.search}>
+          <Feather name="search" size={18} color={color.subtle} />
+          <TextInput
+            keyboardAppearance={isDark() ? 'dark' : 'light'}
+            ref={searchRef}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search cars, brands or areas"
+            placeholderTextColor={color.subtle}
+            style={styles.searchInput}
+            returnKeyType="search"
+            autoCorrect={false}
           />
-        </LinearGradient>
-        
-        <Text style={styles.headerTitle}>Cars</Text>
-        
-        {/* Filter Button */}
-        <TouchableOpacity style={styles.filterButton} onPress={() => setShowFilterModal(true)}>
-          <Image
-            source={require('../../assets/images/filtericon.png')}
-            style={styles.filterIconImage}
-            resizeMode="contain"
-          />
-        </TouchableOpacity>
+          {!!query && (
+            <Pressable onPress={() => setQuery('')} hitSlop={8} accessibilityLabel="Clear search">
+              <Feather name="x-circle" size={17} color={color.subtle} />
+            </Pressable>
+          )}
+        </View>
+        <Pressable onPress={() => setShowFilters(true)} style={[styles.filterBtn, activeCount > 0 && styles.filterBtnOn]} accessibilityLabel="Filters">
+          <Feather name="sliders" size={18} color={activeCount > 0 ? '#FFFFFF' : color.ink} />
+          {activeCount > 0 && (
+            <View style={styles.badge}>
+              <AppText variant="smallMedium" color={color.primary} style={{ fontSize: 10, lineHeight: 12 }}>
+                {activeCount}
+              </AppText>
+            </View>
+          )}
+        </Pressable>
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Filter Tabs */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterScroll}
-          contentContainerStyle={styles.filterContent}
-        >
-          <TouchableOpacity
-            style={[styles.filterTab, selectedFilter === 'all' && styles.filterTabActive]}
-            onPress={() => setSelectedFilter('all')}
-          >
-            <Text
-              style={[
-                styles.filterTabText,
-                selectedFilter === 'all' && styles.filterTabTextActive,
-              ]}
-            >
-              All
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.filterTab, selectedFilter === 'popular' && styles.filterTabActive]}
-            onPress={() => setSelectedFilter('popular')}
-          >
-            <Text
-              style={[
-                styles.filterTabText,
-                selectedFilter === 'popular' && styles.filterTabTextActive,
-              ]}
-            >
-              Most popular
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.filterTab, selectedFilter === 'deals' && styles.filterTabActive]}
-            onPress={() => setSelectedFilter('deals')}
-          >
-            <Text
-              style={[
-                styles.filterTabText,
-                selectedFilter === 'deals' && styles.filterTabTextActive,
-              ]}
-            >
-              Best deals
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
-
-        {/* Cars Grid */}
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading cars...</Text>
-          </View>
-        ) : filteredCars.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyIcon}>🚗</Text>
-            <Text style={styles.emptyText}>No cars available</Text>
-          </View>
-        ) : (
-          <View style={styles.carsGrid}>
-            {filteredCars.map((car) => (
-              <TouchableOpacity
-                key={car.id}
-                style={styles.carCard}
-                onPress={() => onNavigateToCarDetails(car.id)}
-              >
-                {/* Favorite Icon */}
-                <TouchableOpacity
-                  style={styles.favoriteIcon}
-                  onPress={() => toggleFavorite(car.id)}
-                >
-                  <Image
-                    source={require('../../assets/images/hearticon.png')}
-                    style={[
-                      styles.logOuticon,
-                      favorites.includes(car.id) && styles.heartIconFilled
-                    ]}
-                    resizeMode="contain"
-                  />
-                </TouchableOpacity>
-
-                {/* Car Image */}
-                <View style={styles.carImageContainer}>
-                  {car.photos && car.photos.length > 0 ? (
-                    <Image 
-                      source={{ uri: car.photos[0] }} 
-                      style={styles.carImage} 
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <Text style={styles.carImagePlaceholder}>🚗</Text>
-                  )}
-                </View>
-
-                {/* Rating */}
-                <View style={styles.ratingContainer}>
-                  <Image
-                    source={require('../../assets/images/staricon.png')}
-                    style={styles.logOuticon}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.ratingText}>
-                    {car.rating?.averageOverall?.toFixed(1) || '5.0'}
-                  </Text>
-                </View>
-
-                {/* Car Info */}
-                <View style={styles.carInfo}>
-                  <Text style={styles.carBrand}>{car.brand}</Text>
-                  <Text style={styles.carModel}>{car.model}</Text>
-                  <Text style={styles.carLocation}>📍 {car.location}</Text>
-
-                  {/* Features */}
-                  <View style={styles.featuresRow}>
-                    <View style={styles.featureBadge}>
-                      <Text style={styles.featureBadgeText}>{car.seats} seats</Text>
-                    </View>
-                    <View style={styles.featureBadge}>
-                      <Text style={styles.featureBadgeText}>{car.transmission}</Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.carPrice}>
-                    ₦{car.pricePerDay?.toLocaleString()}/day
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        <View style={styles.bottomSpacing} />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sortRow} contentContainerStyle={{ gap: 8, paddingHorizontal: gutter }}>
+        <Chip label="Recommended" active={sort === 'recommended'} onPress={() => setSort('recommended')} />
+        <Chip label="Top rated" active={sort === 'rating'} onPress={() => setSort('rating')} />
+        <Chip label="Lowest price" active={sort === 'price'} onPress={() => setSort('price')} />
       </ScrollView>
 
-      {/* Bottom Navigation */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem} onPress={onNavigateToHome}>
-          <Image
-            source={require('../../assets/images/homeicon.png')}
-            style={styles.navIcon}
-            resizeMode="contain"
-          />
-          <Text style={styles.navLabel}>Home</Text>
-        </TouchableOpacity>
+      {activeCount > 0 && (
+        <View style={styles.filterNote}>
+          <AppText variant="small" color={color.text}>
+            {activeCount} filter{activeCount === 1 ? '' : 's'} on
+          </AppText>
+          <Pressable onPress={() => setFilters(DEFAULT_FILTERS)} hitSlop={8}>
+            <AppText variant="smallMedium" color={color.primary}>
+              Clear all
+            </AppText>
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
 
-        <TouchableOpacity style={styles.navItem}>
-          <Image
-            source={require('../../assets/images/caricon.png')}
-            style={styles.navIconActive}
-            resizeMode="contain"
+  return (
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <StatusBar style={statusBarStyle()} />
+      <FlatList
+        data={loading ? [] : visible}
+        keyExtractor={(c) => c.id}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: 16, paddingBottom: TAB_BAR_SPACE }}
+        ListHeaderComponent={header}
+        ListHeaderComponentStyle={{ marginBottom: 16 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
           />
-          <Text style={styles.navLabelActive}>Car</Text>
-        </TouchableOpacity>
+        }
+        ListEmptyComponent={
+          loading ? (
+            <View>
+              {[0, 1].map((i) => (
+                <View key={i} style={styles.skeleton} />
+              ))}
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <View style={styles.emptyIcon}>
+                <Feather name="search" size={22} color={color.primary} />
+              </View>
+              <AppText variant="subheading" style={{ marginTop: 14 }}>
+                No cars match
+              </AppText>
+              <AppText variant="small" color={color.muted} center style={{ marginTop: 4 }}>
+                Try another search or clear your filters.
+              </AppText>
+              {(activeCount > 0 || !!query) && (
+                <Pressable
+                  onPress={() => {
+                    setFilters(DEFAULT_FILTERS);
+                    setQuery('');
+                  }}
+                  style={styles.clearBtn}
+                >
+                  <AppText variant="smallMedium" color={color.primary}>
+                    Clear search and filters
+                  </AppText>
+                </Pressable>
+              )}
+            </View>
+          )
+        }
+        renderItem={({ item }) => (
+          <CarListCard car={item} favorite={isFavorite(item.id)} onToggleFavorite={() => toggle(item.id)} onPress={() => onNavigateToCarDetails(item.id)} />
+        )}
+      />
 
-        <TouchableOpacity style={styles.navItem} onPress={onNavigateToTrips}>
-          <Image
-            source={require('../../assets/images/tripicon.png')}
-            style={styles.navIcon}
-            resizeMode="contain"
-          />
-          <Text style={styles.navLabel}>Trips</Text>
-        </TouchableOpacity>
+      <TabBar active="cars" onNavigate={navigate} />
 
-        <TouchableOpacity style={styles.navItem} onPress={onNavigateToProfile}>
-          <Image
-            source={require('../../assets/images/profileicon.png')}
-            style={styles.navIcon}
-            resizeMode="contain"
-          />
-          <Text style={styles.navLabel}>Profile</Text>
-        </TouchableOpacity>
-      </View>
-
-    <FilterModal
-  visible={showFilterModal}
-  onClose={() => setShowFilterModal(false)}
-  onApply={(filters) => {
-    console.log('Applying filters:', filters);
-    applyFilters(filters);
-    setShowFilterModal(false);
-  }}
-/>
+      <FilterModal visible={showFilters} onClose={() => setShowFilters(false)} onApply={setFilters} initial={filters} brands={brands} />
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
+const styles = themed(() => StyleSheet.create({
+  root: { flex: 1, backgroundColor: color.bg },
+  searchRow: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  search: {
     flex: 1,
-    backgroundColor: colors.background,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    height: 52,
+    paddingHorizontal: 14,
+    borderRadius: radius.lg,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.border,
   },
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: 80,
-    paddingBottom: spacing.xl,
+  searchInput: { flex: 1, height: '100%', fontFamily: font.regular, fontSize: 15, color: color.ink, paddingVertical: 0 },
+  filterBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: radius.lg,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterBtnOn: { backgroundColor: color.primary, borderColor: color.primary },
+  badge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: color.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  sortRow: { marginTop: 14, marginHorizontal: -gutter },
+  filterNote: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    overflow: 'hidden',
-  },
-  headerGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-  },
-  headerPattern: {
-    position: 'absolute',
-    width: '80%',
-    height: '100%',
-    right: -50,
-    opacity: 1,
-  },
-  headerTitle: {
-    fontSize: typography.fontSize['3xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.textWhite,
-    height: 50,
-    top: -10,
-  },
-  filterButton: {
-    width: 40,
+    alignItems: 'center',
+    marginTop: 14,
+    paddingHorizontal: 14,
     height: 40,
-    backgroundColor: colors.background,
-    borderRadius: borderRadius.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-    top: -20,
+    borderRadius: radius.md,
+    backgroundColor: color.primarySoft,
   },
-  filterIconImage: {
-    width: 20,
-    height: 20,
-  },
-  scrollView: {
-    flex: 1,
-    backgroundColor: colors.background,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    marginTop: -20,
-  },
-  filterScroll: {
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-    marginTop: 20,
-  },
-  filterContent: {
-    gap: spacing.sm,
-  },
-  filterTab: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.inputBackground,
-  },
-  filterTabActive: {
-    backgroundColor: colors.primary,
-  },
-  filterTabText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.text,
-    fontWeight: typography.fontWeight.medium,
-  },
-  filterTabTextActive: {
-    color: colors.textWhite,
-  },
-  loadingContainer: {
-    padding: spacing.xl,
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  emptyContainer: {
-    padding: spacing.xl,
-    alignItems: 'center',
-  },
-  emptyIcon: {
-    fontSize: 60,
-    marginBottom: spacing.md,
-  },
-  emptyText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  carsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: spacing.lg,
-    gap: spacing.md,
-  },
-  carCard: {
-    width: '47%',
-    backgroundColor: colors.background,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  favoriteIcon: {
-    position: 'absolute',
-    top: spacing.sm,
-    left: spacing.sm,
-    zIndex: 10,
-  },
-  carImageContainer: {
-    height: 100,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-    borderRadius: borderRadius.md,
-    overflow: 'hidden',
-    backgroundColor: colors.inputBackground,
-  },
-  carImage: {
-    width: '100%',
-    height: '70%',
-  },
-  carImagePlaceholder: {
-    fontSize: 50,
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  ratingText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-    marginLeft: 2,
-    marginRight: spacing.xs,
-  },
-  carInfo: {
-    marginTop: spacing.sm,
-  },
-  carBrand: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-  },
-  carModel: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  carLocation: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-    marginBottom: spacing.sm,
-  },
-  featuresRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-    marginBottom: spacing.sm,
-  },
-  featureBadge: {
-    backgroundColor: colors.inputBackground,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-    borderRadius: borderRadius.sm,
-  },
-  featureBadgeText: {
-    fontSize: 10,
-    color: colors.text,
-  },
-  carPrice: {
-    fontSize: typography.fontSize.sm,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.bold,
-  },
-  bottomSpacing: {
-    height: 80,
-  },
-  bottomNav: {
-    flexDirection: 'row',
-    backgroundColor: colors.background,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    borderBottomLeftRadius: borderRadius.xl,
-    borderBottomRightRadius: borderRadius.xl,
-    paddingVertical: spacing.md,
-    paddingBottom: 20,
-    position: 'absolute',
-    bottom: 20,
-    left: 20,
-    right: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  navIcon: {
-    width: 24,
-    height: 24,
-    marginBottom: spacing.xs,
-    opacity: 0.5,
-  },
-  navIconActive: {
-    width: 24,
-    height: 24,
-    marginBottom: spacing.xs,
-  },
-  navLabel: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-  },
-  navLabelActive: {
-    fontSize: typography.fontSize.xs,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  logOuticon: {
-    width: 20,
-    height: 20,
-  },
-  heartIconFilled: {
-    tintColor: '#EF4444',
-  },
-});
+  skeleton: { height: 290, borderRadius: radius.xl, backgroundColor: color.sunken, marginBottom: 16 },
+  empty: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 24, borderRadius: radius.xl, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  emptyIcon: { width: 52, height: 52, borderRadius: 26, backgroundColor: color.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  clearBtn: { marginTop: 16, paddingHorizontal: 16, height: 38, borderRadius: 19, backgroundColor: color.primarySoft, justifyContent: 'center' },
+}));

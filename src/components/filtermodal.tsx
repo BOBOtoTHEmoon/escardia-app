@@ -1,10 +1,18 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppText, Button, IconButton } from '../ui';
+import { color, gutter, radius, themed } from '../theme';
+import { CAR_TYPES } from '../data/carTypes';
 
 interface FilterModalProps {
   visible: boolean;
   onClose: () => void;
   onApply: (filters: FilterOptions) => void;
+  /** Filters currently in use, so the sheet opens with them selected. */
+  initial?: FilterOptions;
+  /** Brands to offer; defaults to a fixed list. */
+  brands?: string[];
 }
 
 export interface FilterOptions {
@@ -16,229 +24,85 @@ export interface FilterOptions {
   maxPrice: number;
 }
 
-export const FilterModal: React.FC<FilterModalProps> = ({ visible, onClose, onApply }) => {
-  const [selectedBrand, setSelectedBrand] = useState('All');
-  const [selectedCarType, setSelectedCarType] = useState('All');
-  const [selectedTransmission, setSelectedTransmission] = useState('All');
-  const [selectedSeats, setSelectedSeats] = useState('All');
-  const [minPrice, setMinPrice] = useState(0);
-  const [maxPrice, setMaxPrice] = useState(5000000);
+const MAX = 5000000;
+const BRANDS = ['All', 'Toyota', 'Mercedes', 'Lexus', 'BMW', 'Honda', 'Range Rover'];
+const TYPES = ['All', ...CAR_TYPES];
+const GEARBOX = ['All', 'Automatic', 'Manual'];
+const SEATS = ['All', '2', '4', '5', '6+'];
+const PRICES: { label: string; min: number; max: number }[] = [
+  { label: 'Any price', min: 0, max: MAX },
+  { label: 'Under ₦100k', min: 0, max: 100000 },
+  { label: '₦100k to ₦250k', min: 100000, max: 250000 },
+  { label: '₦250k to ₦500k', min: 250000, max: 500000 },
+  { label: 'Over ₦500k', min: 500000, max: MAX },
+];
 
-  const brands = ['All', 'Toyota', 'Mercedes', 'Lexus', 'BMW', 'Honda', 'Range Rover'];
-  const carTypes = ['All', 'SUV', 'Sedan', 'Coupe', 'Hatchback', 'Truck'];
-  const transmissions = ['All', 'Automatic', 'Manual'];
-  const seatOptions = ['All', '2', '4', '5', '6+'];
+const DEFAULTS: FilterOptions = { brand: 'All', carType: 'All', transmission: 'All', seats: 'All', minPrice: 0, maxPrice: MAX };
 
-  const handleReset = () => {
-    setSelectedBrand('All');
-    setSelectedCarType('All');
-    setSelectedTransmission('All');
-    setSelectedSeats('All');
-    setMinPrice(0);
-    setMaxPrice(5000000);
-  };
+export const FilterModal: React.FC<FilterModalProps> = ({ visible, onClose, onApply, initial, brands }) => {
+  const insets = useSafeAreaInsets();
+  const [f, setF] = useState<FilterOptions>(initial ?? DEFAULTS);
 
-  const handleApply = () => {
-    onApply({
-      brand: selectedBrand,
-      carType: selectedCarType,
-      transmission: selectedTransmission,
-      seats: selectedSeats,
-      minPrice,
-      maxPrice,
-    });
-    onClose();
-  };
+  useEffect(() => {
+    if (visible) setF(initial ?? DEFAULTS);
+  }, [visible, initial]);
+
+  const set = (patch: Partial<FilterOptions>) => setF((prev) => ({ ...prev, ...patch }));
 
   return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <View style={filterStyles.overlay}>
-        <TouchableOpacity style={filterStyles.backdrop} onPress={onClose} activeOpacity={1} />
-        
-        <View style={filterStyles.modalContainer}>
-          {/* Header */}
-          <View style={filterStyles.header}>
-            <TouchableOpacity onPress={onClose}>
-              <Text style={filterStyles.closeIcon}>✕</Text>
-            </TouchableOpacity>
-            <Text style={filterStyles.headerTitle}>Filter Cars</Text>
-            <TouchableOpacity onPress={handleReset}>
-              <Text style={filterStyles.resetText}>Reset</Text>
-            </TouchableOpacity>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.overlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.handle} />
+          <View style={styles.header}>
+            <AppText variant="heading">Filters</AppText>
+            <IconButton icon="x" size={36} onPress={onClose} accessibilityLabel="Close filters" />
           </View>
 
-          <ScrollView style={filterStyles.content} showsVerticalScrollIndicator={false}>
-          {/* Price Range Section */}
-<View style={filterStyles.section}>
-  <Text style={filterStyles.sectionTitle}>Price Range (per day)</Text>
-  
-  <View style={filterStyles.priceInputsRow}>
-    <View style={filterStyles.priceInputContainer}>
-      <Text style={filterStyles.priceInputLabel}>Min</Text>
-      <Text style={filterStyles.priceInputValue}>
-        ₦{minPrice.toLocaleString()}
-      </Text>
-    </View>
-    
-    <Text style={filterStyles.priceSeparator}>—</Text>
-    
-    <View style={filterStyles.priceInputContainer}>
-      <Text style={filterStyles.priceInputLabel}>Max</Text>
-      <Text style={filterStyles.priceInputValue}>
-        ₦{maxPrice.toLocaleString()}
-      </Text>
-    </View>
-  </View>
-
-  {/* Quick Price Buttons */}
-  <View style={filterStyles.priceButtons}>
-    <TouchableOpacity 
-      style={filterStyles.priceQuickButton}
-      onPress={() => { setMinPrice(0); setMaxPrice(100000); }}
-    >
-      <Text style={filterStyles.priceQuickText}>Under 100k</Text>
-    </TouchableOpacity>
-    
-    <TouchableOpacity 
-      style={filterStyles.priceQuickButton}
-      onPress={() => { setMinPrice(100000); setMaxPrice(500000); }}
-    >
-      <Text style={filterStyles.priceQuickText}>100k - 500k</Text>
-    </TouchableOpacity>
-    
-    <TouchableOpacity 
-      style={filterStyles.priceQuickButton}
-      onPress={() => { setMinPrice(500000); setMaxPrice(1000000); }}
-    >
-      <Text style={filterStyles.priceQuickText}>500k - 1M</Text>
-    </TouchableOpacity>
-    
-    <TouchableOpacity 
-      style={filterStyles.priceQuickButton}
-      onPress={() => { setMinPrice(1000000); setMaxPrice(5000000); }}
-    >
-      <Text style={filterStyles.priceQuickText}>1M+</Text>
-    </TouchableOpacity>
-  </View>
-</View>
-
-            {/* Brand Section */}
-            <View style={filterStyles.section}>
-              <Text style={filterStyles.sectionTitle}>Brand</Text>
-              <View style={filterStyles.chipsContainer}>
-                {brands.map((brand, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={[
-                      filterStyles.chip,
-                      selectedBrand === brand && filterStyles.chipSelected,
-                    ]}
-                    onPress={() => setSelectedBrand(brand)}
-                  >
-                    <Text
-                      style={[
-                        filterStyles.chipText,
-                        selectedBrand === brand && filterStyles.chipTextSelected,
-                      ]}
-                    >
-                      {brand}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Car Type Section */}
-            <View style={filterStyles.section}>
-              <Text style={filterStyles.sectionTitle}>Car Type</Text>
-              <View style={filterStyles.chipsContainer}>
-                {carTypes.map((type, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={[
-                      filterStyles.chip,
-                      selectedCarType === type && filterStyles.chipSelected,
-                    ]}
-                    onPress={() => setSelectedCarType(type)}
-                  >
-                    <Text
-                      style={[
-                        filterStyles.chipText,
-                        selectedCarType === type && filterStyles.chipTextSelected,
-                      ]}
-                    >
-                      {type}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Transmission Section */}
-            <View style={filterStyles.section}>
-              <Text style={filterStyles.sectionTitle}>Transmission</Text>
-              <View style={filterStyles.chipsContainer}>
-                {transmissions.map((trans, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={[
-                      filterStyles.chip,
-                      selectedTransmission === trans && filterStyles.chipSelected,
-                    ]}
-                    onPress={() => setSelectedTransmission(trans)}
-                  >
-                    <Text
-                      style={[
-                        filterStyles.chipText,
-                        selectedTransmission === trans && filterStyles.chipTextSelected,
-                      ]}
-                    >
-                      {trans}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Seats Section */}
-            <View style={filterStyles.section}>
-              <Text style={filterStyles.sectionTitle}>Seats</Text>
-              <View style={filterStyles.chipsContainer}>
-                {seatOptions.map((seat, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={[
-                      filterStyles.chip,
-                      selectedSeats === seat && filterStyles.chipSelected,
-                    ]}
-                    onPress={() => setSelectedSeats(seat)}
-                  >
-                    <Text
-                      style={[
-                        filterStyles.chipText,
-                        selectedSeats === seat && filterStyles.chipTextSelected,
-                      ]}
-                    >
-                      {seat}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            <View style={filterStyles.bottomSpacing} />
+          <ScrollView style={{ maxHeight: 520 }} contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 8 }} showsVerticalScrollIndicator={false}>
+            <Group title="Price per day">
+              {PRICES.map((p) => (
+                <Chip
+                  key={p.label}
+                  label={p.label}
+                  active={f.minPrice === p.min && f.maxPrice === p.max}
+                  onPress={() => set({ minPrice: p.min, maxPrice: p.max })}
+                />
+              ))}
+            </Group>
+            <Group title="Brand">
+              {(brands?.length ? ['All', ...brands.filter((b) => b !== 'All')] : BRANDS).map((b) => (
+                <Chip key={b} label={b} active={f.brand === b} onPress={() => set({ brand: b })} />
+              ))}
+            </Group>
+            <Group title="Car type">
+              {TYPES.map((t) => (
+                <Chip key={t} label={t} active={f.carType === t} onPress={() => set({ carType: t })} />
+              ))}
+            </Group>
+            <Group title="Gearbox">
+              {GEARBOX.map((t) => (
+                <Chip key={t} label={t} active={f.transmission === t} onPress={() => set({ transmission: t })} />
+              ))}
+            </Group>
+            <Group title="Seats">
+              {SEATS.map((t) => (
+                <Chip key={t} label={t === 'All' ? 'Any' : t} active={f.seats === t} onPress={() => set({ seats: t })} />
+              ))}
+            </Group>
           </ScrollView>
 
-          {/* Apply Button */}
-          <View style={filterStyles.footer}>
-            <TouchableOpacity style={filterStyles.applyButton} onPress={handleApply}>
-              <Text style={filterStyles.applyButtonText}>Apply Filters</Text>
-            </TouchableOpacity>
+          <View style={styles.footer}>
+            <Button title="Reset" variant="secondary" onPress={() => setF(DEFAULTS)} style={{ flex: 1 }} />
+            <Button
+              title="Show cars"
+              onPress={() => {
+                onApply(f);
+                onClose();
+              }}
+              style={{ flex: 2 }}
+            />
           </View>
         </View>
       </View>
@@ -246,169 +110,38 @@ export const FilterModal: React.FC<FilterModalProps> = ({ visible, onClose, onAp
   );
 };
 
-const filterStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContainer: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '85%',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  closeIcon: {
-    fontSize: 24,
-    color: '#6B7280',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#000',
-  },
-  resetText: {
-    fontSize: 14,
-    color: '#2F5FED',
-    fontWeight: '600',
-  },
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-  },
-  section: {
-    marginBottom: 28,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 12,
-  },
-  priceDisplay: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  priceLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2F5FED',
-  },
-  sliderLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  slider: {
-    width: '100%',
-    height: 40,
-  },
-  chipsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
+const Group = ({ title, children }: { title: string; children: React.ReactNode }) => (
+  <View style={{ marginTop: 20 }}>
+    <AppText variant="subheading" style={{ marginBottom: 10, fontSize: 15 }}>
+      {title}
+    </AppText>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{children}</View>
+  </View>
+);
+
+export const Chip = ({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) => (
+  <Pressable onPress={onPress} style={[styles.chip, active && styles.chipActive]} accessibilityRole="button" accessibilityState={{ selected: active }}>
+    <AppText variant="smallMedium" color={active ? '#FFFFFF' : color.text} style={{ fontSize: 14 }}>
+      {label}
+    </AppText>
+  </Pressable>
+);
+
+const styles = themed(() => StyleSheet.create({
+  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: color.overlay },
+  sheet: { backgroundColor: color.surface, borderTopLeftRadius: radius.xxl, borderTopRightRadius: radius.xxl },
+  handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: color.border, marginTop: 10 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: gutter, paddingTop: 10 },
   chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 14,
+    height: 38,
+    borderRadius: 19,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: color.border,
+    backgroundColor: color.surface,
+    justifyContent: 'center',
   },
-  chipSelected: {
-    backgroundColor: '#2F5FED',
-    borderColor: '#2F5FED',
-  },
-  chipText: {
-    fontSize: 14,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  chipTextSelected: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  bottomSpacing: {
-    height: 20,
-  },
-  footer: {
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  applyButton: {
-    backgroundColor: '#2F5FED',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  applyButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  priceInputsRow: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  marginBottom: 16,
-},
-priceInputContainer: {
-  flex: 1,
-  backgroundColor: '#F3F4F6',
-  padding: 16,
-  borderRadius: 12,
-  alignItems: 'center',
-},
-priceInputLabel: {
-  fontSize: 12,
-  color: '#6B7280',
-  marginBottom: 4,
-},
-priceInputValue: {
-  fontSize: 16,
-  fontWeight: '600',
-  color: '#2F5FED',
-},
-priceSeparator: {
-  fontSize: 20,
-  color: '#6B7280',
-  marginHorizontal: 12,
-},
-priceButtons: {
-  flexDirection: 'row',
-  flexWrap: 'wrap',
-  gap: 8,
-},
-priceQuickButton: {
-  flex: 1,
-  minWidth: '45%',
-  backgroundColor: '#F3F4F6',
-  paddingVertical: 12,
-  paddingHorizontal: 16,
-  borderRadius: 12,
-  alignItems: 'center',
-  borderWidth: 1,
-  borderColor: '#E5E7EB',
-},
-priceQuickText: {
-  fontSize: 13,
-  color: '#374151',
-  fontWeight: '500',
-},
-});
+  chipActive: { backgroundColor: color.primary, borderColor: color.primary },
+  footer: { flexDirection: 'row', gap: 12, paddingHorizontal: gutter, paddingTop: 16, borderTopWidth: 1, borderTopColor: color.border, marginTop: 12 },
+}));
+

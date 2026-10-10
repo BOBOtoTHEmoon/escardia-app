@@ -1,843 +1,368 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  Image,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  Linking,
-  Alert,
-} from 'react-native';
-import { cancelBooking, reportProblem } from '../services/bookingService';
-import { StaticMap } from '../components/StaticMap';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, Image, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { auth } from '../config/supabase';
+import { Booking, cancelBooking, getBooking, reportProblem } from '../services/bookingService';
+import ratingService from '../services/ratingservice';
+import RatingModal from '../components/ratingmodal';
+import { TripMap } from '../components/TripMap';
+import { AppText, Banner, Button, IconButton, Screen, ScreenHeader } from '../ui';
+import { InfoRow, Panel, SectionTitle } from '../ui/Booking';
+import { naira } from '../ui/CarCard';
+import { StatusPill, relativeTime } from '../ui/Status';
+import { color, font, gutter, radius, themed, statusBarStyle, isDark } from '../theme';
 
 interface TripDetailScreenProps {
-  tripData: {
-    id: string;
-    vendorId?: string;
-    status: 'upcoming' | 'ongoing' | 'past';
-    bookingStatus?: string;
-    releaseAt?: string | null;
-    releasedAt?: string | null;
-    rideMode: 'Driver' | 'Self-Drive';
-    durationType: 'hour' | 'day';
-    durationValue: number;
-    pickupLocation: string;
-    pickupCoordinates?: {
-      latitude: number;
-      longitude: number;
-    };
-    car: {
-      model: string;
-      year: string;
-      price: string;
-      image?: any;
-      photos?: string[];
-      seats: number;
-      doors: number;
-      ac: string;
-      transmission: string;
-      vendorId?: string;
-    };
-    startDate: string;
-    startTime: string;
-    endDate: string;
-    endTime: string;
-    escortCount: number;
-    escort?: any;
-    paymentMethod: string;
-    totalCost: string;
-    driver?: {
-      name: string;
-      phone: string;
-      photo: any;
-    };
-    vendor?: {
-      name: string;
-      phone: string;
-      photo: any;
-    };
-  };
+  tripData: Booking;
   onNavigateBack: () => void;
   onEditTrip?: () => void;
 }
 
-export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({
-  tripData,
-  onNavigateBack,
-  onEditTrip,
-}) => {
-  console.log('🚗 TripDetailScreen - Full tripData:', tripData);
-  console.log('🚗 TripDetailScreen - car object:', tripData.car);
-  console.log('🚗 TripDetailScreen - car.photos:', tripData.car?.photos);
+const PAID_WITH: Record<string, string> = { wallet: 'Escardia wallet', card: 'Card', bank: 'Bank transfer', bank_transfer: 'Bank transfer', ussd: 'USSD' };
 
-  const [vendorDetails, setVendorDetails] = useState<any>(null);
-  const [loadingVendor, setLoadingVendor] = useState(true);
+const REASONS = ['The car was not as described', 'Problem with the driver', 'The car was late or did not come', 'Security did not show up', 'Something else'];
+
+/** Same tiers as the database: 24h+ full, 12h+ half, 2h+ quarter, else nothing. */
+const refundPercent = (startAt: string) => {
+  const h = (new Date(startAt).getTime() - Date.now()) / 3600000;
+  return h >= 24 ? 100 : h >= 12 ? 50 : h >= 2 ? 25 : 0;
+};
+
+export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({ tripData, onNavigateBack }) => {
+  const insets = useSafeAreaInsets();
+  const [trip, setTrip] = useState<Booking>(tripData);
+  const [busy, setBusy] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [rateOpen, setRateOpen] = useState(false);
+
+  const reload = useCallback(async () => {
+    const res = await getBooking(tripData.id);
+    if (res.success && res.booking) setTrip(res.booking);
+  }, [tripData.id]);
 
   useEffect(() => {
-    loadVendorDetails();
-  }, []);
+    reload();
+  }, [reload]);
 
-  const loadVendorDetails = async () => {
-    try {
-      const vendorId = tripData.vendorId || tripData.car?.vendorId;
-      if (!vendorId) return;
-      const { getPublicVendorDetails } = await import('../services/vendorauthservice');
-      setVendorDetails(await getPublicVendorDetails(vendorId));
-    } catch (error) {
-      console.error('Error loading vendor:', error);
-    } finally {
-      setLoadingVendor(false);
-    }
-  };
+  const s = trip.bookingStatus;
+  const reportWindowOpen = s === 'ongoing' || (s === 'completed' && !trip.releasedAt && !!trip.releaseAt && new Date(trip.releaseAt) > new Date());
+  const canRate = s === 'completed' && !trip.rated;
+  const security = [...(trip.escort ?? []).map((e: any) => `${e.count} ${String(e.type).toUpperCase()}`), trip.hiluxCount ? `${trip.hiluxCount} Hilux` : null]
+    .filter(Boolean)
+    .join(', ');
+  const vendorPhone = trip.car.vendorPhone;
+  const driver = trip.driver as { name?: string; phone?: string; photo_url?: string } | null;
 
-  const {
-    id,
-    status,
-    rideMode,
-    durationType,
-    durationValue,
-    pickupLocation,
-    pickupCoordinates,
-    car,
-    startDate,
-    startTime,
-    endDate,
-    endTime,
-    escortCount,
-    paymentMethod,
-    totalCost,
-    driver,
-    vendor,
-  } = tripData;
+  const headline =
+    s === 'confirmed'
+      ? relativeTime(trip.startAt, 'Starts in') || 'Starting soon'
+      : s === 'ongoing'
+        ? relativeTime(trip.endAt, 'Ends in') || 'Ending soon'
+        : s === 'disputed'
+          ? 'Escardia is reviewing your report'
+          : s === 'cancelled'
+            ? 'This trip was cancelled'
+            : 'Trip finished';
 
-  const calculateRealStatus = () => {
-    // The server keeps the status up to date (upcoming, ongoing, past, cancelled, disputed).
-    if (status) return status as string;
-    const parseDate = (dateStr: string) => {
-      const parts = dateStr.trim().split(' ');
-      if (parts.length === 3) {
-        const months: { [key: string]: number } = {
-          Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
-          Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
-        };
-        const day = parseInt(parts[0]);
-        const month = months[parts[1]];
-        const year = parseInt(parts[2]);
-        return new Date(year, month, day);
-      }
-      return new Date();
-    };
-
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-
-    const tripStart = parseDate(startDate);
-    tripStart.setHours(0, 0, 0, 0);
-
-    const tripEnd = parseDate(endDate);
-    tripEnd.setHours(0, 0, 0, 0);
-
-    if (now >= tripStart && now <= tripEnd) {
-      return 'ongoing';
-    } else if (now > tripEnd) {
-      return 'past';
-    }
-    return 'upcoming';
-  };
-
-  const realStatus = calculateRealStatus();
-
-  const getStatusDisplay = () => {
-    if (status === 'ongoing') {
-      return durationType === 'hour' ? `${durationValue} hours` : `Day ${durationValue}`;
-    }
-    if (status === 'upcoming') {
-      return durationType === 'hour' ? `${durationValue} hours` : `${durationValue} Days`;
-    }
-    return endDate;
-  };
-
-  const getTripDuration = () => {
-    if (durationType === 'hour') {
-      return `${durationValue} hours`;
-    }
-    return `${durationValue} days`;
-  };
-
-  const handleCall = (phone: string) => {
-    Linking.openURL(`tel:${phone}`);
-  };
-
-  const handleMessage = (phone: string) => {
-    Linking.openURL(`sms:${phone}`);
-  };
-
-  const handleCancelTrip = () => {
+  const confirmCancel = () => {
+    const pct = refundPercent(trip.startAt);
+    const amount = Math.round((trip.totalPrice * pct) / 100);
     Alert.alert(
-      '❌ Cancel Trip',
-      'Are you sure you want to cancel this trip?\n\n📋 Cancellation Policy:\n\n• 24+ hours before: 100% refund\n• 12-24 hours before: 50% refund\n• 2-12 hours before: 25% refund\n• Less than 2 hours: No refund',
+      'Cancel this trip?',
+      pct > 0
+        ? `You will get ${pct}% back (${naira(amount)}) in your Escardia wallet.`
+        : 'The trip starts in less than 2 hours, so there is no refund.',
       [
+        { text: 'Keep trip', style: 'cancel' },
         {
-          text: 'No, Keep Trip',
-          style: 'cancel',
-        },
-        {
-          text: 'Yes, Cancel Trip',
+          text: 'Cancel trip',
           style: 'destructive',
           onPress: async () => {
-            const result = await cancelBooking(id);
-
-            if (result.success) {
-              Alert.alert(
-                '✅ Trip Cancelled',
-                `Your trip has been cancelled.\n\nRefund: ${result.refundPercentage}% (₦${(result.refundAmount ?? 0).toLocaleString()}) has been added to your Escardia wallet.`,
-                [
-                  {
-                    text: 'OK',
-                    onPress: () => onNavigateBack(),
-                  },
-                ]
-              );
-            } else {
-              Alert.alert('Error', result.error || 'Failed to cancel trip');
-            }
+            setBusy(true);
+            const r = await cancelBooking(trip.id, 'Cancelled by customer');
+            setBusy(false);
+            if (!r.success) return Alert.alert('Could not cancel', r.error || 'Please try again.');
+            Alert.alert('Trip cancelled', r.refundAmount ? `${naira(r.refundAmount)} has been added to your wallet.` : 'Your trip has been cancelled.');
+            reload();
           },
         },
       ]
     );
   };
 
-  // Customers can report a problem during the trip or up to 24 hours after it ends.
-  // This pauses the vendor's payout until Escardia reviews it.
-  const canReportProblem =
-    tripData.bookingStatus === 'ongoing' ||
-    (tripData.bookingStatus === 'completed' && !tripData.releasedAt && tripData.releaseAt && new Date(tripData.releaseAt) > new Date());
+  const submitReport = async (reason: string) => {
+    setBusy(true);
+    const r = await reportProblem(trip.id, reason);
+    setBusy(false);
+    setReportOpen(false);
+    if (!r.success) return Alert.alert('Could not send', r.error || 'Please try again.');
+    Alert.alert('Report sent', 'Thanks for telling us. Escardia will contact you shortly and the vendor will not be paid until we have looked into it.');
+    reload();
+  };
 
-  const submitProblem = async (reason: string) => {
-    const result = await reportProblem(id, reason);
-    if (result.success) {
-      Alert.alert('Problem Reported', 'Thanks for letting us know. Escardia will contact you shortly.', [
-        { text: 'OK', onPress: () => onNavigateBack() },
-      ]);
-    } else {
-      Alert.alert('Error', result.error || 'Could not report the problem');
+  const submitRating = async (data: any) => {
+    const user = auth.currentUser;
+    if (!user) return;
+    try {
+      await ratingService.submitRating(trip.id, trip.carId, user.uid, '', data);
+      setRateOpen(false);
+      Alert.alert('Thank you', 'Your rating helps other riders choose well.');
+      reload();
+    } catch (e: any) {
+      Alert.alert('Could not save rating', e?.message || 'Please try again.');
     }
   };
 
-  const handleReportProblem = () => {
-    Alert.alert('Report a Problem', 'What went wrong?', [
-      { text: 'Car condition', onPress: () => submitProblem('Car condition was not as described') },
-      { text: 'Driver issue', onPress: () => submitProblem('Problem with the driver') },
-      { text: 'Car was late or did not arrive', onPress: () => submitProblem('Car was late or did not arrive') },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
+  const footer =
+    s === 'confirmed' ? (
+      <Button title="Cancel trip" variant="secondary" icon="x-circle" onPress={confirmCancel} loading={busy} style={{ flex: 1 }} />
+    ) : reportWindowOpen ? (
+      <Button title="Report a problem" variant="secondary" icon="alert-triangle" onPress={() => setReportOpen(true)} style={{ flex: 1 }} />
+    ) : canRate ? (
+      <Button title="Rate this trip" icon="star" onPress={() => setRateOpen(true)} style={{ flex: 1 }} />
+    ) : null;
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-          <Text style={styles.backIcon}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Trip Details</Text>
-        {realStatus === 'upcoming' && onEditTrip ? (
-          <TouchableOpacity onPress={onEditTrip}>
-            <Text style={styles.editButton}>Edit Trip</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.placeholder} />
-        )}
-      </View>
+    <Screen>
+      <StatusBar style={statusBarStyle()} />
+      <ScreenHeader title={trip.code ? `Trip ${trip.code}` : 'Trip details'} onBack={onNavigateBack} />
 
-      <ScrollView style={styles.content}>
-        {/* Status Badge */}
-        <View style={styles.statusContainer}>
-          <View style={[styles.statusBadge, (styles as any)[`${realStatus}Badge`]]}>
-            <Text style={styles.statusText}>
-              {realStatus.charAt(0).toUpperCase() + realStatus.slice(1)}
-            </Text>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: footer ? 130 : insets.bottom + 32 }} showsVerticalScrollIndicator={false}>
+        {/* Car and status */}
+        <Panel style={{ padding: 0, overflow: 'hidden' }}>
+          {trip.car.photos?.[0] && <Image source={{ uri: trip.car.photos[0] }} style={styles.photo} />}
+          <View style={{ padding: 16 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <AppText variant="heading">
+                  {trip.car.brand} {trip.car.model}
+                </AppText>
+                <AppText variant="small" color={color.muted}>
+                  {trip.car.year} · {trip.duration} {trip.durationType}
+                  {trip.duration > 1 ? 's' : ''} with driver
+                </AppText>
+              </View>
+              <StatusPill status={s} />
+            </View>
+            <AppText variant="smallMedium" color={s === 'disputed' ? color.danger : color.primary} style={{ marginTop: 10 }}>
+              {headline}
+            </AppText>
+            <View style={styles.timeline}>
+              <View style={{ flex: 1 }}>
+                <AppText variant="small" color={color.muted} style={{ fontSize: 12 }}>
+                  Pick-up
+                </AppText>
+                <AppText variant="bodyMedium">{trip.startDate}</AppText>
+                <AppText variant="small">{trip.startTime}</AppText>
+              </View>
+              <Feather name="arrow-right" size={16} color={color.subtle} />
+              <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                <AppText variant="small" color={color.muted} style={{ fontSize: 12 }}>
+                  Return
+                </AppText>
+                <AppText variant="bodyMedium">{trip.endDate}</AppText>
+                <AppText variant="small">{trip.stopTime}</AppText>
+              </View>
+            </View>
           </View>
-          <Text style={styles.durationText}>{getStatusDisplay()}</Text>
-        </View>
+        </Panel>
 
-        {/* ✅ UPDATED: Static Map with pickup location */}
-        <View style={styles.mapContainer}>
-          <StaticMap
-            location={pickupLocation}
-            coordinates={pickupCoordinates}
-            showOpenInMaps={true}
+        {s === 'disputed' && !!trip.disputeReason && (
+          <View style={{ marginTop: 14 }}>
+            <Banner text={`You reported: ${trip.disputeReason}`} />
+          </View>
+        )}
+        {s === 'cancelled' && trip.refundAmount > 0 && (
+          <View style={{ marginTop: 14 }}>
+            <Banner tone="success" text={`${naira(trip.refundAmount)} was refunded to your Escardia wallet.`} />
+          </View>
+        )}
+
+        {/* Where */}
+        <SectionTitle title={trip.pickupMethod === 'delivery' ? 'Delivery address' : 'Where to meet'} />
+        <Panel style={{ padding: 0, overflow: 'hidden' }}>
+          <TripMap address={trip.pickupLocation || trip.car.location || 'Lagos'} label={trip.pickupMethod === 'delivery' ? 'Delivery' : 'Pick-up'} height={210} />
+          <View style={styles.place}>
+            <Feather name={trip.pickupMethod === 'delivery' ? 'truck' : 'map-pin'} size={16} color={color.primary} />
+            <AppText variant="bodyMedium" style={{ flex: 1 }}>
+              {trip.pickupLocation || trip.car.location || 'The vendor will share the address'}
+            </AppText>
+          </View>
+        </Panel>
+
+        {/* People */}
+        <SectionTitle title="Your team" />
+        <Panel style={{ paddingVertical: 4 }}>
+          <Person
+            label="Driver"
+            name={driver?.name || 'Being assigned'}
+            sub={driver?.name ? driver.phone : 'The vendor assigns your driver before the trip.'}
+            phone={driver?.phone}
+            photo={driver?.photo_url}
           />
-        </View>
+          <View style={styles.divider} />
+          <Person label="Vendor" name={trip.car.vendorName || 'Escardia vendor'} sub={vendorPhone} phone={vendorPhone} />
+        </Panel>
 
-        {/* Pick-up Location */}
-        <View style={styles.locationSection}>
-          <Text style={styles.sectionLabel}>Pick-up Location</Text>
-          <View style={styles.locationRow}>
-            <Image
-              source={require('../../assets/images/location.png')}
-              style={styles.locationIcon}
-              resizeMode="contain"
-            />
-            <Text style={styles.locationText}>{pickupLocation}</Text>
-          </View>
-        </View>
+        {/* Details */}
+        <SectionTitle title="Payment" />
+        <Panel>
+          <InfoRow label={`Car rental (${trip.duration} ${trip.durationType}${trip.duration > 1 ? 's' : ''})`} value={naira(trip.baseRental)} />
+          {trip.deliveryFee > 0 && <InfoRow label="Delivery" value={naira(trip.deliveryFee)} />}
+          {trip.escortFee > 0 && <InfoRow label="Security" value={naira(trip.escortFee)} />}
+          {trip.hiluxFee > 0 && <InfoRow label="Hilux" value={naira(trip.hiluxFee)} />}
+          <InfoRow label="Service fee" value={naira(trip.serviceFee)} />
+          <View style={styles.divider} />
+          <InfoRow label="Total paid" value={naira(trip.totalPrice)} strong />
+          <InfoRow icon="shield" label="Security" value={security || 'None'} />
+          <InfoRow icon="credit-card" label="Paid with" value={PAID_WITH[trip.paymentMethod ?? ''] ?? 'Paystack'} />
+        </Panel>
 
-        {/* Car Details */}
-        <View style={styles.carSection}>
-          <Text style={styles.sectionLabel}>Car details</Text>
-          <View style={styles.carCard}>
-            <View style={styles.carHeader}>
-              <View>
-                <Text style={styles.carModel}>{car.model}</Text>
-                <Text style={styles.carYear}>{car.year}</Text>
-              </View>
-              <Text style={styles.carPrice}>NGN {car.price}</Text>
-            </View>
-
-            {car.photos && car.photos.length > 0 ? (
-              <Image
-                source={{ uri: car.photos[0] }}
-                style={styles.carImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.carImagePlaceholder}>
-                <Text style={styles.carImageEmoji}>🚗</Text>
-              </View>
-            )}
-
-            <View style={styles.carSpecs}>
-              <View style={styles.specItem}>
-                <Image
-                  source={require('../../assets/images/seats.png')}
-                  style={styles.specIcon}
-                  resizeMode="contain"
-                />
-                <Text style={styles.specText}>{car.seats} seats</Text>
-              </View>
-              <View style={styles.specItem}>
-                <Image
-                  source={require('../../assets/images/door.png')}
-                  style={styles.specIcon}
-                  resizeMode="contain"
-                />
-                <Text style={styles.specText}>{car.doors} doors</Text>
-              </View>
-              <View style={styles.specItem}>
-                <Image
-                  source={require('../../assets/images/ac.png')}
-                  style={styles.specIcon}
-                  resizeMode="contain"
-                />
-                <Text style={styles.specText}>{car.ac} AC</Text>
-              </View>
-              <View style={styles.specItem}>
-                <Image
-                  source={require('../../assets/images/gear.png')}
-                  style={styles.specIcon}
-                  resizeMode="contain"
-                />
-                <Text style={styles.specText}>{car.transmission}</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Trip Details */}
-        <View style={styles.tripDetailsSection}>
-          <View style={styles.tripDetailsHeader}>
-            <Text style={styles.sectionLabel}>Trip details</Text>
-            <TouchableOpacity>
-              <Text style={styles.paymentLink}>Payment details</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.detailsGrid}>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Trip Duration</Text>
-              <Text style={styles.detailValue}>{getTripDuration()}</Text>
-            </View>
-
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Start Day/Time</Text>
-              <Text style={styles.detailValue}>
-                {startDate} {startTime}
-              </Text>
-            </View>
-
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>End Day/Time</Text>
-              <Text style={styles.detailValue}>
-                {endDate} {endTime}
-              </Text>
-            </View>
-
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Escort option</Text>
-              <View style={styles.escortValue}>
-                <Image
-                  source={require('../../assets/images/guard.png')}
-                  style={styles.guardIcon}
-                  resizeMode="contain"
-                />
-                <Text style={styles.detailValue}>
-                  {Array.isArray(tripData.escort)
-                    ? tripData.escort.reduce((sum: number, e: any) => sum + e.count, 0)
-                    : escortCount}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Ride mode</Text>
-              <Text style={styles.detailValue}>{rideMode}</Text>
-            </View>
-
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Trip ID</Text>
-              <Text style={styles.tripId}>{id}</Text>
-            </View>
-
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Payment method</Text>
-              <Text style={styles.detailValue}>{paymentMethod}</Text>
-            </View>
-
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Total cost</Text>
-              <Text style={styles.detailValue}>{totalCost}</Text>
-            </View>
-          </View>
-        </View>
-
-        {canReportProblem && (
-          <View style={styles.cancelButtonSection}>
-            <TouchableOpacity style={styles.cancelButton} onPress={handleReportProblem}>
-              <Text style={styles.cancelButtonText}>Report a Problem</Text>
-            </TouchableOpacity>
-            <Text style={styles.cancelPolicyText}>
-              You can report a problem up to 24 hours after your trip ends
-            </Text>
-          </View>
+        {s === 'confirmed' && (
+          <AppText variant="small" color={color.muted} style={{ marginTop: 12, paddingHorizontal: 4 }}>
+            Need to change the time or car? Cancel and book again, or contact support from your profile. Cancelling now gives you {refundPercent(trip.startAt)}% back.
+          </AppText>
         )}
-
-        {realStatus === 'upcoming' && (
-          <View style={styles.cancelButtonSection}>
-            <TouchableOpacity style={styles.cancelButton} onPress={handleCancelTrip}>
-              <Text style={styles.cancelButtonText}>Cancel Trip</Text>
-            </TouchableOpacity>
-            <Text style={styles.cancelPolicyText}>
-              📋 Cancel 24+ hours before for full refund
-            </Text>
-          </View>
+        {reportWindowOpen && canRate && (
+          <Pressable onPress={() => setRateOpen(true)} style={{ marginTop: 14, alignSelf: 'center' }}>
+            <AppText variant="smallMedium" color={color.primary}>
+              Rate this trip
+            </AppText>
+          </Pressable>
         )}
-
-        {/* Driver/Vendor Details */}
-        <View style={styles.contactsSection}>
-          <Text style={styles.sectionLabel}>
-            {rideMode === 'Driver' ? 'Driver details' : 'Vendor details'}
-          </Text>
-
-          {driver && rideMode === 'Driver' && (
-            <View style={styles.contactCard}>
-              <Image source={driver.photo} style={styles.contactPhoto} />
-              <View style={styles.contactInfo}>
-                <Text style={styles.contactName}>{driver.name}</Text>
-                <Text style={styles.contactPhone}>{driver.phone}</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.contactButton}
-                onPress={() => handleMessage(driver.phone)}
-              >
-                <Image
-                  source={require('../../assets/images/message.png')}
-                  style={styles.contactIcon}
-                  resizeMode="contain"
-                />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.contactButton}
-                onPress={() => handleCall(driver.phone)}
-              >
-                <Image
-                  source={require('../../assets/images/phone.png')}
-                  style={styles.contactIcon}
-                  resizeMode="contain"
-                />
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {loadingVendor ? (
-            <View style={styles.contactCard}>
-              <Text style={styles.loadingText}>Loading vendor details...</Text>
-            </View>
-          ) : vendorDetails ? (
-            <View style={styles.contactCard}>
-              <View style={styles.contactPhoto}>
-                <Text style={styles.contactPhotoText}>
-                  {vendorDetails.firstName?.[0]?.toUpperCase() || 'V'}
-                </Text>
-              </View>
-              <View style={styles.contactInfo}>
-                <Text style={styles.contactName}>
-                  {vendorDetails.businessName ||
-                    `${vendorDetails.firstName} ${vendorDetails.lastName}`}
-                </Text>
-                <Text style={styles.contactPhone}>
-                  {vendorDetails.phoneNumber || 'No phone available'}
-                </Text>
-                {vendorDetails.businessAddress && (
-                  <Text style={styles.contactAddress}>
-                    📍 {vendorDetails.businessAddress}
-                  </Text>
-                )}
-              </View>
-              {vendorDetails.phoneNumber && (
-                <>
-                  <TouchableOpacity
-                    style={styles.contactButton}
-                    onPress={() => handleMessage(vendorDetails.phoneNumber)}
-                  >
-                    <Image
-                      source={require('../../assets/images/message.png')}
-                      style={styles.contactIcon}
-                      resizeMode="contain"
-                    />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.contactButton}
-                    onPress={() => handleCall(vendorDetails.phoneNumber)}
-                  >
-                    <Image
-                      source={require('../../assets/images/phone.png')}
-                      style={styles.contactIcon}
-                      resizeMode="contain"
-                    />
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          ) : (
-            <View style={styles.contactCard}>
-              <Text style={styles.errorText}>
-                ⚠️ Vendor details unavailable. Contact support if needed.
-              </Text>
-            </View>
-          )}
-        </View>
       </ScrollView>
-    </View>
+
+      {footer && <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>{footer}</View>}
+
+      <ReportSheet visible={reportOpen} busy={busy} onClose={() => setReportOpen(false)} onSubmit={submitReport} />
+      <RatingModal visible={rateOpen} onClose={() => setRateOpen(false)} onSubmit={submitRating} tripData={{ carName: `${trip.car.brand} ${trip.car.model}`, hadDriver: true }} />
+    </Screen>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#E8EAF6',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 50,
-    paddingBottom: 20,
-    backgroundColor: '#E8EAF6',
-  },
-  backButton: {
-    padding: 8,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: '#000',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
-  },
-  editButton: {
-    fontSize: 14,
-    color: '#3B82F6',
-    fontWeight: '600',
-  },
-  placeholder: {
-    width: 60,
-  },
-  content: {
-    flex: 1,
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  statusBadge: {
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  upcomingBadge: {
-    backgroundColor: '#DBEAFE',
-  },
-  ongoingBadge: {
-    backgroundColor: '#D1FAE5',
-  },
-  pastBadge: {
-    backgroundColor: '#F3F4F6',
-  },
-  statusText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1E3A8A',
-  },
-  durationText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#000',
-  },
-  mapContainer: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  locationSection: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  sectionLabel: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginBottom: 8,
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  locationIcon: {
-    width: 16,
-    height: 16,
-    marginRight: 8,
-  },
-  locationText: {
-    fontSize: 14,
-    color: '#000',
-    fontWeight: '500',
-  },
-  carSection: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  carCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-  },
-  carHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  carModel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
-  },
-  carYear: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  carPrice: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#3B82F6',
-  },
-  carImage: {
-    width: '90%',
-    height: 130,
-    marginVertical: 12,
-    borderRadius: 8,
-  },
-  carSpecs: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  specItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  specIcon: {
-    width: 16,
-    height: 16,
-    marginRight: 4,
-  },
-  specText: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  tripDetailsSection: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  tripDetailsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  paymentLink: {
-    fontSize: 13,
-    color: '#3B82F6',
-    fontWeight: '500',
-  },
-  detailsGrid: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  detailLabel: {
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  detailValue: {
-    fontSize: 13,
-    color: '#000',
-    fontWeight: '500',
-  },
-  escortValue: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  guardIcon: {
-    width: 16,
-    height: 16,
-    marginRight: 6,
-  },
-  tripId: {
-    fontSize: 11,
-    color: '#000',
-    fontWeight: '500',
-  },
-  contactsSection: {
-    paddingHorizontal: 20,
-    marginBottom: 30,
-  },
-  contactCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 8,
-  },
-  contactInfo: {
-    flex: 1,
-  },
-  contactName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 2,
-  },
-  contactPhone: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  contactButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1E3A8A',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  contactIcon: {
-    width: 18,
-    height: 18,
-    tintColor: '#FFFFFF',
-  },
-  cancelButtonSection: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  cancelButton: {
-    backgroundColor: '#EF4444',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  cancelPolicyText: {
-    fontSize: 12,
-    color: '#6B7280',
-    textAlign: 'center',
-  },
-  carImagePlaceholder: {
-    width: '100%',
-    height: 100,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginVertical: 12,
-    borderRadius: 8,
-  },
-  carImageEmoji: {
-    fontSize: 60,
-  },
-  contactPhoto: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    marginRight: 12,
-    backgroundColor: '#3B82F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  contactPhotoText: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  contactAddress: {
-    fontSize: 11,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  loadingText: {
-    fontSize: 13,
-    color: '#6B7280',
-    textAlign: 'center',
-    paddingVertical: 20,
-  },
-  errorText: {
-    fontSize: 13,
-    color: '#EF4444',
-    textAlign: 'center',
-    paddingVertical: 20,
-  },
-});
+const Person = ({ label, name, sub, phone, photo }: { label: string; name: string; sub?: string; phone?: string; photo?: string }) => (
+  <View style={styles.person}>
+    {photo ? (
+      <Image source={{ uri: photo }} style={styles.avatar} />
+    ) : (
+      <View style={styles.avatar}>
+        <Feather name={label === 'Driver' ? 'user' : 'briefcase'} size={18} color={color.primary} />
+      </View>
+    )}
+    <View style={{ flex: 1 }}>
+      <AppText variant="small" color={color.muted} style={{ fontSize: 12 }}>
+        {label}
+      </AppText>
+      <AppText variant="bodyMedium" numberOfLines={1}>
+        {name}
+      </AppText>
+      {!!sub && (
+        <AppText variant="small" color={color.muted} numberOfLines={2}>
+          {sub}
+        </AppText>
+      )}
+    </View>
+    {!!phone && (
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <IconButton icon="message-square" size={38} onPress={() => Linking.openURL(`sms:${phone}`)} accessibilityLabel={`Text ${label.toLowerCase()}`} />
+        <Pressable onPress={() => Linking.openURL(`tel:${phone}`)} style={styles.call} accessibilityLabel={`Call ${label.toLowerCase()}`}>
+          <Feather name="phone" size={16} color="#FFFFFF" />
+        </Pressable>
+      </View>
+    )}
+  </View>
+);
 
-export default TripDetailScreen;
+const ReportSheet = ({ visible, busy, onClose, onSubmit }: { visible: boolean; busy: boolean; onClose: () => void; onSubmit: (reason: string) => void }) => {
+  const insets = useSafeAreaInsets();
+  const [choice, setChoice] = useState<string | null>(null);
+  const [details, setDetails] = useState('');
+  useEffect(() => {
+    if (visible) {
+      setChoice(null);
+      setDetails('');
+    }
+  }, [visible]);
+  const reason = choice === 'Something else' ? details.trim() : [choice, details.trim()].filter(Boolean).join('. ');
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.handle} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: gutter, paddingTop: 12 }}>
+            <View style={{ flex: 1 }}>
+              <AppText variant="heading">Report a problem</AppText>
+              <AppText variant="small" color={color.muted}>
+                The vendor is not paid until Escardia looks into it.
+              </AppText>
+            </View>
+            <IconButton icon="x" size={36} onPress={onClose} accessibilityLabel="Close" />
+          </View>
+          <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: 14 }} keyboardShouldPersistTaps="handled">
+            {REASONS.map((r) => (
+              <Pressable key={r} onPress={() => setChoice(r)} style={[styles.reason, choice === r && styles.reasonOn]}>
+                <AppText variant="bodyMedium" style={{ flex: 1 }}>
+                  {r}
+                </AppText>
+                <Feather name={choice === r ? 'check-circle' : 'circle'} size={18} color={choice === r ? color.primary : color.borderStrong} />
+              </Pressable>
+            ))}
+            <TextInput
+              keyboardAppearance={isDark() ? 'dark' : 'light'}
+              value={details}
+              onChangeText={setDetails}
+              placeholder={choice === 'Something else' ? 'Tell us what happened' : 'Add details (optional)'}
+              placeholderTextColor={color.subtle}
+              multiline
+              maxLength={500}
+              style={styles.input}
+            />
+            <Button title="Send report" onPress={() => onSubmit(reason)} loading={busy} disabled={!choice || reason.length < 4} style={{ marginTop: 14 }} />
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+};
+
+const styles = themed(() => StyleSheet.create({
+  photo: { width: '100%', height: 170, backgroundColor: color.sunken },
+  timeline: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14, padding: 12, borderRadius: radius.md, backgroundColor: color.sunken },
+  place: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 },
+  person: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: color.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  call: { width: 38, height: 38, borderRadius: 19, backgroundColor: color.success, alignItems: 'center', justifyContent: 'center' },
+  divider: { height: 1, backgroundColor: color.border, marginVertical: 4 },
+  footer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    paddingHorizontal: gutter,
+    paddingTop: 14,
+    backgroundColor: color.surface,
+    borderTopWidth: 1,
+    borderTopColor: color.border,
+  },
+  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: color.overlay },
+  sheet: { backgroundColor: color.surface, borderTopLeftRadius: radius.xxl, borderTopRightRadius: radius.xxl, maxHeight: '90%' },
+  handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: color.border, marginTop: 10 },
+  reason: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: radius.md, borderWidth: 1, borderColor: color.border, marginBottom: 8 },
+  reasonOn: { borderColor: color.primary, backgroundColor: color.highlight },
+  input: {
+    minHeight: 80,
+    marginTop: 6,
+    padding: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: color.border,
+    fontFamily: font.regular,
+    fontSize: 15,
+    color: color.ink,
+    textAlignVertical: 'top',
+  },
+}));

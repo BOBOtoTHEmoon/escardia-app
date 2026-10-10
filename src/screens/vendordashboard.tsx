@@ -1,839 +1,390 @@
-import React, { useState, useEffect } from 'react'; // ✅ Update this line
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { colors, typography, spacing, borderRadius } from '../constants';
+// Vendor home: balance, what needs attention, upcoming bookings and quick actions.
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { auth } from '../config/supabase';
+import { getVendorBookings, Booking } from '../services/bookingService';
+import { getVendorCars, Car } from '../services/carservice';
+import { getUnreadNotificationCount } from '../services/notificationService';
+import { EMPTY_STATS, getVendorStats, getVendorStatus, VendorStats } from '../services/vendorService';
+import { useAppSettings } from '../hooks/useAppSettings';
+import { AppText, Button, IconName } from '../ui';
+import { Avatar } from '../ui/Avatar';
+import { naira } from '../ui/CarCard';
+import { Skeleton, StatTile } from '../ui/Kit';
+import { VendorBookingCard, needsDriver } from '../ui/VendorCards';
+import { VendorTabBar, VendorTab, TAB_BAR_SPACE } from '../ui/TabBar';
+import { brand, color, gutter, radius, shadow, themed } from '../theme';
 
 interface VendorDashboardScreenProps {
   vendorName: string;
-  onNavigateToFleet: () => void;
-  onNavigateToBookings: () => void;
-   onNavigateToBookingDetails: (bookingId: string) => void;
-  onNavigateToEarnings: () => void;
+  logoUrl?: string | null;
+  onTab: (tab: VendorTab) => void;
+  onNavigateToBookingDetails: (bookingId: string) => void;
+  onNavigateToCarDetail: (carId: string) => void;
   onNavigateToDrivers: () => void;
-  onNavigateToProfile: () => void;
-  onNavigateToNotifications: () => void; 
-   onNavigateToWithdrawFunds: () => void;
+  onNavigateToNotifications: () => void;
+  onNavigateToWithdrawFunds: () => void;
+  onNavigateToBankDetails: () => void;
   onAddCar: () => void;
-  hasUnreadNotifications?: boolean; 
 }
+
+type Todo = { key: string; icon: IconName; tone: 'amber' | 'red' | 'blue'; title: string; body: string; onPress: () => void };
 
 export const VendorDashboardScreen: React.FC<VendorDashboardScreenProps> = ({
   vendorName,
-  onNavigateToFleet,
-  onNavigateToBookings,
-   onNavigateToBookingDetails,
-  onNavigateToEarnings,
+  logoUrl,
+  onTab,
+  onNavigateToBookingDetails,
+  onNavigateToCarDetail,
   onNavigateToDrivers,
-  onNavigateToProfile,
   onNavigateToNotifications,
-  onNavigateToWithdrawFunds, 
+  onNavigateToWithdrawFunds,
   onAddCar,
-  hasUnreadNotifications,
 }) => {
-  const [stats, setStats] = useState({
-    totalCars: 0,
-    activeBookings: 0,
-    totalEarnings: 0,
-    thisMonthEarnings: 0,
-  });
-  const [recentBookings, setRecentBookings] = useState<any[]>([]);
+  const insets = useSafeAreaInsets();
+  const { settings } = useAppSettings();
+  const [stats, setStats] = useState<VendorStats>(EMPTY_STATS);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [cars, setCars] = useState<Car[]>([]);
+  const [account, setAccount] = useState<{ status: string; reason: string | null } | null>(null);
+  const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(true);
- const [dashboardData, setDashboardData] = useState({
-    totalCars: 0,
-    activeBookings: 0,
-    totalEarnings: 0,
-    thisMonthEarnings: 0,
-    recentBookings: [] as any[],
-  });
-  useEffect(() => {
-    loadDashboardData();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    const id = auth.currentUser?.uid;
+    if (!id) return setLoading(false);
+    const [s, b, c, st, n] = await Promise.all([
+      getVendorStats(),
+      getVendorBookings(id),
+      getVendorCars(id),
+      getVendorStatus(),
+      getUnreadNotificationCount().catch(() => 0),
+    ]);
+    setStats(s);
+    setBookings(b.bookings);
+    setCars(c.cars ?? []);
+    setAccount(st);
+    setUnread(n);
+    setLoading(false);
+    setRefreshing(false);
   }, []);
 
-const loadDashboardData = async () => {
-  try {
-    console.log('🔵 Loading vendor dashboard data...');
-    const { auth } = await import('../config/supabase');
-    const vendorId = auth.currentUser?.uid;
-    if (!vendorId) {
-      setLoading(false);
-      return;
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const upcoming = useMemo(
+    () =>
+      bookings
+        .filter((b) => b.bookingStatus === 'confirmed' || b.bookingStatus === 'ongoing')
+        .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
+    [bookings]
+  );
+
+  const todos = useMemo<Todo[]>(() => {
+    const list: Todo[] = [];
+    const noDriver = upcoming.filter(needsDriver);
+    if (noDriver.length) {
+      list.push({
+        key: 'driver',
+        icon: 'user-plus',
+        tone: 'amber',
+        title: noDriver.length === 1 ? 'Assign a driver' : `Assign drivers to ${noDriver.length} bookings`,
+        body: `${noDriver[0].car.brand} ${noDriver[0].car.model}, ${noDriver[0].startDate} at ${noDriver[0].startTime}`,
+        onPress: () => onNavigateToBookingDetails(noDriver[0].id),
+      });
     }
-
-    const { getVendorCars } = await import('../services/carservice');
-    const { getVendorBookings } = await import('../services/bookingService');
-    const [carsRes, bookingsRes] = await Promise.all([getVendorCars(vendorId), getVendorBookings(vendorId)]);
-    const totalCars = carsRes.cars?.length ?? 0;
-
-    let activeBookings = 0;
-    let totalEarnings = 0;
-    let thisMonthEarnings = 0;
-    const today = new Date();
-
-    // Statuses are kept up to date by the server. Earnings = vendor's share of completed trips.
-    for (const booking of bookingsRes.bookings) {
-      if (booking.status === 'upcoming' || booking.status === 'ongoing') activeBookings++;
-      if (booking.status === 'past') {
-        totalEarnings += booking.vendorAmount;
-        const start = new Date(booking.startAt);
-        if (start.getMonth() === today.getMonth() && start.getFullYear() === today.getFullYear()) {
-          thisMonthEarnings += booking.vendorAmount;
-        }
-      }
+    const disputed = bookings.filter((b) => b.bookingStatus === 'disputed');
+    if (disputed.length) {
+      list.push({
+        key: 'dispute',
+        icon: 'alert-triangle',
+        tone: 'red',
+        title: 'A customer reported a problem',
+        body: `Trip ${disputed[0].code}. Your payout for it is paused while Escardia reviews it.`,
+        onPress: () => onNavigateToBookingDetails(disputed[0].id),
+      });
     }
-    const recentBookingsList = bookingsRes.bookings.map((b) => ({ ...b, status: b.status === 'past' ? 'completed' : b.status }));
+    cars
+      .filter((c) => c.approvalStatus === 'rejected')
+      .slice(0, 2)
+      .forEach((c) =>
+        list.push({
+          key: `car-${c.id}`,
+          icon: 'edit-3',
+          tone: 'red',
+          title: `${c.brand} ${c.model} needs changes`,
+          body: c.rejectionReason || 'Open the car to see what to fix.',
+          onPress: () => onNavigateToCarDetail(c.id),
+        })
+      );
+    return list;
+  }, [upcoming, bookings, cars, onNavigateToBookingDetails, onNavigateToCarDetail]);
 
-    setDashboardData({
-      totalCars,
-      activeBookings,
-      totalEarnings,
-      thisMonthEarnings,
-      recentBookings: recentBookingsList.slice(0, 5),
-    });
-
-    console.log('✅ Dashboard data loaded:', {
-      totalCars,
-      activeBookings,
-      recentBookings: recentBookingsList.length,
-      thisMonthEarnings,
-      totalEarnings,
-    });
-  } catch (error) {
-    console.error('❌ Error loading dashboard:', error);
-  } finally {
-    setLoading(false);
-  }
-};
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'ongoing':
-        return '#10B981';
-      case 'confirmed':
-      case 'upcoming':
-        return '#3B82F6';
-      case 'completed':
-        return '#6B7280';
-      default:
-        return colors.textSecondary;
-    }
-  };
-
-  if (loading) {
-    console.log(dashboardData.recentBookings[0]);
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <Text style={{ fontSize: 16, color: colors.textSecondary }}>Loading dashboard...</Text>
-      </View>
-    );
-  }
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
   return (
-    <View style={styles.container}>
-      {/* Header with Gradient */}
-      <View style={styles.header}>
-        <LinearGradient
-          colors={['#2F5FED', '#1E3A8A', '#0F3460']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.headerGradient}
-        >
-          <Image
-            source={require('../../assets/images/headerpattern.png')}
-            style={styles.headerPattern}
-            resizeMode="cover"
-          />
-        </LinearGradient>
-
-        <View style={styles.headerContent}>
-  <View>
-    <Text style={styles.greeting}>Welcome back,</Text>
-    <Text style={styles.vendorName}>{vendorName}</Text>
-  </View>
-  <View style={styles.headerActions}>
-    <TouchableOpacity
-      style={styles.notificationButton}
-      onPress={onNavigateToNotifications}
-    >
-      <Image
-        source={require('../../assets/images/notificationicon.png')}
-        style={styles.notificationIcon}
-        resizeMode="contain"
-      />
-      {hasUnreadNotifications && <View style={styles.notificationBadge} />}
-    </TouchableOpacity>
-    <TouchableOpacity
-      style={styles.profileButton}
-      onPress={onNavigateToProfile}
-    >
-      <Image
-        source={require('../../assets/images/profileicon.png')}
-        style={styles.profileIcon}
-        resizeMode="contain"
-      />
-    </TouchableOpacity>
-  </View>
-</View>
-</View>
-
-<View style={styles.contentWrapper}>
-  <ScrollView
-    style={styles.scrollView}
-    contentContainerStyle={styles.scrollContent}
+    <View style={styles.root}>
+      <StatusBar style="light" />
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: TAB_BAR_SPACE + 10 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
+          />
+        }
       >
-{/* Stats Cards */}
-<View style={styles.statsContainer}>
+        <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+          <View style={styles.glow} />
+          <View style={styles.headerRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 1 }}>
+              <Pressable onPress={() => onTab('profile')} accessibilityLabel="Your account">
+                <Avatar uri={logoUrl} name={vendorName} size={44} />
+              </Pressable>
+              <View style={{ flexShrink: 1 }}>
+                <AppText variant="small" color={color.onDarkMuted}>
+                  {greeting}
+                </AppText>
+                <AppText variant="subheading" color="#FFFFFF" numberOfLines={1}>
+                  {vendorName}
+                </AppText>
+              </View>
+            </View>
+            <Pressable onPress={onNavigateToNotifications} style={styles.bell} accessibilityLabel="Notifications">
+              <Feather name="bell" size={18} color="#FFFFFF" />
+              {unread > 0 && <View style={styles.bellDot} />}
+            </Pressable>
+          </View>
 
-  {/* Total Cars */}
-  <TouchableOpacity
-    style={[styles.statCard, styles.statCardPrimary]}
-    onPress={onNavigateToFleet}
-  >
-   <View style={styles.statIconContainer}>
-      <Image
-        source={require('../../assets/images/caricon.png')}
-        style={styles.statIconImage}
-        resizeMode="contain"
-      />
-    </View>
-    <Text style={styles.statValue}>{dashboardData.totalCars}</Text> 
-    <Text style={styles.statLabel}>Total Cars</Text>
-  </TouchableOpacity>
-
-  {/* Active Bookings */}
-  <TouchableOpacity
-    style={[styles.statCard, styles.statCardSuccess]}
-    onPress={onNavigateToBookings}
-  >
-   <View style={styles.statIconContainer}>
-      <Image
-        source={require('../../assets/images/calender.png')}
-        style={styles.statIconImage}
-        resizeMode="contain"
-      />
-    </View>
-    <Text style={styles.statValue}>{dashboardData.activeBookings}</Text>
-    <Text style={styles.statLabel}>Active Bookings</Text>
-  </TouchableOpacity>
-</View>
-
-{/* Earnings Card */}
-<TouchableOpacity style={styles.earningsCard} onPress={onNavigateToEarnings}>
-  <LinearGradient
-    colors={['#10B981', '#059669']}
-    start={{ x: 0, y: 0 }}
-    end={{ x: 1, y: 1 }}
-    style={styles.earningsGradient}
-  >
-    <View style={styles.earningsContent}>
-      <View>
-        <Text style={styles.earningsLabel}>Total Earnings</Text>
-        <Text style={styles.earningsValue}>
-          ₦{dashboardData.totalEarnings.toLocaleString()} {/* ✅ CHANGE */}
-        </Text>
-        <Text style={styles.earningsSubtext}>
-          +₦{dashboardData.thisMonthEarnings.toLocaleString()} this month {/* ✅ CHANGE */}
-        </Text>
-      </View>
-      <View style={styles.earningsIcon}>
-        <Image
-          source={require('../../assets/images/vendorwalleticon.png')}
-          style={styles.earningsIconImage}
-          resizeMode="contain"
-        />
-      </View>
-    </View>
-  </LinearGradient>
-</TouchableOpacity>
-
-        {/* Quick Actions */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <View style={styles.quickActions}>
-            <TouchableOpacity style={styles.quickActionCard} onPress={onAddCar}>
-             <View style={styles.quickActionIcon}>
-  <Image
-    source={require('../../assets/images/plusicon.png')}
-    style={styles.quickActionIconImage}
-    resizeMode="contain"
-  />
-</View>
-              <Text style={styles.quickActionText}>Add New Car</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.quickActionCard}
-              onPress={onNavigateToBookings}
-            >
-              <View style={styles.quickActionIcon}>
-  <Image
-    source={require('../../assets/images/bookingsicon.png')}
-    style={styles.quickActionIconImage}
-    resizeMode="contain"
-  />
-</View>
-              <Text style={styles.quickActionText}>View Bookings</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.quickActionCard}
-              onPress={onNavigateToDrivers}
-            >
-              <View style={styles.quickActionIcon}>
-  <Image
-    source={require('../../assets/images/drivericon.png')}
-    style={styles.quickActionIconImage}
-    resizeMode="contain"
-  />
-</View>
-              <Text style={styles.quickActionText}>Manage Drivers</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-  style={styles.quickActionCard}
-  onPress={onNavigateToWithdrawFunds}  
->
-             <View style={styles.quickActionIcon}>
-  <Image
-    source={require('../../assets/images/withdrawicon.png')}
-    style={styles.quickActionIconImage}
-    resizeMode="contain"
-  />
-</View>
-              <Text style={styles.quickActionText}>Withdraw Funds</Text>
-            </TouchableOpacity>
+          <View style={styles.balance}>
+            <AppText variant="small" color={color.onDarkMuted}>
+              Available to withdraw
+            </AppText>
+            <AppText variant="display" color="#FFFFFF" style={{ marginTop: 2 }} numberOfLines={1} adjustsFontSizeToFit>
+              {naira(stats.available)}
+            </AppText>
+            <View style={styles.balanceRow}>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Feather name="clock" size={13} color={brand[200]} />
+                  <AppText variant="smallMedium" color="#FFFFFF">
+                    {naira(stats.pending)} on hold
+                  </AppText>
+                </View>
+                <AppText variant="small" color={color.onDarkMuted} style={{ fontSize: 12, marginTop: 2 }}>
+                  Released {settings.payoutHoldHours}h after trips
+                </AppText>
+              </View>
+              <Button title="Withdraw" size="md" variant="white" icon="arrow-up-right" onPress={onNavigateToWithdrawFunds} style={{ paddingHorizontal: 18 }} />
+            </View>
           </View>
         </View>
 
-{/* Recent Bookings */}
-<View style={styles.section}>
-  <View style={styles.sectionHeader}>
-    <Text style={styles.sectionTitle}>Recent Bookings</Text>
-    <TouchableOpacity onPress={onNavigateToBookings}>
-      <Text style={styles.seeAllText}>See All</Text>
-    </TouchableOpacity>
-  </View>
+        <View style={{ paddingHorizontal: gutter }}>
+          {account && account.status !== 'approved' && <AccountBanner status={account.status} reason={account.reason} onAddCar={onAddCar} />}
 
-  {dashboardData.recentBookings && dashboardData.recentBookings.length === 0 ? (
-    <View style={styles.emptyBookingsContainer}>
-      <Text style={styles.emptyBookingsText}>No recent bookings yet</Text>
-    </View>
-  ) : (
-    <View style={styles.bookingsList}>
-      {dashboardData.recentBookings && dashboardData.recentBookings.map((booking: any) => {
-        // ✅ Get car image
-        const carImage = booking.car?.photos?.[0] || booking.carImage;
-        
-        return (
-          <TouchableOpacity
-            key={booking.id}
-            style={styles.bookingCard}
-            onPress={() => onNavigateToBookingDetails(booking.id)}
-          >
-            <View style={styles.bookingLeft}>
-              {/* ✅ REAL CAR IMAGE */}
-              <View style={styles.bookingCarImageContainer}>
-                {carImage ? (
-                  <Image
-                    source={{ uri: carImage }}
-                    style={styles.bookingCarImage}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <View style={styles.bookingCarPlaceholder}>
-                    <Text style={styles.bookingCarIconText}>🚗</Text>
+          {loading ? (
+            <View style={{ marginTop: 18 }}>
+              <Skeleton height={96} />
+              <Skeleton height={150} />
+            </View>
+          ) : (
+            <>
+              <View style={[styles.grid, { marginTop: 18 }]}>
+                <StatTile
+                  icon="truck"
+                  label="Cars live"
+                  value={`${stats.approvedCars} of ${stats.totalCars}`}
+                  hint={stats.pendingCars ? `${stats.pendingCars} in review` : undefined}
+                  tone="blue"
+                  onPress={() => onTab('fleet')}
+                />
+                <StatTile icon="calendar" label="Active bookings" value={String(stats.activeBookings)} tone="green" onPress={() => onTab('bookings')} />
+              </View>
+              <View style={[styles.grid, { marginTop: 12 }]}>
+                <StatTile icon="check-circle" label="Trips completed" value={String(stats.completedBookings)} tone="slate" onPress={() => onTab('bookings')} />
+                <StatTile
+                  icon="star"
+                  label={stats.totalReviews ? `${stats.totalReviews} rating${stats.totalReviews === 1 ? '' : 's'}` : 'No ratings yet'}
+                  value={stats.totalReviews ? stats.averageRating.toFixed(1) : 'New'}
+                  tone="amber"
+                />
+              </View>
+
+              {todos.length > 0 && (
+                <>
+                  <SectionHead title="Needs your attention" />
+                  <View style={styles.todoCard}>
+                    {todos.map((t, i) => (
+                      <Pressable key={t.key} onPress={t.onPress} style={({ pressed }) => [styles.todo, i < todos.length - 1 && styles.todoBorder, pressed && { backgroundColor: color.sunken }]}>
+                        <View style={[styles.todoIcon, { backgroundColor: t.tone === 'amber' ? color.warningSoft : t.tone === 'red' ? color.dangerSoft : color.primarySoft }]}>
+                          <Feather name={t.icon} size={16} color={t.tone === 'amber' ? color.warning : t.tone === 'red' ? color.danger : color.primary} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <AppText variant="bodyMedium">{t.title}</AppText>
+                          <AppText variant="small" color={color.muted} numberOfLines={2}>
+                            {t.body}
+                          </AppText>
+                        </View>
+                        <Feather name="chevron-right" size={18} color={color.subtle} />
+                      </Pressable>
+                    ))}
                   </View>
-                )}
+                </>
+              )}
+
+              <SectionHead title="Coming up" action={upcoming.length ? 'All bookings' : undefined} onAction={() => onTab('bookings')} />
+              {upcoming.length === 0 ? (
+                <View style={styles.emptyCard}>
+                  <Feather name="calendar" size={20} color={color.primary} />
+                  <View style={{ flex: 1 }}>
+                    <AppText variant="bodyMedium">No upcoming bookings</AppText>
+                    <AppText variant="small" color={color.muted}>
+                      {stats.approvedCars ? 'New bookings show up here as soon as a customer pays.' : 'Once a car is approved, customers can book it.'}
+                    </AppText>
+                  </View>
+                </View>
+              ) : (
+                upcoming.slice(0, 3).map((b) => <VendorBookingCard key={b.id} booking={b} onPress={() => onNavigateToBookingDetails(b.id)} />)
+              )}
+
+              <SectionHead title="Quick actions" />
+              <View style={styles.grid}>
+                <Action icon="plus" label="Add a car" onPress={onAddCar} />
+                <Action icon="users" label="Drivers" onPress={onNavigateToDrivers} />
+                <Action icon="bar-chart-2" label="Earnings" onPress={() => onTab('earnings')} />
               </View>
-              
-              <View style={styles.bookingInfo}>
-                <Text style={styles.bookingCustomer}>
-                  {String(booking.customerName || 'Unknown')}
-                </Text>
-                <Text style={styles.bookingCar}>
-                  {String(booking.car?.brand || '')} {String(booking.car?.model || booking.carModel || 'Car')}
-                </Text>
-                <Text style={styles.bookingDate}>
-                  {String(booking.startDate || 'No date')}
-                </Text>
-              </View>
-            </View>
-            
-            <View style={styles.bookingRight}>
-              <Text style={styles.bookingAmount}>
-                ₦{(booking.totalPrice || 0).toLocaleString()}
-              </Text>
-              <View
-                style={[
-                  styles.bookingStatus,
-                  { backgroundColor: getStatusColor(booking.status) + '20' },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.bookingStatusText,
-                    { color: getStatusColor(booking.status) },
-                  ]}
-                >
-                  {String(booking.status || 'pending')}
-                </Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  )}
-</View>
-      <View style={styles.bottomSpacing} />
-     </ScrollView>
-
-      {/* Bottom Navigation */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem}>
-          <Image
-            source={require('../../assets/images/homeicon.png')}
-            style={styles.navIconActive}
-            resizeMode="contain"
-          />
-          <Text style={styles.navLabelActive}>Dashboard</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.navItem} onPress={onNavigateToFleet}>
-          <Image
-            source={require('../../assets/images/caricon.png')}
-            style={styles.navIcon}
-            resizeMode="contain"
-          />
-          <Text style={styles.navLabel}>Fleet</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.navItem} onPress={onNavigateToBookings}>
-          <Image
-            source={require('../../assets/images/tripicon.png')}
-            style={styles.navIcon}
-            resizeMode="contain"
-          />
-          <Text style={styles.navLabel}>Bookings</Text>
-        </TouchableOpacity>
-
-   <TouchableOpacity style={styles.navItem} onPress={onNavigateToEarnings}>
-  <Image
-                    source={require('../../assets/images/walleticon.png')}
-                    style={styles.navIconActive}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.navLabel}>Earnings</Text>
-                </TouchableOpacity>
-
-        <TouchableOpacity style={styles.navItem} onPress={onNavigateToProfile}>
-          <Image
-            source={require('../../assets/images/profileicon.png')}
-            style={styles.navIcon}
-            resizeMode="contain"
-          />
-          <Text style={styles.navLabel}>Profile</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+            </>
+          )}
+        </View>
+      </ScrollView>
+      <VendorTabBar active="dashboard" onNavigate={onTab} />
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+const SectionHead = ({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) => (
+  <View style={styles.sectionHead}>
+    <AppText variant="heading">{title}</AppText>
+    {!!action && (
+      <Pressable onPress={onAction} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+        <AppText variant="smallMedium" color={color.primary} style={{ fontSize: 14 }}>
+          {action}
+        </AppText>
+        <Feather name="chevron-right" size={16} color={color.primary} />
+      </Pressable>
+    )}
+  </View>
+);
+
+const Action = ({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) => (
+  <Pressable onPress={onPress} style={({ pressed }) => [styles.action, shadow.sm, pressed && { opacity: 0.9 }]}>
+    <View style={styles.actionIcon}>
+      <Feather name={icon} size={18} color={color.primary} />
+    </View>
+    <AppText variant="smallMedium" center style={{ marginTop: 8 }}>
+      {label}
+    </AppText>
+  </Pressable>
+);
+
+const AccountBanner = ({ status, reason, onAddCar }: { status: string; reason: string | null; onAddCar: () => void }) => {
+  const t =
+    status === 'pending'
+      ? {
+          icon: 'clock' as IconName,
+          bg: color.warningSoft,
+          fg: color.warning,
+          title: 'Your account is in review',
+          body: 'Escardia is checking your details. You can add cars now; they go live once you are approved.',
+        }
+      : status === 'rejected'
+        ? {
+            icon: 'x-circle' as IconName,
+            bg: color.dangerSoft,
+            fg: color.danger,
+            title: 'Your application was not approved',
+            body: reason || 'Contact support to find out what to change.',
+          }
+        : {
+            icon: 'slash' as IconName,
+            bg: color.dangerSoft,
+            fg: color.danger,
+            title: 'Your account is suspended',
+            body: reason || 'Your cars are hidden from customers. Contact support for help.',
+          };
+  return (
+    <View style={[styles.account, { backgroundColor: t.bg }]}>
+      <Feather name={t.icon} size={18} color={t.fg} style={{ marginTop: 1 }} />
+      <View style={{ flex: 1 }}>
+        <AppText variant="bodyMedium" color={t.fg}>
+          {t.title}
+        </AppText>
+        <AppText variant="small" color={color.text} style={{ marginTop: 2 }}>
+          {t.body}
+        </AppText>
+        {status === 'pending' && (
+          <Pressable onPress={onAddCar} hitSlop={6} style={{ marginTop: 8 }}>
+            <AppText variant="smallMedium" color={color.primary}>
+              Add a car
+            </AppText>
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+};
+
+const styles = themed(() => StyleSheet.create({
+  root: { flex: 1, backgroundColor: color.bg },
   header: {
-    paddingTop: 80,
-    paddingBottom: 60,
-    paddingHorizontal: spacing.lg,
+    backgroundColor: color.navy,
+    paddingHorizontal: gutter,
+    paddingBottom: 22,
+    borderBottomLeftRadius: radius.xxl,
+    borderBottomRightRadius: radius.xxl,
     overflow: 'hidden',
   },
-  headerGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-  },
-  headerPattern: {
-    position: 'absolute',
-    width: '80%',
-    height: '100%',
-    right: -50,
-    opacity: 1,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  glow: { position: 'absolute', width: 320, height: 320, borderRadius: 160, backgroundColor: brand[600], opacity: 0.3, top: -150, right: -110 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  bell: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
     alignItems: 'center',
-  },
-  greeting: {
-    fontSize: typography.fontSize.base,
-    color: colors.textWhite,
-    opacity: 0.9,
-    top: 30,
-  },
-  vendorName: {
-    fontSize: typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.textWhite,
-    marginTop: spacing.xs,
-    top: 30,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  notificationButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
   },
-  notificationIcon: {
-    width: 24,
-    height: 24,
-    tintColor: colors.textWhite,
+  bellDot: { position: 'absolute', top: 10, right: 11, width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', borderWidth: 1.5, borderColor: color.navy },
+  balance: {
+    marginTop: 22,
+    padding: 16,
+    borderRadius: radius.xl,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
   },
-  notificationBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#EF4444',
-  },
-  profileButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileIcon: {
-    width: 24,
-    height: 24,
-    tintColor: colors.textWhite,
-  },
-  contentWrapper: {
-    flex: 1,
-    marginTop: -20,
-    backgroundColor: colors.background,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    overflow: 'hidden',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: spacing.lg,
-    paddingTop: spacing.xl,
-    backgroundColor: colors.background,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  statCard: {
-    flex: 1,
-    borderRadius: borderRadius.xl,
-    padding: spacing.lg,
-    alignItems: 'center',
-  },
-  statCardPrimary: {
-    backgroundColor: '#DBEAFE',
-  },
-  statCardSuccess: {
-    backgroundColor: '#D1FAE5',
-  },
-  statIconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  statIcon: {
-    fontSize: 24,
-  },
-  statValue: {
-    fontSize: typography.fontSize['3xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  statLabel: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeight.medium,
-  },
-  earningsCard: {
-    borderRadius: borderRadius.xl,
-    overflow: 'hidden',
-    marginBottom: spacing.xl,
-  },
-  earningsGradient: {
-    padding: spacing.lg,
-  },
-  earningsContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  earningsLabel: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textWhite,
-    opacity: 0.9,
-    marginBottom: spacing.xs,
-  },
-  earningsValue: {
-    fontSize: typography.fontSize['3xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.textWhite,
-    marginBottom: spacing.xs,
-  },
-  earningsSubtext: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textWhite,
-    opacity: 0.8,
-  },
-  earningsIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  earningsIconText: {
-    fontSize: 30,
-  },
-  section: {
-    marginBottom: spacing.xl,
-    top: -0,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-    top: 15,
-  },
-  sectionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    top: -5,
-  },
-  seeAllText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-  },
-  quickActionCard: {
-    width: '47%',
-    backgroundColor: colors.backgroundGray,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    alignItems: 'center',
-  },
-  quickActionIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  quickActionIconText: {
-    fontSize: 24,
-  },
-  quickActionText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.text,
-    fontWeight: typography.fontWeight.medium,
-    textAlign: 'center',
-  },
-  bookingsList: {
-    gap: spacing.md,
-  },
-  bookingCard: {
-    backgroundColor: colors.backgroundGray,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  bookingLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  bookingCarIcon: {
-    width: 45,
-    height: 45,
-    borderRadius: 22.5,
-    backgroundColor: colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.sm,
-  },
-  bookingCarIconText: {
-    fontSize: 20,
-  },
-  bookingInfo: {
-    flex: 1,
-  },
-  bookingCustomer: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-    marginBottom: 2,
-  },
-  bookingCar: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    marginBottom: 2,
-  },
-  bookingDate: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-  },
-  bookingRight: {
-    alignItems: 'flex-end',
-  },
-  bookingAmount: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  bookingStatus: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: borderRadius.sm,
-  },
-  bookingStatusText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.semiBold,
-    textTransform: 'capitalize',
-  },
-  bottomSpacing: {
-    height: 20,
-  },
-  bottomNav: {
-    flexDirection: 'row',
-    backgroundColor: colors.background,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    borderBottomLeftRadius: borderRadius.xl,
-    borderBottomRightRadius: borderRadius.xl,
-    paddingVertical: spacing.md,
-    paddingBottom: 20,
-    position: 'absolute',
-    bottom: 20,
-    left: 20,
-    right: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  navIcon: {
-    width: 24,
-    height: 24,
-    marginBottom: spacing.xs,
-    opacity: 0.5,
-  },
-  navIconActive: {
-    width: 24,
-    height: 24,
-    marginBottom: spacing.xs,
-  },
-  navLabel: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-  },
-  navLabelActive: {
-    fontSize: typography.fontSize.xs,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  statIconImage: {
-  width: 28,
-  height: 18,
-  tintColor: colors.primary,
-},
-earningsIconImage: {
-  width: 32,
-  height: 18,
-  tintColor: colors.textWhite,
-},
-quickActionIconImage: {
-  width: 28,
-  height: 18,
-  tintColor: colors.primary,
-},
-emptyBookingsContainer: {
-  padding: spacing.xl,
-  alignItems: 'center',
-  backgroundColor: colors.backgroundGray,
-  borderRadius: borderRadius.lg,
-  marginTop: spacing.sm,
-},
-emptyBookingsText: {
-  fontSize: typography.fontSize.sm,
-  color: colors.textSecondary,
-},
-bookingCarImageContainer: {
-  width: 60,
-  height: 60,
-  borderRadius: borderRadius.md,
-  overflow: 'hidden',
-  marginRight: spacing.md,
-  backgroundColor: colors.backgroundGray,
-},
-bookingCarImage: {
-  width: '100%',
-  height: '100%',
-},
-bookingCarPlaceholder: {
-  width: '100%',
-  height: '100%',
-  backgroundColor: colors.primary + '20',
-  justifyContent: 'center',
-  alignItems: 'center',
-},
-});
+  balanceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.12)' },
+  grid: { flexDirection: 'row', gap: 12 },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 26, marginBottom: 12 },
+  todoCard: { backgroundColor: color.surface, borderRadius: radius.xl, borderWidth: 1, borderColor: color.border, overflow: 'hidden' },
+  todo: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
+  todoBorder: { borderBottomWidth: 1, borderBottomColor: color.border },
+  todoIcon: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  emptyCard: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: radius.xl, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  action: { flex: 1, alignItems: 'center', paddingVertical: 16, borderRadius: radius.xl, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  actionIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: color.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  account: { flexDirection: 'row', gap: 12, marginTop: 18, padding: 14, borderRadius: radius.xl },
+}));

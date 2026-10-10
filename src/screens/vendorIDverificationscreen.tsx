@@ -1,556 +1,197 @@
+// Vendor sign up, step 3 of 3: ID photos. Submitting uploads everything and sends the application.
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  Image,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
-} from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import { colors, typography, spacing, borderRadius } from '../constants';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { registerVendor, VendorRegistrationData } from '../services/vendorauthservice';
+import { AppText, Banner, Button, TextField } from '../ui';
+import { AuthLayout } from '../ui/AuthLayout';
+import { ChoiceChips, Steps, UploadBox } from '../ui/Kit';
+import { VENDOR_STEPS } from './vendoraccountcreationscreen';
+import { brand, color, gutter, radius, themed, statusBarStyle } from '../theme';
 
-interface VendorIDVerificationScreenProps {
-  onComplete: (data: IDVerificationData) => void;
-  onNavigateBack: () => void;
-}
+type IdType = 'national-id' | 'passport' | 'voters-card';
 
 export interface IDVerificationData {
   nin: string;
-  idType: 'national-id' | 'passport' | 'voters-card';
+  idType: IdType;
   idFront: string;
   idBack: string;
   proofOfAddress: string | null;
 }
 
-export const VendorIDVerificationScreen: React.FC<VendorIDVerificationScreenProps> = ({
-  onComplete,
-  onNavigateBack,
-}) => {
+interface VendorIDVerificationScreenProps {
+  /** Account and business details collected on the earlier steps. */
+  vendorData: Omit<VendorRegistrationData, keyof IDVerificationData>;
+  onNavigateBack: () => void;
+  /** Called after the application is saved and the vendor taps through. */
+  onComplete: (vendorId: string) => void;
+}
+
+const ID_TYPES: { key: IdType; label: string }[] = [
+  { key: 'national-id', label: 'National ID' },
+  { key: 'passport', label: 'Passport' },
+  { key: 'voters-card', label: "Voter's card" },
+];
+
+export const VendorIDVerificationScreen: React.FC<VendorIDVerificationScreenProps> = ({ vendorData, onNavigateBack, onComplete }) => {
+  const [idType, setIdType] = useState<IdType>('national-id');
   const [nin, setNin] = useState('');
-  const [idType, setIdType] = useState<'national-id' | 'passport' | 'voters-card'>('national-id');
-  const [idFront, setIdFront] = useState<string | null>(null);
-  const [idBack, setIdBack] = useState<string | null>(null);
-  const [proofOfAddress, setProofOfAddress] = useState<string | null>(null);
-  const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [front, setFront] = useState<string | null>(null);
+  const [back, setBack] = useState<string | null>(null);
+  const [proof, setProof] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Partial<Record<'nin' | 'front' | 'back', string>>>({});
+  const [formError, setFormError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [doneId, setDoneId] = useState<string | null>(null);
 
-  const [idFrontUploading, setIdFrontUploading] = useState(false);
-  const [idBackUploading, setIdBackUploading] = useState(false);
-  const [proofUploading, setProofUploading] = useState(false);
+  const passport = idType === 'passport';
 
-  const requestCameraPermission = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Camera permission is required to take photos');
-      return false;
-    }
-    return true;
+  const submit = async () => {
+    const next: typeof errors = {};
+    if (idType === 'national-id' && !/^\d{11}$/.test(nin.trim())) next.nin = 'Your NIN is the 11-digit number on your slip or card';
+    if (!front) next.front = passport ? 'Add a photo of your passport photo page' : 'Add a photo of the front';
+    if (!passport && !back) next.back = 'Add a photo of the back';
+    setErrors(next);
+    setFormError('');
+    if (Object.keys(next).length) return;
+
+    setSaving(true);
+    const r = await registerVendor({
+      ...vendorData,
+      nin: idType === 'national-id' ? nin.trim() : '',
+      idType,
+      idFront: front!,
+      idBack: passport ? '' : back!,
+      proofOfAddress: proof,
+    });
+    setSaving(false);
+    if (!r.success) return setFormError(r.error || 'We could not send your application. Please try again.');
+    setDoneId(r.vendorId!);
   };
 
-  const handleImagePicker = async (
-    type: 'camera' | 'gallery',
-    setter: (uri: string) => void,
-    setUploading: (loading: boolean) => void
-  ) => {
-    let result;
-
-    if (type === 'camera') {
-      const hasPermission = await requestCameraPermission();
-      if (!hasPermission) return;
-
-      result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
-    } else {
-      result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
-    }
-
-    if (!result.canceled && result.assets[0]) {
-      const localUri = result.assets[0].uri;
-      console.log('📸 Local image URI:', localUri);
-
-      // The photo is uploaded securely when the vendor submits this screen.
-      setter(localUri);
-    }
-  };
-
-  const showImagePickerOptions = (
-    setter: (uri: string) => void,
-    setUploading: (loading: boolean) => void
-  ) => {
-    Alert.alert('Upload Photo', 'Choose an option', [
-      {
-        text: 'Take Photo',
-        onPress: () => handleImagePicker('camera', setter, setUploading),
-      },
-      {
-        text: 'Choose from Gallery',
-        onPress: () => handleImagePicker('gallery', setter, setUploading),
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
-
-  // ✅ Clear NIN when switching away from National ID
-  const handleIdTypeChange = (type: 'national-id' | 'passport' | 'voters-card') => {
-    setIdType(type);
-    // Clear NIN if switching to non-National ID
-    if (type !== 'national-id') {
-      setNin('');
-      // Clear NIN error if exists
-      setErrors(prev => {
-        const { nin, ...rest } = prev;
-        return rest;
-      });
-    }
-  };
-
-  const validateForm = () => {
-    const newErrors: { [key: string]: string } = {};
-
-    // ✅ Only validate NIN if National ID is selected
-    if (idType === 'national-id') {
-      if (!nin.trim()) {
-        newErrors.nin = 'NIN is required';
-      } else if (nin.length !== 11) {
-        newErrors.nin = 'NIN must be 11 digits';
-      }
-    }
-
-    if (!idFront) {
-      newErrors.idFront = 'ID front photo is required';
-    }
-
-    if (!idBack) {
-      newErrors.idBack = 'ID back photo is required';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleContinue = () => {
-    if (validateForm()) {
-      onComplete({
-        nin: idType === 'national-id' ? nin : '', // ✅ Only pass NIN if National ID
-        idType,
-        idFront: idFront!,
-        idBack: idBack!,
-        proofOfAddress,
-      });
-    }
-  };
-
-  // Get friendly name for ID type
-  const getIdTypeName = () => {
-    switch (idType) {
-      case 'national-id':
-        return 'National ID';
-      case 'passport':
-        return 'Passport';
-      case 'voters-card':
-        return "Voter's Card";
-      default:
-        return 'ID';
-    }
-  };
-
-  const renderIDTypeSelector = () => (
-    <View style={styles.idTypeContainer}>
-      <TouchableOpacity
-        style={[styles.idTypeButton, idType === 'national-id' && styles.idTypeButtonActive]}
-        onPress={() => handleIdTypeChange('national-id')}
-      >
-        <Text style={[styles.idTypeText, idType === 'national-id' && styles.idTypeTextActive]}>
-          National ID
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.idTypeButton, idType === 'passport' && styles.idTypeButtonActive]}
-        onPress={() => handleIdTypeChange('passport')}
-      >
-        <Text style={[styles.idTypeText, idType === 'passport' && styles.idTypeTextActive]}>
-          Passport
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.idTypeButton, idType === 'voters-card' && styles.idTypeButtonActive]}
-        onPress={() => handleIdTypeChange('voters-card')}
-      >
-        <Text style={[styles.idTypeText, idType === 'voters-card' && styles.idTypeTextActive]}>
-          Voter's Card
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderUploadBox = (
-    label: string,
-    image: string | null,
-    onPress: () => void,
-    error?: string,
-    uploading?: boolean
-  ) => (
-    <View style={styles.uploadGroup}>
-      <Text style={styles.uploadLabel}>{label}</Text>
-      <TouchableOpacity
-        style={[styles.uploadBox, error && styles.uploadBoxError]}
-        onPress={onPress}
-        disabled={uploading}
-      >
-        {uploading ? (
-          <View style={styles.uploadPlaceholder}>
-            <Text style={styles.cameraIconText}>⏳</Text>
-            <Text style={styles.uploadHint}>Uploading...</Text>
-          </View>
-        ) : image ? (
-          <Image source={{ uri: image }} style={styles.uploadedPhoto} resizeMode="cover" />
-        ) : (
-          <View style={styles.uploadPlaceholder}>
-            <View style={styles.cameraIcon}>
-              <Text style={styles.cameraIconText}>📷</Text>
-            </View>
-            <Text style={styles.uploadHint}>
-              Add/take a picture or scan of the {label.toLowerCase()}
-            </Text>
-          </View>
-        )}
-      </TouchableOpacity>
-      {error && <Text style={styles.errorText}>{error}</Text>}
-    </View>
-  );
+  if (doneId) return <Submitted businessName={vendorData.businessName} onContinue={() => onComplete(doneId)} />;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-            <Text style={styles.backIcon}>←</Text>
-          </TouchableOpacity>
-          <Image
-            source={require('../../assets/images/logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <View style={styles.placeholder} />
-        </View>
+    <AuthLayout title="Confirm who you are" subtitle="Escardia checks every vendor before they can take bookings. Your ID is stored privately." onBack={saving ? undefined : onNavigateBack}>
+      <Steps steps={VENDOR_STEPS} current={3} />
+      {!!formError && <Banner text={formError} />}
 
-        {/* Progress Indicator */}
-        <View style={styles.progressContainer}>
-          <View style={styles.progressBar}>
-            <View style={[styles.progressStep, styles.progressStepActive]} />
-            <View style={[styles.progressLine, styles.progressLineActive]} />
-            <View style={[styles.progressStep, styles.progressStepActive]} />
-            <View style={[styles.progressLine, styles.progressLineActive]} />
-            <View style={[styles.progressStep, styles.progressStepActive]} />
-            <View style={[styles.progressLine, styles.progressLineActive]} />
-            <View style={[styles.progressStep, styles.progressStepActive]} />
-          </View>
-        </View>
+      <AppText variant="smallMedium" color={color.text} style={{ marginBottom: 8 }}>
+        ID type
+      </AppText>
+      <ChoiceChips
+        options={ID_TYPES}
+        value={idType}
+        onChange={(k) => {
+          setIdType(k);
+          setErrors({});
+        }}
+        style={{ marginBottom: 18 }}
+      />
 
-        {/* Title */}
-        <Text style={styles.title}>ID Verification</Text>
+      {idType === 'national-id' && (
+        <TextField
+          label="NIN"
+          icon="hash"
+          placeholder="11-digit number"
+          value={nin}
+          onChangeText={(v) => {
+            setNin(v.replace(/\D/g, '').slice(0, 11));
+            if (errors.nin) setErrors({ ...errors, nin: undefined });
+          }}
+          keyboardType="number-pad"
+          maxLength={11}
+          error={errors.nin}
+        />
+      )}
 
-        {/* Form */}
-        <View style={styles.form}>
-          {/* ID Type Selector - Show first so user picks type before NIN */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Government ID Type</Text>
-            {renderIDTypeSelector()}
-          </View>
+      <UploadBox
+        label={passport ? 'Passport photo page' : 'Front of your ID'}
+        uri={front}
+        onChange={(u) => {
+          setFront(u);
+          if (errors.front) setErrors({ ...errors, front: undefined });
+        }}
+        error={errors.front}
+      />
+      {!passport && (
+        <UploadBox
+          label="Back of your ID"
+          uri={back}
+          onChange={(u) => {
+            setBack(u);
+            if (errors.back) setErrors({ ...errors, back: undefined });
+          }}
+          error={errors.back}
+        />
+      )}
+      <UploadBox label="Proof of address" optional hint="A recent utility bill or bank statement with your address." uri={proof} onChange={setProof} />
 
-          {/* ✅ NIN - Only show for National ID */}
-          {idType === 'national-id' && (
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>NIN</Text>
-              <TextInput
-                style={[styles.input, errors.nin && styles.inputError]}
-                placeholder="Enter your 11-digit NIN"
-                placeholderTextColor={colors.textSecondary}
-                value={nin}
-                onChangeText={setNin}
-                keyboardType="number-pad"
-                maxLength={11}
-              />
-              {errors.nin && <Text style={styles.errorText}>{errors.nin}</Text>}
-            </View>
-          )}
+      <View style={styles.privacy}>
+        <Feather name="lock" size={14} color={color.success} />
+        <AppText variant="small" color={color.text} style={{ flex: 1 }}>
+          Only Escardia&apos;s review team can see these photos. Customers never see them.
+        </AppText>
+      </View>
 
-          {/* ID Front Upload */}
-          {renderUploadBox(
-            `${getIdTypeName()} (Front)`,
-            idFront,
-            () => showImagePickerOptions(setIdFront, setIdFrontUploading),
-            errors.idFront,
-            idFrontUploading
-          )}
-
-          {/* ID Back Upload */}
-          {renderUploadBox(
-            `${getIdTypeName()} (Back)`,
-            idBack,
-            () => showImagePickerOptions(setIdBack, setIdBackUploading),
-            errors.idBack,
-            idBackUploading
-          )}
-
-          {/* Proof of Address */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>
-              Proof of Address <Text style={styles.optionalText}>(optional)</Text>
-            </Text>
-            <Text style={styles.helperText}>
-              Utility bill, bank statement, or any document with your address
-            </Text>
-            <TouchableOpacity
-              style={styles.uploadBox}
-              onPress={() => showImagePickerOptions(setProofOfAddress, setProofUploading)}
-              disabled={proofUploading}
-            >
-              {proofUploading ? (
-                <View style={styles.uploadPlaceholder}>
-                  <Text style={styles.cameraIconText}>⏳</Text>
-                  <Text style={styles.uploadHint}>Uploading...</Text>
-                </View>
-              ) : proofOfAddress ? (
-                <Image
-                  source={{ uri: proofOfAddress }}
-                  style={styles.uploadedPhoto}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View style={styles.uploadPlaceholder}>
-                  <View style={styles.cameraIcon}>
-                    <Text style={styles.cameraIconText}>📷</Text>
-                  </View>
-                  <Text style={styles.uploadHint}>
-                    Add/take a picture of proof of address
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Continue Button */}
-        <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
-          <Text style={styles.continueButtonText}>Continue</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      <Button title={saving ? 'Sending your application' : 'Submit application'} icon="send" onPress={submit} loading={saving} />
+      {saving && (
+        <AppText variant="small" color={color.muted} center style={{ marginTop: 10 }}>
+          Uploading your photos. This can take a moment on a slow connection.
+        </AppText>
+      )}
+    </AuthLayout>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 40,
-    marginBottom: spacing.lg,
-  },
-  backButton: {
-    padding: spacing.sm,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: colors.text,
-  },
-  logo: {
-    width: 40,
-    height: 40,
-  },
-  placeholder: {
-    width: 40,
-  },
-  progressContainer: {
-    marginBottom: spacing.xl,
-  },
-  progressBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  progressStep: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.border,
-  },
-  progressStepActive: {
-    backgroundColor: colors.primary,
-  },
-  progressLine: {
-    width: 40,
-    height: 2,
-    backgroundColor: colors.border,
-    marginHorizontal: spacing.xs,
-  },
-  progressLineActive: {
-    backgroundColor: colors.primary,
-  },
-  title: {
-    fontSize: typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.xl,
-    textAlign: 'center',
-  },
-  form: {
-    gap: spacing.xl,
-    marginBottom: spacing.xl,
-  },
-  inputGroup: {
-    gap: spacing.xs,
-  },
-  label: {
-    fontSize: typography.fontSize.sm,
-    color: colors.text,
-    fontWeight: typography.fontWeight.medium,
-    marginBottom: spacing.xs,
-  },
-  optionalText: {
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeight.regular,
-  },
-  helperText: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-    marginBottom: spacing.sm,
-  },
-  input: {
-    backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    fontSize: typography.fontSize.base,
-    color: colors.text,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  inputError: {
-    borderColor: '#EF4444',
-  },
-  errorText: {
-    fontSize: typography.fontSize.xs,
-    color: '#EF4444',
-    marginTop: spacing.xs,
-  },
-  idTypeContainer: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  idTypeButton: {
-    flex: 1,
-    backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.md,
-    padding: spacing.sm,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  idTypeButtonActive: {
-    backgroundColor: colors.primary + '20',
-    borderColor: colors.primary,
-  },
-  idTypeText: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeight.medium,
-  },
-  idTypeTextActive: {
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  uploadGroup: {
-    gap: spacing.xs,
-  },
-  uploadLabel: {
-    fontSize: typography.fontSize.sm,
-    color: colors.text,
-    fontWeight: typography.fontWeight.medium,
-  },
-  uploadBox: {
-    backgroundColor: colors.inputBackground,
-    borderWidth: 2,
-    borderColor: colors.border,
-    borderStyle: 'dashed',
-    borderRadius: borderRadius.md,
-    overflow: 'hidden',
-    minHeight: 150,
-  },
-  uploadBoxError: {
-    borderColor: '#EF4444',
-  },
-  uploadPlaceholder: {
-    padding: spacing.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 150,
-  },
-  cameraIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  cameraIconText: {
-    fontSize: 24,
-  },
-  uploadHint: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  uploadedPhoto: {
-    width: '100%',
-    height: 150,
-  },
-  continueButton: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    alignItems: 'center',
-    marginTop: spacing.md,
-  },
-  continueButtonText: {
-    color: colors.textWhite,
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-});
+const Submitted = ({ businessName, onContinue }: { businessName: string; onContinue: () => void }) => {
+  const insets = useSafeAreaInsets();
+  const NEXT = [
+    { icon: 'search' as const, text: 'Escardia reviews your details and ID.' },
+    { icon: 'truck' as const, text: 'Meanwhile, add your cars. Each one is reviewed too.' },
+    { icon: 'bell' as const, text: 'We notify you as soon as you are approved, and your cars go live.' },
+  ];
+  return (
+    <View style={[styles.done, { paddingTop: insets.top }]}>
+      <StatusBar style={statusBarStyle()} />
+      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: gutter, paddingBottom: insets.bottom + 24 }}>
+        <View style={styles.ring}>
+          <View style={styles.circle}>
+            <Feather name="check" size={30} color="#FFFFFF" />
+          </View>
+        </View>
+        <AppText variant="title" center style={{ marginTop: 20 }}>
+          Application sent
+        </AppText>
+        <AppText variant="body" color={color.muted} center style={{ marginTop: 6 }}>
+          Welcome to Escardia, {businessName}. Here is what happens next.
+        </AppText>
+        <View style={styles.nextCard}>
+          {NEXT.map((n, i) => (
+            <View key={n.text} style={[styles.nextRow, i < NEXT.length - 1 && { borderBottomWidth: 1, borderBottomColor: color.border }]}>
+              <View style={styles.nextIcon}>
+                <Feather name={n.icon} size={16} color={color.primary} />
+              </View>
+              <AppText variant="body" style={{ flex: 1 }}>
+                {n.text}
+              </AppText>
+            </View>
+          ))}
+        </View>
+        <Button title="Go to my dashboard" iconRight="arrow-right" onPress={onContinue} style={{ marginTop: 24 }} />
+      </ScrollView>
+    </View>
+  );
+};
+
+const styles = themed(() => StyleSheet.create({
+  privacy: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 20, paddingHorizontal: 2 },
+  done: { flex: 1, backgroundColor: color.bg },
+  ring: { alignSelf: 'center', width: 92, height: 92, borderRadius: 46, backgroundColor: color.successSoft, alignItems: 'center', justifyContent: 'center' },
+  circle: { width: 66, height: 66, borderRadius: 33, backgroundColor: color.success, alignItems: 'center', justifyContent: 'center' },
+  nextCard: { marginTop: 24, paddingHorizontal: 14, borderRadius: radius.xl, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  nextRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
+  nextIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: color.primarySoft, alignItems: 'center', justifyContent: 'center' },
+}));

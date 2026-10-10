@@ -1,46 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-} from 'react-native';
-import { Button } from '../components';
-import { colors, typography, spacing, borderRadius } from '../constants';
-import { calculateTripPrice, getServerTripPrice, formatCurrency } from '../services/pricingservice';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
+import { auth } from '../config/supabase';
+import { calculateTripPrice, getServerTripPrice } from '../services/pricingservice';
+import { getWalletBalance } from '../services/walletService';
+import { AppText, Button, Screen, ScreenHeader } from '../ui';
+import { BookingSteps, BottomBar, InfoRow, OptionCard, Panel, SectionTitle } from '../ui/Booking';
+import { naira } from '../ui/CarCard';
+import { color, gutter, radius, themed, statusBarStyle } from '../theme';
+
+type Method = 'card' | 'bank' | 'wallet';
 
 interface PaymentDetailsScreenProps {
   onNavigateBack: () => void;
   onNavigateToCardPayment: (totalAmount: number) => void;
   onNavigateToBankTransfer: (totalAmount: number) => void;
   onNavigateToWalletPayment: (totalAmount: number) => void;
-  bookingData: {
-    tripData: {
-      car: any;
-      pickupLocation: string;
-      deliveryAddress?: string;
-      pickupMethod: 'vendor' | 'delivery';
-      rideMode: 'self-drive' | 'with-driver';
-      startDate: string;
-      endDate: string;
-      startTime: string;
-      stopTime: string;
-      duration: number;
-      durationType: 'day' | 'hour';
-    };
-    escortData?: {
-      escorts: Array<{
-        type: 'legion' | 'private'; // ✅ UPDATED
-        count: number;
-        pricePerPerson: number; // ✅ UPDATED
-      }> | null;
-      hiluxCount?: number; // ✅ NEW
-      hiluxCost?: number; // ✅ NEW
-      totalSecurityCost?: number; // ✅ NEW
-    };
-  };
+  bookingData: any;
 }
 
 const PaymentDetailsScreen: React.FC<PaymentDetailsScreenProps> = ({
@@ -50,455 +27,165 @@ const PaymentDetailsScreen: React.FC<PaymentDetailsScreenProps> = ({
   onNavigateToWalletPayment,
   bookingData,
 }) => {
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('');
+  const [method, setMethod] = useState<Method>('card');
   const [pricing, setPricing] = useState<any>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [balance, setBalance] = useState<number | null>(null);
 
   useEffect(() => {
-    // Check if bookingData exists
-    if (!bookingData || !bookingData.tripData || !bookingData.tripData.car) {
-      console.error('Missing booking data');
-      return;
-    }
-
-    console.log('📊 Booking Data:', bookingData); // ✅ Debug log
-
-    // Calculate pricing when component mounts
-    const calculatedPricing = calculateTripPrice({
-      car: {
-        pricePerDay: bookingData.tripData.car.pricePerDay,
-        pricePerHour: bookingData.tripData.car.pricePerHour,
-      },
-      tripDetails: {
-        durationType: bookingData.tripData.durationType,
-        duration: bookingData.tripData.duration,
-        pickupMethod: bookingData.tripData.pickupMethod,
-        rideMode: bookingData.tripData.rideMode,
-      },
-      escorts: bookingData.escortData?.escorts || null, // ✅ NEW format
-      hiluxCount: bookingData.escortData?.hiluxCount || 0, // ✅ NEW
-      hiluxCost: bookingData.escortData?.hiluxCost || 0, // ✅ NEW
-    });
-    
-    setPricing(calculatedPricing);
-
-    // Replace the estimate with the real server price (what the customer will actually pay).
+    const t = bookingData?.tripData;
+    if (!t?.car) return;
+    // Quick estimate first, then the real price from the server.
+    setPricing(
+      calculateTripPrice({
+        car: { pricePerDay: t.car.pricePerDay, pricePerHour: t.car.pricePerHour },
+        tripDetails: { durationType: t.durationType, duration: t.duration, pickupMethod: t.pickupMethod, rideMode: t.rideMode },
+        escorts: bookingData.escortData?.escorts || null,
+        hiluxCount: bookingData.escortData?.hiluxCount || 0,
+        hiluxCost: bookingData.escortData?.hiluxCost || 0,
+      })
+    );
     getServerTripPrice(bookingData)
-      .then((serverPricing) => setPricing(serverPricing))
-      .catch((error) => console.warn('Could not load server price:', error?.message));
+      .then((p) => {
+        setPricing(p);
+        setConfirmed(true);
+      })
+      .catch(() => setConfirmed(false));
+
+    const uid = auth.currentUser?.uid;
+    if (uid) getWalletBalance(uid).then(setBalance).catch(() => setBalance(null));
   }, [bookingData]);
 
-  const paymentMethods = [
-    { id: 'card', name: 'Credit/Debit Card', icon: require('../../assets/images/wallet.png') },
-    { id: 'bank', name: 'Bank Transfer', icon: require('../../assets/images/wallet.png') },
-    { id: 'wallet', name: 'Wallet', icon: require('../../assets/images/wallet.png') },
-  ];
-
-  const handlePayment = () => {
-    if (!selectedPaymentMethod) {
-      alert('Please select a payment method');
-      return;
-    }
-
-    // Navigate to appropriate payment screen based on selection, passing total amount
-    if (selectedPaymentMethod === 'card') {
-      onNavigateToCardPayment(pricing.total);
-    } else if (selectedPaymentMethod === 'bank') {
-      onNavigateToBankTransfer(pricing.total);
-    } else if (selectedPaymentMethod === 'wallet') {
-      onNavigateToWalletPayment(pricing.total);
-    }
-  };
-
-  if (!pricing || !bookingData?.tripData) {
+  const t = bookingData?.tripData;
+  if (!t || !pricing) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={onNavigateBack}>
-            <Text style={styles.backArrow}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Payment Details</Text>
-          <View style={styles.headerSpacer} />
+      <Screen>
+        <ScreenHeader title="Review and pay" onBack={onNavigateBack} />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={color.primary} />
         </View>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading pricing...</Text>
-        </View>
-      </View>
+      </Screen>
     );
   }
 
-  const { tripData } = bookingData;
+  const total: number = pricing.total;
+  const walletShort = balance !== null && balance < total;
+  const escorts: { type: string; count: number }[] = bookingData.escortData?.escorts ?? [];
+  const hilux = bookingData.escortData?.hiluxCount ?? 0;
+  const security = [...escorts.map((e) => `${e.count} ${e.type.toUpperCase()}`), hilux ? `${hilux} Hilux` : null].filter(Boolean).join(', ');
+
+  const proceed = () => {
+    if (method === 'card') onNavigateToCardPayment(total);
+    else if (method === 'bank') onNavigateToBankTransfer(total);
+    else onNavigateToWalletPayment(total);
+  };
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={onNavigateBack}>
-          <Text style={styles.backArrow}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Payment Details</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+    <Screen>
+      <StatusBar style={statusBarStyle()} />
+      <ScreenHeader title="Review and pay" onBack={onNavigateBack} />
+      <BookingSteps current={3} />
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Trip Summary Card */}
-        <View style={styles.tripSummaryCard}>
-          <Text style={styles.sectionTitle}>Trip Summary</Text>
-          
-          <View style={styles.tripInfoRow}>
-            <Text style={styles.tripInfoLabel}>Car:</Text>
-            <Text style={styles.tripInfoValue}>
-              {tripData.car.brand} {tripData.car.model} {tripData.car.year}
-            </Text>
-          </View>
-          
-          <View style={styles.tripInfoRow}>
-            <Text style={styles.tripInfoLabel}>Duration:</Text>
-            <Text style={styles.tripInfoValue}>
-              {tripData.duration} {tripData.durationType}{tripData.duration > 1 ? 's' : ''}
-            </Text>
-          </View>
-          
-          <View style={styles.tripInfoRow}>
-            <Text style={styles.tripInfoLabel}>Pickup:</Text>
-            <Text style={styles.tripInfoValue}>
-              {tripData.pickupMethod === 'vendor' ? 'At Vendor' : 'Delivery'}
-            </Text>
-          </View>
-          
-          <View style={styles.tripInfoRow}>
-            <Text style={styles.tripInfoLabel}>Mode:</Text>
-            <Text style={styles.tripInfoValue}>
-              {tripData.rideMode === 'self-drive' ? 'Self-Drive' : 'With Driver'}
-            </Text>
-          </View>
-          
-          <View style={styles.tripInfoRow}>
-            <Text style={styles.tripInfoLabel}>Dates:</Text>
-            <Text style={styles.tripInfoValue}>
-              {tripData.startDate} - {tripData.endDate}
-            </Text>
-          </View>
-
-          {/* ✅ Show Security Info if exists */}
-          {bookingData.escortData && bookingData.escortData.escorts && bookingData.escortData.escorts.length > 0 && (
-            <>
-              <View style={styles.divider} />
-              <Text style={[styles.sectionTitle, { fontSize: typography.fontSize.base, marginTop: spacing.sm }]}>
-                🛡️ Security Details
-              </Text>
-              {bookingData.escortData.escorts.map((escort, index) => (
-                <View key={index} style={styles.tripInfoRow}>
-                  <Text style={styles.tripInfoLabel}>
-                    {escort.type === 'legion' ? 'LEGION' : 'PRIVATE'}:
-                  </Text>
-                  <Text style={styles.tripInfoValue}>{escort.count} personnel</Text>
-                </View>
-              ))}
-              {bookingData.escortData.hiluxCount && bookingData.escortData.hiluxCount > 0 && (
-                <View style={styles.tripInfoRow}>
-                  <Text style={styles.tripInfoLabel}>Transport:</Text>
-                  <Text style={styles.tripInfoValue}>
-                    {bookingData.escortData.hiluxCount} Hilux
-                  </Text>
-                </View>
-              )}
-            </>
-          )}
-        </View>
-
-        {/* Pricing Breakdown */}
-        <View style={styles.pricingCard}>
-          <Text style={styles.sectionTitle}>Price Breakdown</Text>
-          
-          {pricing.breakdown.map((item: any, index: number) => (
-            <View key={index} style={styles.priceRow}>
-              <Text style={styles.priceLabel}>{item.label}</Text>
-              <Text style={styles.priceValue}>{formatCurrency(item.amount)}</Text>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 150 }} showsVerticalScrollIndicator={false}>
+        {/* Trip */}
+        <Panel style={{ padding: 0, overflow: 'hidden' }}>
+          <View style={styles.tripTop}>
+            {t.car.photos?.[0] ? (
+              <Image source={{ uri: t.car.photos[0] }} style={styles.photo} />
+            ) : (
+              <View style={[styles.photo, { alignItems: 'center', justifyContent: 'center' }]}>
+                <Feather name="image" size={18} color={color.subtle} />
+              </View>
+            )}
+            <View style={{ flex: 1 }}>
+              <AppText variant="subheading" numberOfLines={1}>
+                {t.car.brand} {t.car.model}
+              </AppText>
+              <AppText variant="small" color={color.muted}>
+                {t.duration} {t.durationType}
+                {t.duration > 1 ? 's' : ''} · With driver
+              </AppText>
             </View>
-          ))}
-          
-          <View style={styles.divider} />
-          
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total Amount</Text>
-            <Text style={styles.totalValue}>{formatCurrency(pricing.total)}</Text>
           </View>
-        </View>
+          <View style={styles.timeline}>
+            <TimePoint label="Pick-up" date={t.startDate} time={t.startTime} />
+            <Feather name="arrow-right" size={16} color={color.subtle} />
+            <TimePoint label="Return" date={t.endDate} time={t.stopTime} right />
+          </View>
+          <View style={{ paddingHorizontal: 16, paddingBottom: 6 }}>
+            <InfoRow icon={t.pickupMethod === 'delivery' ? 'truck' : 'map-pin'} label={t.pickupMethod === 'delivery' ? 'Delivery' : 'Pick-up'} value={t.pickupLocation} />
+            <InfoRow icon="shield" label="Security" value={security || 'None'} />
+          </View>
+        </Panel>
 
-        {/* Payment Method Selection */}
-        <View style={styles.paymentMethodSection}>
-          <Text style={styles.sectionTitle}>Payment Method</Text>
-          
-          {paymentMethods.map((method) => (
-            <TouchableOpacity
-              key={method.id}
-              style={[
-                styles.paymentMethodCard,
-                selectedPaymentMethod === method.id && styles.paymentMethodCardActive,
-              ]}
-              onPress={() => setSelectedPaymentMethod(method.id)}
-            >
-              <View style={styles.paymentMethodContent}>
-                <Image source={method.icon} style={styles.paymentIcon} resizeMode="contain" />
-                <Text
-                  style={[
-                    styles.paymentMethodText,
-                    selectedPaymentMethod === method.id && styles.paymentMethodTextActive,
-                  ]}
-                >
-                  {method.name}
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.radioButton,
-                  selectedPaymentMethod === method.id && styles.radioButtonActive,
-                ]}
-              >
-                {selectedPaymentMethod === method.id && <View style={styles.radioButtonInner} />}
-              </View>
-            </TouchableOpacity>
+        {/* Price */}
+        <SectionTitle title="Price" />
+        <Panel>
+          {pricing.breakdown.map((row: { label: string; amount: number }) => (
+            <InfoRow key={row.label} label={row.label} value={naira(row.amount)} />
           ))}
-        </View>
+          <View style={styles.divider} />
+          <InfoRow label="Total" value={naira(total)} strong />
+          <View style={styles.priceNote}>
+            <Feather name={confirmed ? 'check-circle' : 'info'} size={13} color={confirmed ? color.success : color.muted} />
+            <AppText variant="small" color={confirmed ? color.success : color.muted}>
+              {confirmed ? 'Price confirmed by Escardia' : 'Estimate. The final price is confirmed when you pay.'}
+            </AppText>
+          </View>
+        </Panel>
 
-        {/* Important Note */}
-        <View style={styles.noteCard}>
-          <Text style={styles.noteTitle}>📌 Important</Text>
-          <Text style={styles.noteText}>
-            • Payment is required to confirm your booking{'\n'}
-            • Cancellation policy applies as per terms{'\n'}
-            • You'll receive a booking confirmation after payment
-          </Text>
+        {/* Method */}
+        <SectionTitle title="Pay with" />
+        <OptionCard icon="credit-card" title="Card" subtitle="Visa, Mastercard or Verve" selected={method === 'card'} onPress={() => setMethod('card')} />
+        <OptionCard icon="briefcase" title="Bank transfer" subtitle="Pay from your bank app or with USSD" selected={method === 'bank'} onPress={() => setMethod('bank')} />
+        <OptionCard
+          icon="pocket"
+          title="Escardia wallet"
+          subtitle={balance === null ? 'Loading balance…' : walletShort ? `Balance ${naira(balance)} · not enough for this trip` : `Balance ${naira(balance)}`}
+          selected={method === 'wallet'}
+          onPress={() => setMethod('wallet')}
+        />
+
+        {/* Policy */}
+        <View style={styles.policy}>
+          <Feather name="rotate-ccw" size={16} color={color.primary} style={{ marginTop: 2 }} />
+          <View style={{ flex: 1 }}>
+            <AppText variant="smallMedium">Cancellation</AppText>
+            <AppText variant="small" color={color.text} style={{ marginTop: 2 }}>
+              Full refund up to 24 hours before pick-up. 50% back from 12 to 24 hours before, 25% from 2 to 12 hours before, and nothing in the last 2 hours. Refunds go to your Escardia wallet.
+            </AppText>
+          </View>
         </View>
       </ScrollView>
 
-      {/* Footer with Total and Pay Button */}
-      <View style={styles.footer}>
-        <View style={styles.footerPriceSection}>
-          <Text style={styles.footerPriceLabel}>Total to Pay</Text>
-          <Text style={styles.footerPriceValue}>{formatCurrency(pricing.total)}</Text>
-        </View>
-        <Button
-          title="Proceed to Payment"
-          onPress={handlePayment}
-          style={styles.payButton}
-        />
-      </View>
-    </View>
+      <BottomBar
+        label="Total"
+        amount={naira(total)}
+        button={<Button title={method === 'wallet' ? 'Pay from wallet' : 'Continue to pay'} iconRight="lock" onPress={proceed} />}
+      />
+    </Screen>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl * 2,
-    paddingBottom: spacing.lg,
-    backgroundColor: colors.background,
-  },
-  backButton: {
-    padding: spacing.sm,
-  },
-  backArrow: {
-    fontSize: 24,
-    color: colors.text,
-  },
-  headerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-  },
-  headerSpacer: {
-    width: 40,
-  },
-  scrollView: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-  },
-  tripSummaryCard: {
-    backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  sectionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  tripInfoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  tripInfoLabel: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.regular,
-    color: colors.textSecondary,
-  },
-  tripInfoValue: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-    textAlign: 'right',
-    flex: 1,
-    marginLeft: spacing.sm,
-  },
-  pricingCard: {
-    backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  priceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  priceLabel: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.regular,
-    color: colors.textSecondary,
-    flex: 1,
-  },
-  priceValue: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.medium,
-    color: colors.text,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginVertical: spacing.md,
-  },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  totalLabel: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-  },
-  totalValue: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.primary,
-  },
-  paymentMethodSection: {
-    marginBottom: spacing.md,
-  },
-  paymentMethodCard: {
-    backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  paymentMethodCardActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight + '20',
-  },
-  paymentMethodContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  paymentIcon: {
-    width: 32,
-    height: 32,
-    marginRight: spacing.sm,
-  },
-  paymentMethodText: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.medium,
-    color: colors.textSecondary,
-  },
-  paymentMethodTextActive: {
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  radioButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: colors.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  radioButtonActive: {
-    borderColor: colors.primary,
-  },
-  radioButtonInner: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.primary,
-  },
-  noteCard: {
-    backgroundColor: colors.warning + '20',
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    marginBottom: spacing.xl,
-  },
-  noteTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  noteText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.regular,
-    color: colors.textSecondary,
-    lineHeight: typography.fontSize.sm * 1.5,
-  },
-  footer: {
-    padding: spacing.lg,
-    backgroundColor: colors.background,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  footerPriceSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  footerPriceLabel: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.medium,
-    color: colors.textSecondary,
-  },
-  footerPriceValue: {
-    fontSize: typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.primary,
-  },
-  payButton: {
-    width: '100%',
-  },
-});
+const TimePoint = ({ label, date, time, right }: { label: string; date: string; time: string; right?: boolean }) => (
+  <View style={{ flex: 1, alignItems: right ? 'flex-end' : 'flex-start' }}>
+    <AppText variant="small" color={color.muted} style={{ fontSize: 12 }}>
+      {label}
+    </AppText>
+    <AppText variant="bodyMedium">{date}</AppText>
+    <AppText variant="small" color={color.text}>
+      {time}
+    </AppText>
+  </View>
+);
 
-export default PaymentDetailsScreen;
+const styles = themed(() => StyleSheet.create({
+  tripTop: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderBottomWidth: 1, borderBottomColor: color.border },
+  photo: { width: 64, height: 48, borderRadius: 10, backgroundColor: color.sunken },
+  timeline: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, backgroundColor: color.highlight, borderBottomWidth: 1, borderBottomColor: color.border },
+  divider: { height: 1, backgroundColor: color.border, marginVertical: 4 },
+  priceNote: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+  policy: { flexDirection: 'row', gap: 12, marginTop: 14, padding: 14, borderRadius: radius.lg, backgroundColor: color.primarySoft },
+}));
+
+export default PaymentDetailsScreen;

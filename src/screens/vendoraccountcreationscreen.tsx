@@ -1,24 +1,14 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  Image,
-  Modal,
-  Linking,
-} from 'react-native';
-import { colors, typography, spacing, borderRadius } from '../constants';
-
-interface VendorAccountCreationScreenProps {
-  onContinue: (data: VendorAccountData) => void;
-  onNavigateBack: () => void;
-  onNavigateToVendorSignIn: () => void;
-}
+// Vendor sign up, step 1 of 3: personal details and login.
+import React, { useRef, useState } from 'react';
+import { StyleSheet, TextInput, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { startVendorSignUp } from '../services/vendorauthservice';
+import { useAppSettings } from '../hooks/useAppSettings';
+import { vendorAgreement, vendorPrivacy, AGREEMENT_UPDATED } from '../content/vendorAgreement';
+import { AppText, Banner, Button, Checkbox, LinkText, TextField } from '../ui';
+import { AuthLayout } from '../ui/AuthLayout';
+import { DocSheet, Steps } from '../ui/Kit';
+import { color, themed } from '../theme';
 
 export interface VendorAccountData {
   firstName: string;
@@ -28,592 +18,241 @@ export interface VendorAccountData {
   password: string;
 }
 
-export const VendorAccountCreationScreen: React.FC<VendorAccountCreationScreenProps> = ({
-  onContinue,
-  onNavigateBack,
-  onNavigateToVendorSignIn,
-}) => {
+interface VendorAccountCreationScreenProps {
+  /** Called once the login exists. needsVerification is true when an email code was sent. */
+  onAccountCreated: (data: VendorAccountData, needsVerification: boolean) => void;
+  onNavigateBack: () => void;
+  onNavigateToVendorSignIn: () => void;
+}
+
+export const VENDOR_STEPS = ['Account', 'Business', 'Identity'];
+
+const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+
+const RULES = [
+  { label: '8 or more characters', test: (p: string) => p.length >= 8 },
+  { label: 'A number', test: (p: string) => /\d/.test(p) },
+  { label: 'A special character, like ! or @', test: (p: string) => /[!@#$%^&*(),.?":{}|<>_\-+=~`[\]\\/;']/.test(p) },
+];
+
+type Field = 'firstName' | 'lastName' | 'email' | 'phone' | 'password' | 'confirm' | 'terms';
+
+export const VendorAccountCreationScreen: React.FC<VendorAccountCreationScreenProps> = ({ onAccountCreated, onNavigateBack, onNavigateToVendorSignIn }) => {
+  const { settings } = useAppSettings();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [errors, setErrors] = useState<{ [key: string]: string }>({});
-  
-  // Terms & Conditions state
-  const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [confirm, setConfirm] = useState('');
+  const [agreed, setAgreed] = useState(false);
+  const [doc, setDoc] = useState<'terms' | 'privacy' | null>(null);
+  const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
+  const [formError, setFormError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const validateForm = () => {
-    const newErrors: { [key: string]: string } = {};
+  const lastRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const phoneRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+  const confirmRef = useRef<TextInput>(null);
 
-    if (!firstName.trim()) newErrors.firstName = 'First name is required';
-    if (!lastName.trim()) newErrors.lastName = 'Last name is required';
-    
-    if (!email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
-      newErrors.email = 'Email is invalid';
-    }
+  const clear = (k: Field) => errors[k] && setErrors({ ...errors, [k]: undefined });
 
-    if (!phoneNumber.trim()) {
-      newErrors.phoneNumber = 'Phone number is required';
-    } else if (phoneNumber.length < 10) {
-      newErrors.phoneNumber = 'Phone number must be at least 10 digits';
-    }
+  const submit = async () => {
+    const next: Partial<Record<Field, string>> = {};
+    const digits = phone.replace(/\D/g, '');
+    if (!firstName.trim()) next.firstName = 'Required';
+    if (!lastName.trim()) next.lastName = 'Required';
+    if (!email.trim()) next.email = 'Enter your email';
+    else if (!isEmail(email)) next.email = 'That email does not look right';
+    if (!digits) next.phone = 'Enter your phone number';
+    else if (digits.length < 10 || digits.length > 14) next.phone = 'Enter a valid number, like 0803 123 4567';
+    if (!password) next.password = 'Choose a password';
+    else if (!RULES.every((r) => r.test(password))) next.password = 'Your password needs everything in the list below';
+    if (!confirm) next.confirm = 'Type your password again';
+    else if (password !== confirm) next.confirm = 'Passwords do not match';
+    if (!agreed) next.terms = 'Please accept the vendor agreement to continue';
+    setErrors(next);
+    setFormError('');
+    if (Object.keys(next).length) return;
 
-    if (!password) {
-      newErrors.password = 'Password is required';
-    } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
-    }
-
-    if (!confirmPassword) {
-      newErrors.confirmPassword = 'Please confirm your password';
-    } else if (password !== confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
-    }
-
-    // Validate terms agreement
-    if (!agreedToTerms) {
-      newErrors.terms = 'You must agree to the Terms & Conditions';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleContinue = () => {
-    if (validateForm()) {
-      onContinue({
-        firstName,
-        lastName,
-        email,
-        phoneNumber,
-        password,
-      });
-    }
-  };
-
-  // Open external link
-  const openExternalLink = (url: string) => {
-    Linking.openURL(url).catch(err => console.error('Error opening URL:', err));
+    const data: VendorAccountData = {
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: email.trim().toLowerCase(),
+      phoneNumber: phone.trim(),
+      password,
+    };
+    setLoading(true);
+    const r = await startVendorSignUp(data);
+    setLoading(false);
+    if (!r.success) return setFormError(r.error || 'We could not create your account. Please try again.');
+    onAccountCreated(data, r.needsVerification !== false);
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <AuthLayout
+      title="Create your vendor account"
+      subtitle="Start with your own details. Your business comes next."
+      onBack={onNavigateBack}
+      footer={
+        <AppText variant="body" color={color.muted}>
+          Already a vendor? <LinkText onPress={onNavigateToVendorSignIn}>Sign in</LinkText>
+        </AppText>
+      }
     >
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-            <Text style={styles.backIcon}>←</Text>
-          </TouchableOpacity>
-          <Image
-            source={require('../../assets/images/logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <View style={styles.placeholder} />
-        </View>
+      <Steps steps={VENDOR_STEPS} current={1} />
+      {!!formError && <Banner text={formError} />}
 
-        {/* Progress Indicator */}
-        <View style={styles.progressContainer}>
-          <View style={styles.progressBar}>
-            <View style={[styles.progressStep, styles.progressStepActive]} />
-            <View style={styles.progressLine} />
-            <View style={styles.progressStep} />
-            <View style={styles.progressLine} />
-            <View style={styles.progressStep} />
-            <View style={styles.progressLine} />
-            <View style={styles.progressStep} />
-          </View>
-        </View>
+      <View style={{ flexDirection: 'row', gap: 12 }}>
+        <TextField
+          label="First name"
+          placeholder="Tunde"
+          value={firstName}
+          onChangeText={(v) => (setFirstName(v), clear('firstName'))}
+          autoCapitalize="words"
+          autoComplete="given-name"
+          textContentType="givenName"
+          returnKeyType="next"
+          onSubmitEditing={() => lastRef.current?.focus()}
+          error={errors.firstName}
+          containerStyle={{ flex: 1 }}
+        />
+        <TextField
+          ref={lastRef}
+          label="Last name"
+          placeholder="Bakare"
+          value={lastName}
+          onChangeText={(v) => (setLastName(v), clear('lastName'))}
+          autoCapitalize="words"
+          autoComplete="family-name"
+          textContentType="familyName"
+          returnKeyType="next"
+          onSubmitEditing={() => emailRef.current?.focus()}
+          error={errors.lastName}
+          containerStyle={{ flex: 1 }}
+        />
+      </View>
 
-        {/* Title */}
-        <Text style={styles.title}>Account Creation</Text>
+      <TextField
+        ref={emailRef}
+        label="Email"
+        icon="mail"
+        placeholder="you@business.com"
+        value={email}
+        onChangeText={(v) => (setEmail(v), clear('email'))}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoComplete="email"
+        textContentType="emailAddress"
+        returnKeyType="next"
+        onSubmitEditing={() => phoneRef.current?.focus()}
+        error={errors.email}
+      />
 
-        {/* Form */}
-        <View style={styles.form}>
-          {/* First Name */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>First name</Text>
-            <TextInput
-              style={[styles.input, errors.firstName && styles.inputError]}
-              placeholder=""
-              placeholderTextColor={colors.textSecondary}
-              value={firstName}
-              onChangeText={setFirstName}
-              autoCapitalize="words"
-            />
-            {errors.firstName && (
-              <Text style={styles.errorText}>{errors.firstName}</Text>
-            )}
-          </View>
+      <TextField
+        ref={phoneRef}
+        label="Phone number"
+        icon="phone"
+        placeholder="0803 123 4567"
+        value={phone}
+        onChangeText={(v) => (setPhone(v), clear('phone'))}
+        keyboardType="phone-pad"
+        autoComplete="tel"
+        textContentType="telephoneNumber"
+        returnKeyType="next"
+        onSubmitEditing={() => passwordRef.current?.focus()}
+        error={errors.phone}
+        hint="Customers on your trips will see this number."
+      />
 
-          {/* Last Name */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Last name</Text>
-            <TextInput
-              style={[styles.input, errors.lastName && styles.inputError]}
-              placeholder=""
-              placeholderTextColor={colors.textSecondary}
-              value={lastName}
-              onChangeText={setLastName}
-              autoCapitalize="words"
-            />
-            {errors.lastName && (
-              <Text style={styles.errorText}>{errors.lastName}</Text>
-            )}
-          </View>
+      <TextField
+        ref={passwordRef}
+        label="Password"
+        icon="lock"
+        placeholder="Create a password"
+        value={password}
+        onChangeText={(v) => (setPassword(v), clear('password'))}
+        isPassword
+        autoComplete="new-password"
+        textContentType="newPassword"
+        returnKeyType="next"
+        onSubmitEditing={() => confirmRef.current?.focus()}
+        error={errors.password}
+        containerStyle={{ marginBottom: 10 }}
+      />
+      <View style={styles.rules}>
+        {RULES.map((r) => {
+          const ok = r.test(password);
+          return (
+            <View key={r.label} style={styles.rule}>
+              <View style={[styles.ruleDot, ok && styles.ruleDotOk]}>{ok && <Feather name="check" size={10} color="#FFFFFF" />}</View>
+              <AppText variant="small" color={ok ? color.ink : color.muted}>
+                {r.label}
+              </AppText>
+            </View>
+          );
+        })}
+      </View>
 
-          {/* Email */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={[styles.input, errors.email && styles.inputError]}
-              placeholder=""
-              placeholderTextColor={colors.textSecondary}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-            {errors.email && (
-              <Text style={styles.errorText}>{errors.email}</Text>
-            )}
-          </View>
+      <TextField
+        ref={confirmRef}
+        label="Confirm password"
+        icon="lock"
+        placeholder="Type it again"
+        value={confirm}
+        onChangeText={(v) => (setConfirm(v), clear('confirm'))}
+        isPassword
+        autoComplete="new-password"
+        textContentType="newPassword"
+        returnKeyType="done"
+        onSubmitEditing={submit}
+        error={errors.confirm}
+      />
 
-          {/* Phone Number */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Phone number</Text>
-            <TextInput
-              style={[styles.input, errors.phoneNumber && styles.inputError]}
-              placeholder=""
-              placeholderTextColor={colors.textSecondary}
-              value={phoneNumber}
-              onChangeText={setPhoneNumber}
-              keyboardType="phone-pad"
-            />
-            {errors.phoneNumber && (
-              <Text style={styles.errorText}>{errors.phoneNumber}</Text>
-            )}
-          </View>
+      <View style={{ marginBottom: 24 }}>
+        <Checkbox checked={agreed} onPress={() => (setAgreed(!agreed), clear('terms'))}>
+          <AppText variant="small" color={color.text} style={{ lineHeight: 20 }}>
+            I agree to the{' '}
+            <LinkText style={{ fontSize: 13 }} onPress={() => setDoc('terms')}>
+              Vendor Agreement
+            </LinkText>{' '}
+            and{' '}
+            <LinkText style={{ fontSize: 13 }} onPress={() => setDoc('privacy')}>
+              Vendor Privacy Notice
+            </LinkText>
+          </AppText>
+        </Checkbox>
+        {!!errors.terms && (
+          <AppText variant="small" color={color.danger} style={{ marginTop: 8, marginLeft: 34 }}>
+            {errors.terms}
+          </AppText>
+        )}
+      </View>
 
-          {/* Password */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={[styles.input, errors.password && styles.inputError]}
-              placeholder=""
-              placeholderTextColor={colors.textSecondary}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-            {errors.password && (
-              <Text style={styles.errorText}>{errors.password}</Text>
-            )}
-          </View>
+      <Button title="Continue" iconRight="arrow-right" onPress={submit} loading={loading} />
 
-          {/* Confirm Password */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Confirm password</Text>
-            <TextInput
-              style={[styles.input, errors.confirmPassword && styles.inputError]}
-              placeholder=""
-              placeholderTextColor={colors.textSecondary}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-            />
-            {errors.confirmPassword && (
-              <Text style={styles.errorText}>{errors.confirmPassword}</Text>
-            )}
-          </View>
-
-          {/* Terms & Conditions Checkbox */}
-          <View style={styles.termsContainer}>
-            <TouchableOpacity
-              style={styles.checkboxContainer}
-              onPress={() => setAgreedToTerms(!agreedToTerms)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]}>
-                {agreedToTerms && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-              <Text style={styles.termsText}>
-                I agree to the{' '}
-                <Text 
-                  style={styles.termsLink} 
-                  onPress={() => setShowTermsModal(true)}
-                >
-                  Vendor Terms & Conditions
-                </Text>
-                {' '}and{' '}
-                <Text 
-                  style={styles.termsLink} 
-                  onPress={() => openExternalLink('https://www.escardia.com/privacy')}
-                >
-                  Privacy Policy
-                </Text>
-              </Text>
-            </TouchableOpacity>
-            {errors.terms && <Text style={styles.termsErrorText}>{errors.terms}</Text>}
-          </View>
-        </View>
-
-        {/* Continue Button */}
-        <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
-          <Text style={styles.continueButtonText}>Continue</Text>
-        </TouchableOpacity>
-
-        {/* ✅ FIXED: Already have account link - Better spacing */}
-        <View style={styles.signInWrapper}>
-          <TouchableOpacity 
-            style={styles.signInContainer} 
-            onPress={onNavigateToVendorSignIn}
-          >
-            <Text style={styles.signInText}>
-              Already have an account?{' '}
-              <Text style={styles.signInLink}>Sign In</Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-
-      {/* Vendor Terms & Conditions Modal */}
-      <Modal
-        visible={showTermsModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowTermsModal(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Vendor Agreement</Text>
-            <TouchableOpacity 
-              onPress={() => setShowTermsModal(false)}
-              style={styles.modalCloseButton}
-            >
-              <Text style={styles.modalCloseText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-          
-          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-            <Text style={styles.modalSectionTitle}>1. Vendor Partnership</Text>
-            <Text style={styles.modalText}>
-              By registering as a vendor on Escardia, you agree to partner with us to list your vehicles for rental. This agreement governs your use of the Escardia platform as a vehicle owner.
-            </Text>
-
-            <Text style={styles.modalSectionTitle}>2. Eligibility Requirements</Text>
-            <Text style={styles.modalText}>
-              To become an Escardia vendor, you must:{'\n\n'}
-              • Be at least 21 years old{'\n'}
-              • Provide valid government-issued identification{'\n'}
-              • Own or have legal authority to rent the listed vehicles{'\n'}
-              • Maintain valid vehicle registration and insurance{'\n'}
-              • Complete our verification process
-            </Text>
-
-            <Text style={styles.modalSectionTitle}>3. Vehicle Requirements</Text>
-            <Text style={styles.modalText}>
-              All vehicles listed must:{'\n\n'}
-              • Be in good mechanical condition{'\n'}
-              • Have valid registration and insurance{'\n'}
-              • Pass our quality standards review{'\n'}
-              • Be accurately represented in photos and descriptions{'\n'}
-              • Meet minimum safety requirements
-            </Text>
-
-            <Text style={styles.modalSectionTitle}>4. Commission & Payments</Text>
-            <Text style={styles.modalText}>
-              • Escardia charges a 10% commission on all completed bookings{'\n'}
-              • Payments are processed within 24-48 hours after trip completion{'\n'}
-              • You are responsible for any applicable taxes on your earnings{'\n'}
-              • Pricing must be competitive and in line with market rates
-            </Text>
-
-            <Text style={styles.modalSectionTitle}>5. Contact Us</Text>
-            <Text style={styles.modalText}>
-              For questions about this Vendor Agreement:{'\n\n'}
-              Email: vendors@escardia.com{'\n'}
-              Website: www.escardia.com/vendors
-            </Text>
-
-            <Text style={styles.modalLastUpdated}>
-              Last updated: December 2024
-            </Text>
-          </ScrollView>
-
-          <View style={styles.modalFooter}>
-            <TouchableOpacity
-              style={styles.modalAcceptButton}
-              onPress={() => {
-                setAgreedToTerms(true);
-                setShowTermsModal(false);
-              }}
-            >
-              <Text style={styles.modalAcceptButtonText}>I Accept</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-    </KeyboardAvoidingView>
+      <DocSheet
+        visible={doc === 'terms'}
+        title="Vendor Agreement"
+        sections={vendorAgreement(settings)}
+        updated={AGREEMENT_UPDATED}
+        onClose={() => setDoc(null)}
+        onAccept={() => {
+          setAgreed(true);
+          clear('terms');
+          setDoc(null);
+        }}
+      />
+      <DocSheet visible={doc === 'privacy'} title="Vendor Privacy Notice" sections={vendorPrivacy} updated={AGREEMENT_UPDATED} onClose={() => setDoc(null)} />
+    </AuthLayout>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: spacing.lg,
-    paddingBottom: 40, // ✅ FIXED: More bottom padding
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 40,
-    marginBottom: spacing.md, 
-  },
-  backButton: {
-    padding: spacing.sm,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: colors.text,
-  },
-  logo: {
-    width: 40,
-    height: 40,
-  },
-  placeholder: {
-    width: 40,
-  },
-  progressContainer: {
-    marginBottom: spacing.lg,
-  },
-  progressBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  progressStep: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.border,
-  },
-  progressStepActive: {
-    backgroundColor: colors.primary,
-  },
-  progressLine: {
-    width: 40,
-    height: 2,
-    backgroundColor: colors.border,
-    marginHorizontal: spacing.xs,
-  },
-  title: {
-    fontSize: typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.lg,
-    textAlign: 'center',
-  },
-  form: {
-    gap: spacing.sm, 
-  },
-  inputGroup: {
-    gap: spacing.xs,
-  },
-  label: {
-    fontSize: typography.fontSize.sm,
-    color: colors.text,
-    fontWeight: typography.fontWeight.medium,
-    marginBottom: spacing.xs,
-  },
-  input: {
-    backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    fontSize: typography.fontSize.base,
-    color: colors.text,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  inputError: {
-    borderColor: '#EF4444',
-  },
-  errorText: {
-    fontSize: typography.fontSize.xs,
-    color: '#EF4444',
-    marginTop: spacing.xs,
-  },
-  continueButton: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    alignItems: 'center',
-    marginTop: spacing.lg,
-  },
-  continueButtonText: {
-    color: colors.textWhite,
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-
-  // ✅ FIXED: Sign In link wrapper for better positioning
-  signInWrapper: {
-    marginTop: spacing.lg,
-    marginBottom: spacing.md,
-  },
-  signInContainer: {
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-  },
-  signInText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  signInLink: {
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-
-  // Terms & Conditions styles
-  termsContainer: {
-    marginTop: spacing.sm,
-  },
-  checkboxContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: colors.border,
-    backgroundColor: colors.inputBackground,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.sm,
-    marginTop: 2,
-  },
-  checkboxChecked: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  checkmark: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  termsText: {
-    flex: 1,
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
-  termsLink: {
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  termsErrorText: {
-    fontSize: typography.fontSize.xs,
-    color: '#EF4444',
-    marginTop: spacing.xs,
-    marginLeft: 30,
-  },
-
-  // Modal styles
-  modalContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: 60,
-    paddingBottom: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  modalTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-  },
-  modalCloseButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.inputBackground,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalCloseText: {
-    fontSize: 18,
-    color: colors.textSecondary,
-  },
-  modalContent: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-  },
-  modalSectionTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  modalText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    lineHeight: 22,
-  },
-  modalLastUpdated: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-    fontStyle: 'italic',
-    marginTop: spacing.xl,
-    marginBottom: spacing.xl,
-    textAlign: 'center',
-  },
-  modalFooter: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  modalAcceptButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  modalAcceptButtonText: {
-    color: '#fff',
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-});
-
-export default VendorAccountCreationScreen;
+const styles = themed(() => StyleSheet.create({
+  rules: { gap: 6, marginBottom: 20, paddingLeft: 2 },
+  rule: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  ruleDot: { width: 16, height: 16, borderRadius: 8, borderWidth: 1.5, borderColor: color.borderStrong, alignItems: 'center', justifyContent: 'center' },
+  ruleDotOk: { backgroundColor: color.success, borderColor: color.success },
+}));

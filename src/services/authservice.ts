@@ -113,7 +113,7 @@ export const getUserProfile = async (uid: string) => {
 
 export const updateUserProfile = async (
   uid: string,
-  updates: { firstName?: string; lastName?: string; phoneNumber?: string; avatarUrl?: string }
+  updates: { firstName?: string; lastName?: string; phoneNumber?: string; avatarUrl?: string | null }
 ) => {
   const row: Record<string, unknown> = {};
   if (updates.firstName !== undefined) row.first_name = updates.firstName;

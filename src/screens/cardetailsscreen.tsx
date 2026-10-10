@@ -1,18 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Dimensions,
-  Alert,
-  Image,
-} from 'react-native';
-import { Button } from '../components';
-import { colors, typography, spacing, borderRadius } from '../constants';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Dimensions, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFavorites } from '../hooks/useFavorites';
+import ratingService, { SavedRating } from '../services/ratingservice';
+import { AppText, Button, IconButton, IconName } from '../ui';
+import { Heart, naira } from '../ui/CarCard';
+import { color, gutter, radius, shadow, themed, statusBarStyle } from '../theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const PHOTO_HEIGHT = Math.round(SCREEN_WIDTH * 0.85);
 
 interface CarDetailsScreenProps {
   carId: string;
@@ -20,463 +18,348 @@ interface CarDetailsScreenProps {
   onNavigateToTripDetails: (carData: any) => void;
 }
 
-export const CarDetailsScreen: React.FC<CarDetailsScreenProps> = ({
-  carId,
-  onNavigateBack,
-  onNavigateToTripDetails,
-}) => {
-  const [carData, setCarData] = useState<any>(null);
+export const CarDetailsScreen: React.FC<CarDetailsScreenProps> = ({ carId, onNavigateBack, onNavigateToTripDetails }) => {
+  const insets = useSafeAreaInsets();
+  const [car, setCar] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
- const [showFullDescription, setShowFullDescription] = useState(false);
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [error, setError] = useState('');
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const [reviews, setReviews] = useState<SavedRating[]>([]);
+  const { isFavorite, toggle } = useFavorites();
 
-  // ✅ 1. FETCH CAR DATA
   useEffect(() => {
-    const fetchCar = async () => {
-      try {
-        console.log('🔵 Loading car details for:', carId);
-        const { getCar } = await import('../services/carservice');
-        const result = await getCar(carId);
-
-        if (result.success && result.car) {
-          const car = result.car;
-          console.log('✅ Car loaded:', car);
-          setCarData(car);
-        } else {
-          console.log('❌ Car not found');
-          alert('Car not found');
-          onNavigateBack();
-        }
-      } catch (error) {
-        console.error('❌ Error loading car:', error);
-        alert('Failed to load car details');
-        onNavigateBack();
-      } finally {
-        setLoading(false);
+    (async () => {
+      const { getCar } = await import('../services/carservice');
+      const result = await getCar(carId);
+      if (result.success && result.car) {
+        setCar(result.car);
+        ratingService
+          .getCarRatings(carId)
+          .then((r) => setReviews(r.reviews.filter((x) => x.review).slice(0, 3)))
+          .catch(() => {});
+      } else {
+        setError(result.error || 'This car is no longer available');
       }
-    };
-
-    fetchCar();
+      setLoading(false);
+    })();
   }, [carId]);
 
-  // ✅ 3. LOADING STATE
   if (loading) {
     return (
-      <View style={[styles.container, styles.centerContent]}>
-        <Text style={styles.loadingText}>Loading car details...</Text>
+      <View style={[styles.root, styles.center]}>
+        <StatusBar style={statusBarStyle()} />
+        <ActivityIndicator color={color.primary} />
       </View>
     );
   }
 
- 
-  if (!carData) {
+  if (!car) {
     return (
-      <View style={[styles.container, styles.centerContent]}>
-        <Text style={styles.errorText}>Car not found</Text>
-        <TouchableOpacity onPress={onNavigateBack} style={styles.backHomeButton}>
-          <Text style={styles.backHomeText}>Go Back</Text>
-        </TouchableOpacity>
+      <View style={[styles.root, styles.center, { paddingHorizontal: 32 }]}>
+        <StatusBar style={statusBarStyle()} />
+        <View style={styles.errorIcon}>
+          <Feather name="alert-circle" size={24} color={color.muted} />
+        </View>
+        <AppText variant="heading" center style={{ marginTop: 16 }}>
+          Car unavailable
+        </AppText>
+        <AppText variant="body" color={color.muted} center style={{ marginTop: 6, marginBottom: 24 }}>
+          {error}
+        </AppText>
+        <Button title="Go back" variant="secondary" onPress={onNavigateBack} style={{ alignSelf: 'stretch' }} />
       </View>
     );
   }
 
-  // 5. FEATURES & DATA 
-  const features = [
-    { 
-      icon: require('../../assets/images/seats.png'), 
-      label: `${carData.seats || 4} Seater` 
-    },
-    { 
-      icon: require('../../assets/images/door.png'), 
-      label: `${carData.doors || 4} Doors` 
-    },
-    { 
-      icon: require('../../assets/images/ac.png'), 
-      label: carData.ac || 'AC' 
-    },
-    { 
-      icon: require('../../assets/images/gear.png'), 
-      label: carData.transmission || 'Automatic' 
-    },
+  const photos: string[] = car.photos ?? [];
+  const reviewCount = car.rating?.totalReviews ?? 0;
+  const specs: { icon: IconName; label: string; value: string }[] = [
+    { icon: 'users', label: 'Seats', value: String(car.seats || '-') },
+    { icon: 'columns', label: 'Doors', value: String(car.doors || '-') },
+    { icon: 'settings', label: 'Gearbox', value: car.transmission || '-' },
+    { icon: 'droplet', label: 'Fuel', value: car.fuelType || '-' },
   ];
-
-  const description = carData.description || 'No description available';
-  const photos = carData.photos || [];
+  const description: string = car.description || '';
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={onNavigateBack}>
-          <Text style={styles.backArrow}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Car Details</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Car Image Carousel */}
-        <View style={styles.carImageSection}>
-          <ScrollView
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onScroll={(e) => {
-              const index = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-              setCurrentImageIndex(index);
-            }}
-            scrollEventThrottle={16}
-          >
-            {photos.length > 0 ? (
-              photos.map((photo: string, index: number) => (
-                <View key={index} style={styles.carImageContainer}>
-                  <Image
-                    source={{ uri: photo }}
-                    style={styles.carImage}
-                    resizeMode="cover"
-                  />
-                </View>
-              ))
-            ) : (
-              <View style={styles.carImageContainer}>
-                <Text style={styles.carImagePlaceholder}>🚗</Text>
-              </View>
-            )}
-          </ScrollView>
-
-          {/* Pagination Dots */}
-          {photos.length > 1 && (
-            <View style={styles.paginationDots}>
-              {photos.map((_: any, index: number) => (
-                <View
-                  key={index}
-                  style={[
-                    styles.dot,
-                    currentImageIndex === index && styles.dotActive,
-                  ]}
-                />
+    <View style={styles.root}>
+      <StatusBar style="light" />
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 + insets.bottom }} bounces={false}>
+        {/* Photos */}
+        <View style={{ height: PHOTO_HEIGHT, backgroundColor: color.navy }}>
+          {photos.length > 0 ? (
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(e) => setPhotoIndex(Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH))}
+            >
+              {photos.map((uri) => (
+                <Image key={uri} source={{ uri }} style={{ width: SCREEN_WIDTH, height: PHOTO_HEIGHT }} resizeMode="cover" />
               ))}
+            </ScrollView>
+          ) : (
+            <View style={[styles.center, { flex: 1 }]}>
+              <Feather name="image" size={36} color="rgba(255,255,255,0.3)" />
+            </View>
+          )}
+          <View style={[styles.photoBar, { top: insets.top + 8 }]}>
+            <IconButton icon="chevron-left" onPress={onNavigateBack} accessibilityLabel="Go back" style={styles.floatingBtn} />
+            <View style={[styles.floatingBtn, styles.heartWrap]}>
+              <Heart active={isFavorite(car.id)} onPress={() => toggle(car.id)} />
+            </View>
+          </View>
+          {photos.length > 1 && (
+            <View style={styles.counter}>
+              <AppText variant="smallMedium" color="#FFFFFF" style={{ fontSize: 12 }}>
+                {photoIndex + 1} / {photos.length}
+              </AppText>
             </View>
           )}
         </View>
 
-        {/* Car Info */}
-        <View style={styles.infoSection}>
-          {/* Brand and Model */}
-          <View style={styles.brandRow}>
-            <View style={styles.brandInfo}>
-              <Text style={styles.brandName}>
-                {carData.brand} {carData.model}
-              </Text>
-              <Text style={styles.carYear}>{carData.year}</Text>
+        {/* Details sheet */}
+        <View style={styles.sheet}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <AppText variant="small" color={color.muted}>
+                {[car.year, car.type && car.type.length <= 3 ? car.type.toUpperCase() : car.type?.replace(/^./, (c: string) => c.toUpperCase())].filter(Boolean).join(' · ')}
+              </AppText>
+              <AppText variant="title" style={{ marginTop: 2 }}>
+                {car.brand} {car.model}
+              </AppText>
             </View>
-            <View style={styles.ratingBadge}>
-              <Text style={styles.ratingStar}>⭐</Text>
-              <Text style={styles.ratingText}>
-                {carData.rating?.averageOverall?.toFixed(1) || '5.0'}
-              </Text>
+            <View style={styles.ratingBox}>
+              {reviewCount > 0 ? (
+                <>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Feather name="star" size={14} color="#F59E0B" />
+                    <AppText variant="subheading">{Number(car.rating.averageOverall).toFixed(1)}</AppText>
+                  </View>
+                  <AppText variant="small" color={color.muted} style={{ fontSize: 11 }}>
+                    {reviewCount} review{reviewCount === 1 ? '' : 's'}
+                  </AppText>
+                </>
+              ) : (
+                <AppText variant="smallMedium" color={color.primary}>
+                  New
+                </AppText>
+              )}
             </View>
           </View>
 
-          {/* Location */}
-          <View style={styles.locationRow}>
-            <Text style={styles.locationIcon}>📍</Text>
-            <Text style={styles.location}>{carData.location}</Text>
+          {!!car.location && (
+            <View style={styles.inline}>
+              <Feather name="map-pin" size={14} color={color.muted} />
+              <AppText variant="small" color={color.text}>
+                {car.location}
+              </AppText>
+            </View>
+          )}
+
+          {/* Vendor */}
+          <View style={styles.vendor}>
+            <View style={styles.vendorAvatar}>
+              <AppText variant="subheading" color={color.primary}>
+                {(car.vendorName?.[0] ?? 'E').toUpperCase()}
+              </AppText>
+            </View>
+            <View style={{ flex: 1 }}>
+              <AppText variant="small" color={color.muted}>
+                Listed by
+              </AppText>
+              <AppText variant="bodyMedium" numberOfLines={1}>
+                {car.vendorName || 'Escardia vendor'}
+              </AppText>
+            </View>
+            <View style={styles.verified}>
+              <Feather name="check-circle" size={12} color={color.success} />
+              <AppText variant="smallMedium" color={color.success} style={{ fontSize: 12 }}>
+                Verified
+              </AppText>
+            </View>
           </View>
 
-          {/* Description */}
-          {description !== 'No description available' && (
-            <View style={styles.descriptionSection}>
-              <Text style={styles.sectionTitle}>About this car</Text>
-              <Text
-                style={styles.description}
-                numberOfLines={showFullDescription ? undefined : 3}
-              >
+          {/* Specs */}
+          <View style={styles.specs}>
+            {specs.map((s) => (
+              <View key={s.label} style={styles.spec}>
+                <View style={styles.specIcon}>
+                  <Feather name={s.icon} size={16} color={color.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <AppText variant="small" color={color.muted} style={{ fontSize: 12 }}>
+                    {s.label}
+                  </AppText>
+                  <AppText variant="smallMedium" numberOfLines={1} style={{ textTransform: 'capitalize' }}>
+                    {s.value}
+                  </AppText>
+                </View>
+              </View>
+            ))}
+          </View>
+
+          {!!description && (
+            <View style={{ marginTop: 24 }}>
+              <AppText variant="heading" style={{ marginBottom: 8 }}>
+                About this car
+              </AppText>
+              <AppText variant="body" color={color.text} numberOfLines={expanded ? undefined : 4}>
                 {description}
-              </Text>
-              {description.length > 100 && (
-                <TouchableOpacity
-                  onPress={() => setShowFullDescription(!showFullDescription)}
-                >
-                  <Text style={styles.seeMore}>
-                    {showFullDescription ? 'See less...' : 'See more...'}
-                  </Text>
-                </TouchableOpacity>
+              </AppText>
+              {description.length > 160 && (
+                <Pressable onPress={() => setExpanded(!expanded)} hitSlop={8} style={{ marginTop: 6 }}>
+                  <AppText variant="smallMedium" color={color.primary}>
+                    {expanded ? 'Show less' : 'Read more'}
+                  </AppText>
+                </Pressable>
               )}
             </View>
           )}
 
-          {/* Features */}
-          <View style={styles.featuresSection}>
-            <Text style={styles.sectionTitle}>Features</Text>
-            <View style={styles.featuresGrid}>
-              {features.map((feature, index) => (
-                <View key={index} style={styles.featureCard}>
-                  <Image
-  source={feature.icon}
-  style={styles.featureIconImage}
-  resizeMode="contain"
-/>
-                  <Text style={styles.featureLabel}>{feature.label}</Text>
+          {/* Pricing */}
+          <View style={{ marginTop: 24 }}>
+            <AppText variant="heading" style={{ marginBottom: 10 }}>
+              Pricing
+            </AppText>
+            <View style={styles.priceRow}>
+              <PriceTile label="Per day" value={naira(car.pricePerDay)} />
+              {car.pricePerHour > 0 && <PriceTile label="Per hour" value={naira(car.pricePerHour)} />}
+            </View>
+            <View style={[styles.inline, { marginTop: 12 }]}>
+              <Feather name="info" size={13} color={color.muted} />
+              <AppText variant="small" color={color.muted} style={{ flex: 1 }}>
+                Delivery, security and the service fee are added when you book.
+              </AppText>
+            </View>
+          </View>
+
+          {/* Reviews */}
+          {reviews.length > 0 && (
+            <View style={{ marginTop: 24 }}>
+              <AppText variant="heading" style={{ marginBottom: 10 }}>
+                What riders say
+              </AppText>
+              {reviews.map((r) => (
+                <View key={r.id} style={styles.review}>
+                  <View style={{ flexDirection: 'row', gap: 2, marginBottom: 6 }}>
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Feather key={i} name="star" size={12} color={i < Math.round(r.overallExperience) ? '#F59E0B' : color.border} />
+                    ))}
+                  </View>
+                  <AppText variant="body" color={color.text}>
+                    {r.review}
+                  </AppText>
                 </View>
               ))}
             </View>
-          </View>
-
-          {/* Pricing */}
-          <View style={styles.pricingSection}>
-            <Text style={styles.sectionTitle}>Pricing</Text>
-            <View style={styles.pricingCards}>
-              <View style={styles.priceCard}>
-                <Text style={styles.priceLabel}>Per Day</Text>
-                <Text style={styles.priceValue}>
-                  ₦{carData.pricePerDay?.toLocaleString()}
-                </Text>
-              </View>
-              <View style={styles.priceCard}>
-                <Text style={styles.priceLabel}>Per Hour</Text>
-                <Text style={styles.priceValue}>
-                  ₦{carData.pricePerHour?.toLocaleString()}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Book Button */}
-          <Button
-            title="Book This Car"
-            onPress={() => onNavigateToTripDetails(carData)}
-            style={styles.bookButton}
-          />
+          )}
         </View>
       </ScrollView>
+
+      {/* Book bar */}
+      <View style={[styles.bookBar, shadow.lg, { paddingBottom: insets.bottom + 12 }]}>
+        <View>
+          <AppText variant="heading">{naira(car.pricePerDay)}</AppText>
+          <AppText variant="small" color={color.muted}>
+            per day
+          </AppText>
+        </View>
+        <Button title="Book now" iconRight="arrow-right" onPress={() => onNavigateToTripDetails(car)} style={{ flex: 1, marginLeft: 20 }} />
+      </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  centerContent: {
+const PriceTile = ({ label, value }: { label: string; value: string }) => (
+  <View style={styles.priceTile}>
+    <AppText variant="small" color={color.muted}>
+      {label}
+    </AppText>
+    <AppText variant="heading" style={{ marginTop: 4 }}>
+      {value}
+    </AppText>
+  </View>
+);
+
+const styles = themed(() => StyleSheet.create({
+  root: { flex: 1, backgroundColor: color.bg },
+  center: { alignItems: 'center', justifyContent: 'center' },
+  errorIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: color.sunken, alignItems: 'center', justifyContent: 'center' },
+  photoBar: { position: 'absolute', left: gutter, right: gutter, flexDirection: 'row', justifyContent: 'space-between' },
+  floatingBtn: { borderWidth: 0, ...shadow.md },
+  heartWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: color.surface, alignItems: 'center', justifyContent: 'center' },
+  counter: {
+    position: 'absolute',
+    right: gutter,
+    bottom: 40,
+    paddingHorizontal: 10,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(15,23,42,0.6)',
     justifyContent: 'center',
+  },
+  sheet: {
+    marginTop: -24,
+    backgroundColor: color.bg,
+    borderTopLeftRadius: radius.xxl,
+    borderTopRightRadius: radius.xxl,
+    paddingHorizontal: gutter,
+    paddingTop: 24,
+  },
+  ratingBox: {
     alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  errorText: {
-    fontSize: typography.fontSize.lg,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  backHomeButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-  },
-  backHomeText: {
-    color: colors.textWhite,
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  header: {
-    paddingTop: 60,
-    paddingBottom: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    backgroundColor: colors.background,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
     justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.md,
+    minWidth: 64,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.border,
   },
-  backArrow: {
-    fontSize: 20,
-    color: colors.text,
-  },
-  headerTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-  },
-  headerSpacer: {
-    width: 40,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  carImageSection: {
-    backgroundColor: colors.backgroundGray,
-    paddingVertical: spacing.md,
-  },
-  carImageContainer: {
-    width: SCREEN_WIDTH,
-    height: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  carImage: {
-    width: SCREEN_WIDTH - spacing.xl * 2,
-    height: '100%',
-    borderRadius: borderRadius.lg,
-  },
-  carImagePlaceholder: {
-    fontSize: 120,
-  },
-  paginationDots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: spacing.md,
-    gap: spacing.sm,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.border,
-  },
-  dotActive: {
-    backgroundColor: colors.primary,
-    width: 24,
-  },
-  infoSection: {
-    padding: spacing.lg,
-  },
-  brandRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: spacing.sm,
-  },
-  brandInfo: {
-    flex: 1,
-  },
-  brandName: {
-    fontSize: typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-  },
-  carYear: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-  },
-  ratingBadge: {
+  inline: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
+  vendor: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.primary + '20',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.md,
+    gap: 12,
+    marginTop: 20,
+    padding: 14,
+    borderRadius: radius.lg,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.border,
   },
-  ratingStar: {
-    fontSize: 16,
-    marginRight: 4,
-  },
-  ratingText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.primary,
-  },
-  locationRow: {
+  vendorAvatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: color.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  verified: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, height: 26, borderRadius: 13, backgroundColor: color.successSoft },
+  specs: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 16 },
+  spec: {
+    width: (SCREEN_WIDTH - gutter * 2 - 10) / 2,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    gap: 10,
+    padding: 12,
+    borderRadius: radius.lg,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.border,
   },
-  locationIcon: {
-    fontSize: 16,
-    marginRight: spacing.xs,
-  },
-  location: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-  },
-  descriptionSection: {
-    marginBottom: spacing.lg,
-  },
-  description: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-    lineHeight: typography.fontSize.base * 1.5,
-  },
-  seeMore: {
-    fontSize: typography.fontSize.base,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.medium,
-    marginTop: spacing.xs,
-  },
-  featuresSection: {
-    marginBottom: spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  featuresGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  featureCard: {
+  specIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: color.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  priceRow: { flexDirection: 'row', gap: 10 },
+  priceTile: { flex: 1, padding: 14, borderRadius: radius.lg, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  review: { padding: 14, borderRadius: radius.lg, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border, marginBottom: 10 },
+  bookBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.inputBackground,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-    gap: spacing.xs,
+    paddingHorizontal: gutter,
+    paddingTop: 14,
+    backgroundColor: color.surface,
+    borderTopWidth: 1,
+    borderTopColor: color.border,
   },
-  featureIcon: {
-    fontSize: 10,
-  },
-  featureLabel: {
-    fontSize: typography.fontSize.sm,
-    color: colors.text,
-    fontWeight: typography.fontWeight.medium,
-  },
-  pricingSection: {
-    marginBottom: spacing.xl,
-  },
-  pricingCards: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  priceCard: {
-    flex: 1,
-    backgroundColor: colors.backgroundGray,
-    padding: spacing.md,
-    borderRadius: borderRadius.lg,
-    alignItems: 'center',
-  },
-  priceLabel: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-  },
-  priceValue: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.primary,
-  },
-  bookButton: {
-    borderRadius: borderRadius.lg,
-  },
-  featureIconImage: {
-  width: 20,
-  height: 20,
-  tintColor: colors.primary,
-},
-});
+}));

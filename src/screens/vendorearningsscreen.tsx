@@ -1,582 +1,278 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { colors, typography, spacing, borderRadius } from '../constants';
+// Vendor earnings: balances, a simple chart of what completed trips earned, money on hold, and activity.
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { auth } from '../config/supabase';
+import { getVendorBookings, Booking } from '../services/bookingService';
+import { getUserTransactions, getWalletBalances, Transaction } from '../services/walletService';
+import { useAppSettings } from '../hooks/useAppSettings';
+import { AppText, Button } from '../ui';
+import { naira } from '../ui/CarCard';
+import { TransactionRow } from '../ui/Status';
+import { Segmented, Skeleton } from '../ui/Kit';
+import { VendorTabBar, VendorTab, TAB_BAR_SPACE } from '../ui/TabBar';
+import { brand, color, gutter, radius, themed, statusBarStyle } from '../theme';
 
 interface VendorEarningsScreenProps {
-  onNavigateToDashboard: () => void;
-  onNavigateToFleet: () => void;
-  onNavigateToBookings: () => void;
-  onNavigateToProfile: () => void;
+  onTab: (tab: VendorTab) => void;
+  onWithdraw: () => void;
+  onOpenBooking: (bookingId: string) => void;
 }
 
-export const VendorEarningsScreen: React.FC<VendorEarningsScreenProps> = ({
-  onNavigateToDashboard,
-  onNavigateToFleet,
-  onNavigateToBookings,
-  onNavigateToProfile,
-}) => {
-  const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'year'>('month');
-  const [earnings, setEarnings] = useState<any>(null);
+type Period = 'week' | 'month' | 'year';
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const short = (n: number) => (n >= 1_000_000 ? `₦${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}m` : n >= 1000 ? `₦${Math.round(n / 1000)}k` : naira(n));
+const when = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
+/** Completed trips count on the day they finished. */
+const earnedOn = (b: Booking) => new Date(b.completedAt || b.endAt);
+
+const buckets = (period: Period, trips: Booking[]) => {
+  const now = new Date();
+  if (period === 'week') {
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - i));
+      const next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+      return { label: DAYS[d.getDay()], total: trips.filter((t) => earnedOn(t) >= d && earnedOn(t) < next).reduce((n, t) => n + t.vendorAmount, 0) };
+    });
+  }
+  if (period === 'month') {
+    return Array.from({ length: 5 }, (_, i) => {
+      const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1 - (4 - i) * 7);
+      const start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 7);
+      return { label: i === 4 ? 'This wk' : `${start.getDate()} ${MONTHS[start.getMonth()]}`, total: trips.filter((t) => earnedOn(t) >= start && earnedOn(t) < end).reduce((n, t) => n + t.vendorAmount, 0) };
+    });
+  }
+  return Array.from({ length: 12 }, (_, i) => {
+    const start = new Date(now.getFullYear(), now.getMonth() - (11 - i), 1);
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    return { label: MONTHS[start.getMonth()].slice(0, 1), total: trips.filter((t) => earnedOn(t) >= start && earnedOn(t) < end).reduce((n, t) => n + t.vendorAmount, 0) };
+  });
+};
+
+export const VendorEarningsScreen: React.FC<VendorEarningsScreenProps> = ({ onTab, onWithdraw, onOpenBooking }) => {
+  const insets = useSafeAreaInsets();
+  const { settings } = useAppSettings();
+  const [balances, setBalances] = useState({ available: 0, pending: 0 });
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [activity, setActivity] = useState<Transaction[]>([]);
+  const [period, setPeriod] = useState<Period>('month');
   const [loading, setLoading] = useState(true);
-  const [periodTotals, setPeriodTotals] = useState({ week: 0, month: 0, year: 0 });
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    const id = auth.currentUser?.uid;
+    if (!id) return setLoading(false);
+    const [w, b, t] = await Promise.all([getWalletBalances(id), getVendorBookings(id), getUserTransactions(id, 30)]);
+    setBalances(w);
+    setBookings(b.bookings);
+    setActivity(t.filter((x) => x.status === 'completed'));
+    setLoading(false);
+    setRefreshing(false);
+  }, []);
 
   useEffect(() => {
-    const fetchEarnings = async () => {
-      try {
-        console.log('🔵 Loading earnings data...');
-        const { auth } = await import('../config/supabase');
-        const vendorId = auth.currentUser?.uid;
+    load();
+  }, [load]);
 
-        if (!vendorId) {
-          console.log('❌ No vendor logged in');
-          setLoading(false);
-          return;
-        }
-
-        // Fetch bookings to calculate earnings
-        const { getVendorBookings } = await import('../services/bookingService');
-        const result = await getVendorBookings(vendorId);
-
-        if (result.success && result.bookings) {
-          // Earnings = the vendor's share (after Escardia's commission), not the customer's total.
-          const bookings = result.bookings.filter((b) => b.status !== 'cancelled');
-          const { getWalletBalances } = await import('../services/walletService');
-          const wallet = await getWalletBalances(vendorId);
-
-          const completedBookings = bookings.filter((b) => b.status === 'past');
-          const completedEarnings = completedBookings.reduce((sum, b) => sum + (b.vendorAmount || 0), 0);
-          const totalEarnings = bookings.reduce((sum, b) => sum + (b.vendorAmount || 0), 0);
-
-          const now = new Date();
-          const since = (days: number) => new Date(now.getTime() - days * 86400000);
-          const sumSince = (from: Date) =>
-            completedBookings.filter((b) => new Date(b.startAt) >= from).reduce((sum, b) => sum + (b.vendorAmount || 0), 0);
-          setPeriodTotals({ week: sumSince(since(7)), month: sumSince(since(30)), year: sumSince(since(365)) });
-
-          setEarnings({
-            total: totalEarnings,
-            completed: completedEarnings,
-            pending: wallet.pending, // on hold until trips complete + 24h
-            available: wallet.available,
-            totalBookings: bookings.length,
-            completedBookings: completedBookings.length,
-            recentTransactions: bookings.slice(0, 10).map((b) => ({ ...b, totalPrice: b.vendorAmount })),
-          });
-        }
-      } catch (error) {
-        console.error('❌ Error loading earnings:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchEarnings();
-  }, [selectedPeriod]);
-
-  const periodData = {
-    week: { label: 'Last 7 Days', earnings: periodTotals.week },
-    month: { label: 'Last 30 Days', earnings: periodTotals.month },
-    year: { label: 'Last 12 Months', earnings: periodTotals.year },
-  };
+  const completed = useMemo(() => bookings.filter((b) => b.bookingStatus === 'completed' || b.bookingStatus === 'resolved'), [bookings]);
+  const onHold = useMemo(
+    () => bookings.filter((b) => ['confirmed', 'ongoing', 'disputed'].includes(b.bookingStatus) || (b.bookingStatus === 'completed' && !b.releasedAt)),
+    [bookings]
+  );
+  const bars = useMemo(() => buckets(period, completed), [period, completed]);
+  const periodTotal = bars.reduce((n, x) => n + x.total, 0);
+  const max = Math.max(...bars.map((x) => x.total), 1);
+  const lifetime = completed.reduce((n, b) => n + b.vendorAmount, 0);
 
   return (
-    <View style={styles.container}>
-      {/* Header with Gradient */}
-      <View style={styles.header}>
-        <LinearGradient
-          colors={['#2F5FED', '#1E3A8A', '#0F3460']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.headerGradient}
-        >
-          <Image
-            source={require('../../assets/images/headerpattern.png')}
-            style={styles.headerPattern}
-            resizeMode="cover"
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <StatusBar style={statusBarStyle()} />
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: TAB_BAR_SPACE + 10 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
           />
-        </LinearGradient>
+        }
+      >
+        <View style={styles.header}>
+          <AppText variant="title">Earnings</AppText>
+          <AppText variant="small" color={color.muted}>
+            After Escardia&apos;s {Math.round(settings.commissionRate * 1000) / 10}% commission
+          </AppText>
+        </View>
 
-        <Text style={styles.headerTitle}>Earnings</Text>
-      </View>
-
-      {/* Content Wrapper */}
-      <View style={styles.contentWrapper}>
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <Text style={styles.loadingText}>Loading earnings...</Text>
+        <View style={styles.balance}>
+          <View style={styles.glow} />
+          <AppText variant="small" color={color.onDarkMuted}>
+            Available to withdraw
+          </AppText>
+          <AppText variant="display" color="#FFFFFF" numberOfLines={1} adjustsFontSizeToFit>
+            {naira(balances.available)}
+          </AppText>
+          <View style={styles.balanceRow}>
+            <View style={{ flex: 1 }}>
+              <AppText variant="small" color={color.onDarkMuted} style={{ fontSize: 12 }}>
+                On hold
+              </AppText>
+              <AppText variant="subheading" color="#FFFFFF">
+                {naira(balances.pending)}
+              </AppText>
             </View>
-          ) : (
-            <>
-              {/* Period Selector */}
-              <View style={styles.periodSelector}>
-                <TouchableOpacity
-                  style={[styles.periodTab, selectedPeriod === 'week' && styles.periodTabActive]}
-                  onPress={() => setSelectedPeriod('week')}
-                >
-                  <Text style={[styles.periodText, selectedPeriod === 'week' && styles.periodTextActive]}>
-                    Week
-                  </Text>
-                </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <AppText variant="small" color={color.onDarkMuted} style={{ fontSize: 12 }}>
+                Earned all time
+              </AppText>
+              <AppText variant="subheading" color="#FFFFFF">
+                {naira(lifetime)}
+              </AppText>
+            </View>
+          </View>
+          <Button title="Withdraw to bank" variant="white" icon="arrow-up-right" onPress={onWithdraw} style={{ marginTop: 16 }} disabled={balances.available <= 0} />
+        </View>
 
-                <TouchableOpacity
-                  style={[styles.periodTab, selectedPeriod === 'month' && styles.periodTabActive]}
-                  onPress={() => setSelectedPeriod('month')}
-                >
-                  <Text style={[styles.periodText, selectedPeriod === 'month' && styles.periodTextActive]}>
-                    Month
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.periodTab, selectedPeriod === 'year' && styles.periodTabActive]}
-                  onPress={() => setSelectedPeriod('year')}
-                >
-                  <Text style={[styles.periodText, selectedPeriod === 'year' && styles.periodTextActive]}>
-                    Year
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Total Earnings Card */}
-              <View style={styles.totalCard}>
-                <Text style={styles.totalLabel}>{periodData[selectedPeriod].label}</Text>
-                <Text style={styles.totalAmount}>
-                  ₦{periodData[selectedPeriod].earnings.toLocaleString()}
-                </Text>
-                <Text style={styles.totalSubtext}>Total Earnings</Text>
-              </View>
-
-              {/* Stats Grid */}
-              <View style={styles.statsGrid}>
-                <View style={styles.statCard}>
-                  <View style={styles.statIcon}>
-                    <Text style={styles.statIconText}>✅</Text>
-                  </View>
-                  <Text style={styles.statValue}>₦{earnings?.completed.toLocaleString() || '0'}</Text>
-                  <Text style={styles.statLabel}>Completed</Text>
-                </View>
-
-                <View style={styles.statCard}>
-                  <View style={styles.statIcon}>
-                    <Text style={styles.statIconText}>⏳</Text>
-                  </View>
-                  <Text style={styles.statValue}>₦{earnings?.pending.toLocaleString() || '0'}</Text>
-                  <Text style={styles.statLabel}>Pending</Text>
-                </View>
-
-                <View style={styles.statCard}>
-                  <View style={styles.statIcon}>
-                    <Text style={styles.statIconText}>📊</Text>
-                  </View>
-                  <Text style={styles.statValue}>{earnings?.totalBookings || 0}</Text>
-                  <Text style={styles.statLabel}>Total Bookings</Text>
-                </View>
-
-                <View style={styles.statCard}>
-                  <View style={styles.statIcon}>
-                    <Text style={styles.statIconText}>💰</Text>
-                  </View>
-                  <Text style={styles.statValue}>
-                    ₦{earnings?.totalBookings > 0 
-                      ? Math.round(earnings.total / earnings.totalBookings).toLocaleString() 
-                      : '0'}
-                  </Text>
-                  <Text style={styles.statLabel}>Avg. Per Booking</Text>
+        {loading ? (
+          <View style={{ marginTop: 20 }}>
+            <Skeleton height={220} />
+            <Skeleton height={160} />
+          </View>
+        ) : (
+          <>
+            {/* Chart */}
+            <View style={styles.card}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+                <View>
+                  <AppText variant="small" color={color.muted}>
+                    {period === 'week' ? 'Last 7 days' : period === 'month' ? 'Last 5 weeks' : 'Last 12 months'}
+                  </AppText>
+                  <AppText variant="title">{naira(periodTotal)}</AppText>
                 </View>
               </View>
+              <Segmented
+                options={[
+                  { key: 'week', label: 'Week' },
+                  { key: 'month', label: 'Month' },
+                  { key: 'year', label: 'Year' },
+                ]}
+                value={period}
+                onChange={setPeriod}
+                style={{ marginTop: 14 }}
+              />
+              <View style={styles.chart}>
+                {bars.map((x, i) => (
+                  <View key={i} style={styles.barCol}>
+                    <AppText variant="small" color={color.muted} style={styles.barValue} numberOfLines={1}>
+                      {x.total ? short(x.total) : ''}
+                    </AppText>
+                    <View style={styles.barTrack}>
+                      <View style={[styles.bar, { height: `${Math.max((x.total / max) * 100, x.total ? 6 : 0)}%` }, i === bars.length - 1 && { backgroundColor: color.primary }]} />
+                    </View>
+                    <AppText variant="small" color={color.muted} style={{ fontSize: 11, marginTop: 6 }} numberOfLines={1}>
+                      {x.label}
+                    </AppText>
+                  </View>
+                ))}
+              </View>
+              {periodTotal === 0 && (
+                <AppText variant="small" color={color.muted} center style={{ marginTop: 6 }}>
+                  No completed trips in this period yet.
+                </AppText>
+              )}
+            </View>
 
-              {/* Recent Transactions */}
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Recent Transactions</Text>
-
-                {earnings?.recentTransactions && earnings.recentTransactions.length > 0 ? (
-                  <View style={styles.transactionsList}>
-                    {earnings.recentTransactions.map((booking: any) => (
-                      <View key={booking.id} style={styles.transactionCard}>
-                        <View style={styles.transactionIcon}>
-                          <Text style={styles.transactionIconText}>🚗</Text>
-                        </View>
-                        <View style={styles.transactionInfo}>
-                          <Text style={styles.transactionTitle}>
-                            {booking.car?.brand} {booking.car?.model}
-                          </Text>
-                          <Text style={styles.transactionDate}>
-                            {booking.startDate} - {booking.endDate}
-                          </Text>
-                          <Text style={styles.transactionCustomer}>
-                            {booking.customerName || 'Customer'}
-                          </Text>
-                        </View>
-                        <View style={styles.transactionAmount}>
-                          <Text style={styles.transactionValue}>
-                            ₦{booking.totalPrice?.toLocaleString() || '0'}
-                          </Text>
-                          <View
-                            style={[
-                              styles.transactionStatus,
-                              {
-                                backgroundColor:
-                                  booking.status === 'past' || booking.status === 'completed'
-                                    ? '#10B981'
-                                    : booking.status === 'ongoing'
-                                    ? '#F59E0B'
-                                    : '#3B82F6',
-                              },
-                            ]}
-                          >
-                            <Text style={styles.transactionStatusText}>
-                              {booking.status === 'past' || booking.status === 'completed'
-                                ? 'Paid'
-                                : booking.status === 'ongoing'
-                                ? 'Ongoing'
-                                : 'Pending'}
-                            </Text>
-                          </View>
-                        </View>
+            {/* On hold */}
+            {onHold.length > 0 && (
+              <>
+                <AppText variant="heading" style={styles.h}>
+                  On hold
+                </AppText>
+                <AppText variant="small" color={color.muted} style={{ marginTop: -6, marginBottom: 10 }}>
+                  Paid by customers. Released {settings.payoutHoldHours} hours after each trip ends.
+                </AppText>
+                <View style={styles.list}>
+                  {onHold.slice(0, 6).map((b, i) => (
+                    <Pressable key={b.id} onPress={() => onOpenBooking(b.id)} style={[styles.holdRow, i < Math.min(onHold.length, 6) - 1 && styles.rowBorder]}>
+                      <View style={[styles.holdIcon, b.bookingStatus === 'disputed' && { backgroundColor: color.dangerSoft }]}>
+                        <Feather name={b.bookingStatus === 'disputed' ? 'pause' : 'clock'} size={15} color={b.bookingStatus === 'disputed' ? color.danger : color.warning} />
                       </View>
-                    ))}
-                  </View>
-                ) : (
-                  <View style={styles.emptyState}>
-                    <Text style={styles.emptyIcon}>💸</Text>
-                    <Text style={styles.emptyText}>No transactions yet</Text>
-                  </View>
-                )}
+                      <View style={{ flex: 1 }}>
+                        <AppText variant="bodyMedium" numberOfLines={1}>
+                          {b.car.brand} {b.car.model}
+                        </AppText>
+                        <AppText variant="small" color={color.muted} numberOfLines={1}>
+                          {b.bookingStatus === 'disputed'
+                            ? 'Paused: problem reported'
+                            : b.releaseAt
+                              ? `Available ${when(b.releaseAt)}`
+                              : b.bookingStatus === 'ongoing'
+                                ? 'Trip in progress'
+                                : `Trip on ${b.startDate}`}
+                        </AppText>
+                      </View>
+                      <AppText variant="bodyMedium">{naira(b.vendorAmount)}</AppText>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
+
+            {/* Activity */}
+            <AppText variant="heading" style={styles.h}>
+              Activity
+            </AppText>
+            {activity.length === 0 ? (
+              <View style={[styles.list, { padding: 16 }]}>
+                <AppText variant="body" color={color.muted}>
+                  Released earnings and withdrawals show up here.
+                </AppText>
               </View>
-            </>
-          )}
-
-          <View style={styles.bottomSpacing} />
-        </ScrollView>
-      </View>
-
-      {/* Bottom Navigation */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem} onPress={onNavigateToDashboard}>
-          <Image
-            source={require('../../assets/images/homeicon.png')}
-            style={styles.navIcon}
-            resizeMode="contain"
-          />
-          <Text style={styles.navLabel}>Dashboard</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.navItem} onPress={onNavigateToFleet}>
-          <Image
-            source={require('../../assets/images/caricon.png')}
-            style={styles.navIcon}
-            resizeMode="contain"
-          />
-          <Text style={styles.navLabel}>Fleet</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.navItem} onPress={onNavigateToBookings}>
-          <Image
-            source={require('../../assets/images/tripicon.png')}
-            style={styles.navIcon}
-            resizeMode="contain"
-          />
-          <Text style={styles.navLabel}>Bookings</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.navItem}>
-          <Image
-            source={require('../../assets/images/walleticon.png')}
-            style={styles.navIconActive}
-            resizeMode="contain"
-          />
-          <Text style={styles.navLabelActive}>Earnings</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.navItem} onPress={onNavigateToProfile}>
-          <Image
-            source={require('../../assets/images/profileicon.png')}
-            style={styles.navIcon}
-            resizeMode="contain"
-          />
-          <Text style={styles.navLabel}>Profile</Text>
-        </TouchableOpacity>
-      </View>
+            ) : (
+              <View style={[styles.list, { paddingHorizontal: 14 }]}>
+                {activity.map((t, i) => (
+                  <TransactionRow
+                    key={t.id}
+                    title={t.category === 'withdrawal' ? 'Withdrawal' : t.category === 'refund' ? 'Withdrawal returned' : 'Trip earnings'}
+                    subtitle={`${t.description} · ${when(t.createdAt)}`}
+                    amount={t.amount}
+                    credit={t.type === 'credit'}
+                    last={i === activity.length - 1}
+                  />
+                ))}
+              </View>
+            )}
+          </>
+        )}
+      </ScrollView>
+      <VendorTabBar active="earnings" onNavigate={onTab} />
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
- header: {
-    paddingTop: 80,
-paddingBottom: 60,
-    paddingHorizontal: spacing.lg,
-    overflow: 'hidden',
-  },
-  headerGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-  },
-  headerPattern: {
-    position: 'absolute',
-    width: '80%',
-    height: '100%',
-    right: -50,
-    opacity: 1,
-  },
-  headerTitle: {
-    fontSize: typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.textWhite,
-        top: 30,
-  },
-  contentWrapper: {
-    flex: 1,
-    marginTop: -20,
-    backgroundColor: colors.background,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    overflow: 'hidden',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: spacing.lg,
-    paddingTop: spacing.xl,
-  },
-  loadingContainer: {
-    paddingVertical: spacing['3xl'],
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  periodSelector: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  periodTab: {
-    flex: 1,
-    backgroundColor: colors.inputBackground,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-    alignItems: 'center',
-  },
-  periodTabActive: {
-    backgroundColor: colors.primary,
-  },
-  periodText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeight.medium,
-  },
-  periodTextActive: {
-    color: colors.textWhite,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  totalCard: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.xl,
-    padding: spacing.xl,
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  totalLabel: {
-    fontSize: typography.fontSize.base,
-    color: colors.textWhite,
-    opacity: 0.9,
-    marginBottom: spacing.xs,
-  },
-  totalAmount: {
-    fontSize: typography.fontSize['3xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.textWhite,
-    marginBottom: spacing.xs,
-  },
-  totalSubtext: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textWhite,
-    opacity: 0.8,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  statCard: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: colors.backgroundGray,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    alignItems: 'center',
-  },
-  statIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: colors.primary + '20',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  statIconText: {
-    fontSize: 24,
-  },
-  statValue: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  statLabel: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  section: {
-    marginBottom: spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  transactionsList: {
-    gap: spacing.sm,
-  },
-  transactionCard: {
-    flexDirection: 'row',
-    backgroundColor: colors.backgroundGray,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    alignItems: 'center',
-  },
-  transactionIcon: {
-    width: 45,
-    height: 45,
-    borderRadius: 22.5,
-    backgroundColor: colors.primary + '20',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.sm,
-  },
-  transactionIconText: {
-    fontSize: 20,
-  },
-  transactionInfo: {
-    flex: 1,
-  },
-  transactionTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-    marginBottom: 2,
-  },
-  transactionDate: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-    marginBottom: 2,
-  },
-  transactionCustomer: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-  },
-  transactionAmount: {
-    alignItems: 'flex-end',
-  },
-  transactionValue: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.primary,
-    marginBottom: spacing.xs,
-  },
-  transactionStatus: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: borderRadius.sm,
-  },
-  transactionStatusText: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textWhite,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: spacing['2xl'],
-  },
-  emptyIcon: {
-    fontSize: 60,
-    marginBottom: spacing.sm,
-  },
-  emptyText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  bottomSpacing: {
-    height: 100,
-  },
-  bottomNav: {
-    flexDirection: 'row',
-    backgroundColor: colors.background,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    borderBottomLeftRadius: borderRadius.xl,
-    borderBottomRightRadius: borderRadius.xl,
-    paddingVertical: spacing.md,
-    paddingBottom: 20,
-    position: 'absolute',
-    bottom: 20,
-    left: 20,
-    right: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  navIcon: {
-    width: 24,
-    height: 24,
-    marginBottom: spacing.xs,
-    opacity: 0.5,
-  },
-  navIconActive: {
-    width: 24,
-    height: 24,
-    marginBottom: spacing.xs,
-  },
-  navLabel: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-  },
-  navLabelActive: {
-    fontSize: typography.fontSize.xs,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-});
+const styles = themed(() => StyleSheet.create({
+  root: { flex: 1, backgroundColor: color.bg },
+  header: { paddingTop: 16, paddingBottom: 14 },
+  balance: { padding: 18, borderRadius: radius.xl, backgroundColor: color.navy, overflow: 'hidden' },
+  glow: { position: 'absolute', width: 260, height: 260, borderRadius: 130, backgroundColor: brand[600], opacity: 0.35, top: -130, right: -90 },
+  balanceRow: { flexDirection: 'row', gap: 12, marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.12)' },
+  card: { marginTop: 16, padding: 16, borderRadius: radius.xl, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  chart: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: 170, marginTop: 18 },
+  barCol: { flex: 1, alignItems: 'center', height: '100%' },
+  barValue: { fontSize: 9.5, marginBottom: 4, height: 13 },
+  barTrack: { flex: 1, width: '72%', maxWidth: 34, justifyContent: 'flex-end', borderRadius: 8, backgroundColor: color.sunken, overflow: 'hidden' },
+  bar: { width: '100%', borderRadius: 8, backgroundColor: brand[300] },
+  h: { marginTop: 24, marginBottom: 12 },
+  list: { backgroundColor: color.surface, borderRadius: radius.xl, borderWidth: 1, borderColor: color.border, overflow: 'hidden' },
+  holdRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: color.border },
+  holdIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: color.warningSoft, alignItems: 'center', justifyContent: 'center' },
+}));

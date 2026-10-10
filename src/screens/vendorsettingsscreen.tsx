@@ -1,306 +1,119 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Switch,
-  Alert,
-} from 'react-native';
-import { colors, typography, spacing, borderRadius } from '../constants';
+// Business details: contact person, business name and the number customers see. Plus password.
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { auth } from '../config/supabase';
+import { getVendorProfile } from '../services/vendorauthservice';
+import { updateVendorAccount } from '../services/vendorService';
+import { AppText, Banner, Button, Screen, ScreenHeader, TextField } from '../ui';
+import { BottomBar } from '../ui/Booking';
+import { MenuGroup, MenuRow } from '../ui/Menu';
+import { color, gutter, statusBarStyle } from '../theme';
 
 interface VendorSettingsScreenProps {
   onNavigateBack: () => void;
-  vendorProfile: any;
+  onChangePassword: () => void;
+  onSaved?: () => void;
 }
 
-export const VendorSettingsScreen: React.FC<VendorSettingsScreenProps> = ({
-  onNavigateBack,
-  vendorProfile,
-}) => {
-  const [firstName, setFirstName] = useState(vendorProfile?.firstName || '');
-  const [lastName, setLastName] = useState(vendorProfile?.lastName || '');
-  const [businessName, setBusinessName] = useState(vendorProfile?.businessName || '');
-  const [phoneNumber, setPhoneNumber] = useState(vendorProfile?.phoneNumber || '');
-  const [email, setEmail] = useState(vendorProfile?.email || '');
-  
-  // Notification settings
-  const [emailNotifications, setEmailNotifications] = useState(true);
-  const [pushNotifications, setPushNotifications] = useState(true);
-  const [bookingAlerts, setBookingAlerts] = useState(true);
-  const [paymentAlerts, setPaymentAlerts] = useState(true);
-  
+const validPhone = (p: string) => {
+  const d = p.replace(/\D/g, '');
+  return d.length >= 10 && d.length <= 14;
+};
+
+export const VendorSettingsScreen: React.FC<VendorSettingsScreenProps> = ({ onNavigateBack, onChangePassword, onSaved }) => {
+  const [loading, setLoading] = useState(true);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [businessName, setBusinessName] = useState('');
+  const [businessPhone, setBusinessPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
 
-  const handleSave = async () => {
+  useEffect(() => {
+    getVendorProfile(auth.currentUser?.uid ?? '').then((r) => {
+      if (r.success && r.data) {
+        setFirstName(r.data.firstName);
+        setLastName(r.data.lastName);
+        setPhone(r.data.phoneNumber);
+        setBusinessName(r.data.businessName);
+        setBusinessPhone(r.data.businessPhone || r.data.phoneNumber);
+        setEmail(r.data.email);
+      }
+      setLoading(false);
+    });
+  }, []);
+
+  const save = async () => {
+    const next: Record<string, string> = {};
+    if (!firstName.trim()) next.firstName = 'Required';
+    if (!lastName.trim()) next.lastName = 'Required';
+    if (!validPhone(phone)) next.phone = 'Enter a valid number';
+    if (businessName.trim().length < 2) next.businessName = 'Enter your business name';
+    if (!validPhone(businessPhone)) next.businessPhone = 'Enter a valid number';
+    setErrors(next);
+    setNotice(null);
+    if (Object.keys(next).length) return;
     setSaving(true);
-    try {
-      const { supabase, auth } = await import('../config/supabase');
-      const vendorId = auth.currentUser?.uid;
-      if (!vendorId) return;
-
-      const [{ error: pErr }, { error: vErr }] = await Promise.all([
-        supabase.from('profiles').update({ first_name: firstName, last_name: lastName, phone: phoneNumber }).eq('id', vendorId),
-        supabase.from('vendors').update({ business_name: businessName, business_phone: phoneNumber }).eq('id', vendorId),
-      ]);
-      if (pErr || vErr) throw pErr || vErr;
-
-      Alert.alert('Success', 'Settings updated successfully!');
-    } catch (error) {
-      console.error('Error updating settings:', error);
-      Alert.alert('Error', 'Failed to update settings');
-    } finally {
-      setSaving(false);
-    }
+    const r = await updateVendorAccount({ firstName, lastName, phone, businessName, businessPhone });
+    setSaving(false);
+    if (!r.success) return setNotice({ tone: 'danger', text: r.error || 'Could not save. Please try again.' });
+    setNotice({ tone: 'success', text: 'Your details are saved.' });
+    onSaved?.();
   };
 
-  const handleChangePassword = () => {
-    Alert.alert('Change Password', 'Password change feature coming soon!');
+  const field = (k: string, set: (v: string) => void) => (v: string) => {
+    set(v);
+    if (errors[k]) setErrors({ ...errors, [k]: undefined });
   };
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-          <Text style={styles.backIcon}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Settings</Text>
-        <TouchableOpacity onPress={handleSave} disabled={saving}>
-          <Text style={[styles.saveText, saving && styles.saveTextDisabled]}>
-            {saving ? 'Saving...' : 'Save'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+    <Screen>
+      <StatusBar style={statusBarStyle()} />
+      <ScreenHeader title="Business details" onBack={onNavigateBack} />
+      {loading ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={color.primary} />
+        </View>
+      ) : (
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 140 }} keyboardShouldPersistTaps="handled">
+            {notice && <Banner tone={notice.tone} text={notice.text} />}
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Profile Settings */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>👤 Profile Information</Text>
-          
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>First Name</Text>
-            <TextInput
-              style={styles.input}
-              value={firstName}
-              onChangeText={setFirstName}
-              placeholder="Enter first name"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Last Name</Text>
-            <TextInput
-              style={styles.input}
-              value={lastName}
-              onChangeText={setLastName}
-              placeholder="Enter last name"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Business Name</Text>
-            <TextInput
-              style={styles.input}
-              value={businessName}
-              onChangeText={setBusinessName}
-              placeholder="Enter business name"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Phone Number</Text>
-            <TextInput
-              style={styles.input}
-              value={phoneNumber}
-              onChangeText={setPhoneNumber}
-              placeholder="Enter phone number"
+            <AppText variant="caption" color={color.muted} style={{ marginBottom: 10, marginTop: 4 }}>
+              Business
+            </AppText>
+            <TextField label="Business name" icon="briefcase" value={businessName} onChangeText={field('businessName', setBusinessName)} autoCapitalize="words" error={errors.businessName} />
+            <TextField
+              label="Business phone"
+              icon="phone"
+              value={businessPhone}
+              onChangeText={field('businessPhone', setBusinessPhone)}
               keyboardType="phone-pad"
+              error={errors.businessPhone}
+              hint="Customers see this number on their bookings."
             />
-          </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={[styles.input, styles.inputDisabled]}
-              value={email}
-              editable={false}
-            />
-            <Text style={styles.inputHint}>Email cannot be changed</Text>
-          </View>
-        </View>
-
-        {/* Security */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🔒 Security</Text>
-          
-          <TouchableOpacity style={styles.settingItem} onPress={handleChangePassword}>
-            <View style={styles.settingLeft}>
-              <Text style={styles.settingTitle}>Change Password</Text>
-              <Text style={styles.settingSubtitle}>Update your password</Text>
+            <AppText variant="caption" color={color.muted} style={{ marginBottom: 10, marginTop: 10 }}>
+              Contact person
+            </AppText>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TextField label="First name" value={firstName} onChangeText={field('firstName', setFirstName)} autoCapitalize="words" error={errors.firstName} containerStyle={{ flex: 1 }} />
+              <TextField label="Last name" value={lastName} onChangeText={field('lastName', setLastName)} autoCapitalize="words" error={errors.lastName} containerStyle={{ flex: 1 }} />
             </View>
-            <Text style={styles.arrow}>›</Text>
-          </TouchableOpacity>
-        </View>
+            <TextField label="Your phone" icon="smartphone" value={phone} onChangeText={field('phone', setPhone)} keyboardType="phone-pad" error={errors.phone} hint="Escardia uses this to reach you." />
+            <TextField label="Email" icon="mail" value={email} editable={false} hint="Contact support to change the email you sign in with." containerStyle={{ opacity: 0.7 }} />
 
-        {/* Notifications */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🔔 Notifications</Text>
-          
-          <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <Text style={styles.settingTitle}>Email Notifications</Text>
-              <Text style={styles.settingSubtitle}>Receive updates via email</Text>
-            </View>
-            <Switch
-              value={emailNotifications}
-              onValueChange={setEmailNotifications}
-              trackColor={{ false: colors.border, true: colors.primary }}
-            />
-          </View>
-
-          <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <Text style={styles.settingTitle}>Push Notifications</Text>
-              <Text style={styles.settingSubtitle}>Receive push notifications</Text>
-            </View>
-            <Switch
-              value={pushNotifications}
-              onValueChange={setPushNotifications}
-              trackColor={{ false: colors.border, true: colors.primary }}
-            />
-          </View>
-
-          <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <Text style={styles.settingTitle}>Booking Alerts</Text>
-              <Text style={styles.settingSubtitle}>Get notified of new bookings</Text>
-            </View>
-            <Switch
-              value={bookingAlerts}
-              onValueChange={setBookingAlerts}
-              trackColor={{ false: colors.border, true: colors.primary }}
-            />
-          </View>
-
-          <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <Text style={styles.settingTitle}>Payment Alerts</Text>
-              <Text style={styles.settingSubtitle}>Get notified of payments</Text>
-            </View>
-            <Switch
-              value={paymentAlerts}
-              onValueChange={setPaymentAlerts}
-              trackColor={{ false: colors.border, true: colors.primary }}
-            />
-          </View>
-        </View>
-
-        <View style={styles.bottomSpacing} />
-      </ScrollView>
-    </View>
+            <MenuGroup title="Security">
+              <MenuRow icon="lock" label="Change password" onPress={onChangePassword} last />
+            </MenuGroup>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      )}
+      {!loading && <BottomBar button={<Button title="Save changes" icon="check" onPress={save} loading={saving} />} />}
+    </Screen>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: 60,
-    paddingBottom: spacing.md,
-  },
-  backButton: {
-    padding: spacing.sm,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: colors.text,
-  },
-  headerTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-  },
-  saveText: {
-    fontSize: typography.fontSize.base,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  saveTextDisabled: {
-    opacity: 0.5,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  section: {
-    padding: spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  inputGroup: {
-    marginBottom: spacing.md,
-  },
-  label: {
-    fontSize: typography.fontSize.sm,
-    color: colors.text,
-    fontWeight: typography.fontWeight.medium,
-    marginBottom: spacing.xs,
-  },
-  input: {
-    backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    fontSize: typography.fontSize.base,
-    color: colors.text,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  inputDisabled: {
-    opacity: 0.6,
-  },
-  inputHint: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-  },
-  settingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  settingLeft: {
-    flex: 1,
-  },
-  settingTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.medium,
-    color: colors.text,
-    marginBottom: 4,
-  },
-  settingSubtitle: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-  },
-  arrow: {
-    fontSize: 24,
-    color: colors.textSecondary,
-  },
-  bottomSpacing: {
-    height: 40,
-  },
-});

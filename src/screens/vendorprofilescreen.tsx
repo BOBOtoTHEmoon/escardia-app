@@ -1,530 +1,235 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { colors, typography, spacing, borderRadius } from '../constants';
+// Vendor "Account" tab: business identity, logo, status, and everything account related.
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { auth } from '../config/supabase';
+import { getVendorProfile, VendorProfile } from '../services/vendorauthservice';
+import { getVendorStats, setBusinessLogo, EMPTY_STATS, VendorStats } from '../services/vendorService';
+import { getUnreadNotificationCount } from '../services/notificationService';
+import { AppText, IconButton } from '../ui';
+import { Avatar } from '../ui/Avatar';
+import { MenuGroup, MenuRow } from '../ui/Menu';
+import { AppearanceRow } from '../ui/Appearance';
+import { Pill, PhotoSourceSheet, pickImage } from '../ui/Kit';
+import { VendorTabBar, VendorTab, TAB_BAR_SPACE } from '../ui/TabBar';
+import { brand, color, gutter, radius, themed } from '../theme';
 
 interface VendorProfileScreenProps {
-  vendorName: string;
-  vendorEmail: string;
-  businessName: string;
-  onNavigateToDashboard: () => void;
-  onNavigateToFleet: () => void;
-  onNavigateToBookings: () => void;
-  onNavigateToEarnings: () => void;
+  onTab: (tab: VendorTab) => void;
   onNavigateToSettings: () => void;
   onNavigateToSupport: () => void;
+  onNavigateToNotifications: () => void;
   onNavigateToNotificationPreferences: () => void;
   onNavigateToDocuments: () => void;
   onNavigateToBankDetails: () => void;
+  onNavigateToDrivers: () => void;
   onNavigateToAnalytics: () => void;
   onNavigateToTermsAndPrivacy: () => void;
+  onProfileChanged?: () => void;
   onLogout: () => void;
 }
 
+const STATUS: Record<string, { label: string; tone: 'green' | 'amber' | 'red' }> = {
+  approved: { label: 'Verified vendor', tone: 'green' },
+  pending: { label: 'In review', tone: 'amber' },
+  rejected: { label: 'Not approved', tone: 'red' },
+  suspended: { label: 'Suspended', tone: 'red' },
+};
+
 export const VendorProfileScreen: React.FC<VendorProfileScreenProps> = ({
-  vendorName,
-  vendorEmail,
-  businessName,
-  onNavigateToDashboard,
-  onNavigateToFleet,
-  onNavigateToBookings,
-  onNavigateToEarnings,
+  onTab,
   onNavigateToSettings,
   onNavigateToSupport,
+  onNavigateToNotifications,
   onNavigateToNotificationPreferences,
   onNavigateToDocuments,
   onNavigateToBankDetails,
+  onNavigateToDrivers,
   onNavigateToAnalytics,
   onNavigateToTermsAndPrivacy,
+  onProfileChanged,
   onLogout,
 }) => {
-  const [stats, setStats] = useState({
-    totalCars: 0,
-    totalBookings: 0,
-    averageRating: 0,
-  });
-  const [loading, setLoading] = useState(true);
+  const insets = useSafeAreaInsets();
+  const [profile, setProfile] = useState<VendorProfile | null>(null);
+  const [stats, setStats] = useState<VendorStats>(EMPTY_STATS);
+  const [unread, setUnread] = useState(0);
+  const [logoSheet, setLogoSheet] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
-  useEffect(() => {
-    loadStats();
+  const load = useCallback(async () => {
+    const id = auth.currentUser?.uid;
+    if (!id) return;
+    const [p, s, n] = await Promise.all([getVendorProfile(id), getVendorStats(), getUnreadNotificationCount().catch(() => 0)]);
+    if (p.success && p.data) setProfile(p.data);
+    setStats(s);
+    setUnread(n);
   }, []);
 
-  const loadStats = async () => {
-    try {
-      const { supabase } = await import('../config/supabase');
-      // One call returns the vendor's numbers (cars, bookings, rating, balances).
-      const { data, error } = await supabase.rpc('vendor_stats');
-      if (error) throw error;
-      const totalCars = data.totalCars ?? 0;
-      const totalBookings = data.totalBookings ?? 0;
-      const averageRating = Number(data.averageRating ?? 0);
+  useEffect(() => {
+    load();
+  }, [load]);
 
-      setStats({
-        totalCars,
-        totalBookings,
-        averageRating,
-      });
-    } catch (error) {
-      console.error('Error loading stats:', error);
-    } finally {
-      setLoading(false);
-    }
+  const changeLogo = async (source: 'camera' | 'library' | 'remove') => {
+    let uri: string | null = null;
+    if (source !== 'remove') {
+      const r = await pickImage(source, { aspect: [1, 1], quality: 0.6 });
+      setLogoSheet(false);
+      if (!r?.[0]) return;
+      uri = r[0];
+    } else setLogoSheet(false);
+    setUploading(true);
+    const r = await setBusinessLogo(uri);
+    setUploading(false);
+    if (!r.success) return Alert.alert('Could not update the logo', r.error || 'Please try again.');
+    await load();
+    onProfileChanged?.();
   };
 
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
+  const logout = () =>
+    Alert.alert('Log out?', 'You will need your email and password to sign back in.', [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: onLogout,
-      },
+      { text: 'Log out', style: 'destructive', onPress: onLogout },
     ]);
-  };
 
-  const menuItems = [
-    {
-      icon: require('../../assets/images/vpwalleticon.png'),
-      title: 'Earnings & Wallet',
-      subtitle: 'View earnings and withdraw funds',
-      onPress: onNavigateToEarnings,
-    },
-    {
-      icon: require('../../assets/images/vpsettingsicon.png'),
-      title: 'Settings',
-      subtitle: 'Account settings and preferences',
-      onPress: onNavigateToSettings,
-    },
-    {
-      icon: require('../../assets/images/vpnotificationicon.png'),
-      title: 'Notifications',
-      subtitle: 'Manage notification preferences',
-      onPress: onNavigateToNotificationPreferences,
-    },
-    {
-      icon: require('../../assets/images/documenticon.png'),
-      title: 'Documents',
-      subtitle: 'Manage verification documents',
-      onPress: onNavigateToDocuments,
-    },
-    {
-      icon: require('../../assets/images/vendorwalleticon.png'),
-      title: 'Bank Details',
-      subtitle: 'Update payout account information',
-      onPress: onNavigateToBankDetails,
-    },
-    {
-      icon: require('../../assets/images/analytics.png'),
-      title: 'Analytics',
-      subtitle: 'View detailed business insights',
-      onPress: onNavigateToAnalytics,
-    },
-    {
-      icon: require('../../assets/images/help.png'),
-      title: 'Help & Support',
-      subtitle: 'Get help and contact support',
-      onPress: onNavigateToSupport,
-    },
-    {
-      icon: require('../../assets/images/terms.png'),
-      title: 'Terms & Privacy',
-      subtitle: 'View terms of service and privacy policy',
-      onPress: onNavigateToTermsAndPrivacy,
-    },
-  ];
+  const name = profile?.businessName || 'Your business';
+  const owner = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ');
+  const status = STATUS[profile?.status ?? 'pending'];
 
   return (
-    <View style={styles.container}>
-      {/* Header with Gradient */}
-      <View style={styles.header}>
-        <LinearGradient
-          colors={['#2F5FED', '#1E3A8A', '#0F3460']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.headerGradient}
-        >
-          <Image
-            source={require('../../assets/images/headerpattern.png')}
-            style={styles.headerPattern}
-            resizeMode="cover"
-          />
-        </LinearGradient>
-
-        {/* Profile Info */}
-        <View style={styles.profileSection}>
-          <View style={styles.profileImageContainer}>
-            <View style={styles.profileImage}>
-              <Text style={styles.profileInitial}>{vendorName.charAt(0)}</Text>
+    <View style={styles.root}>
+      <StatusBar style="light" />
+      <ScrollView contentContainerStyle={{ paddingBottom: TAB_BAR_SPACE }} showsVerticalScrollIndicator={false}>
+        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+          <View style={styles.glow} />
+          <View style={styles.headerRow}>
+            <Pressable onPress={() => setLogoSheet(true)} accessibilityLabel="Change business logo">
+              <Avatar uri={profile?.logoUrl} name={name} size={68} />
+              <View style={styles.cam}>{uploading ? <ActivityIndicator size="small" color={color.primary} /> : <Feather name="camera" size={12} color={color.primary} />}</View>
+            </Pressable>
+            <View style={{ flex: 1 }}>
+              <AppText variant="heading" color="#FFFFFF" numberOfLines={1}>
+                {name}
+              </AppText>
+              {!!owner && (
+                <AppText variant="small" color={color.onDarkMuted} numberOfLines={1}>
+                  {owner}
+                </AppText>
+              )}
+              <AppText variant="small" color={color.onDarkMuted} numberOfLines={1}>
+                {profile?.email}
+              </AppText>
+              {profile && <Pill label={status.label} tone={status.tone} icon={status.tone === 'green' ? 'check' : undefined} style={{ marginTop: 8 }} />}
             </View>
-            <TouchableOpacity style={styles.editIcon}>
-              <Text style={styles.editIconText}>✏️</Text>
-            </TouchableOpacity>
+            <IconButton icon="edit-2" dark size={40} onPress={onNavigateToSettings} accessibilityLabel="Edit business details" />
           </View>
 
-          <Text style={styles.profileName}>{vendorName}</Text>
-          <Text style={styles.profileEmail}>{vendorEmail}</Text>
-
-          {/* Business Badge */}
-          <View style={styles.businessBadge}>
-            <Text style={styles.businessIcon}>🏢</Text>
-            <Text style={styles.businessName}>{businessName}</Text>
+          <View style={styles.stats}>
+            <Stat value={String(stats.totalCars)} label="Cars" onPress={() => onTab('fleet')} />
+            <View style={styles.statDivider} />
+            <Stat value={String(stats.completedBookings)} label="Trips" onPress={() => onTab('bookings')} />
+            <View style={styles.statDivider} />
+            <Stat value={stats.totalReviews ? stats.averageRating.toFixed(1) : 'New'} label={stats.totalReviews ? `${stats.totalReviews} ratings` : 'Rating'} onPress={onNavigateToAnalytics} />
           </View>
-
-          {/* Stats */}
-          {loading ? (
-            <View style={styles.statsContainer}>
-              <ActivityIndicator size="small" color={colors.textWhite} />
-            </View>
-          ) : (
-            <View style={styles.statsContainer}>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{stats.totalCars}</Text>
-                <Text style={styles.statLabel}>Cars</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{stats.totalBookings}</Text>
-                <Text style={styles.statLabel}>Bookings</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{stats.averageRating.toFixed(1)}</Text>
-                <Text style={styles.statLabel}>Rating</Text>
-              </View>
-            </View>
-          )}
         </View>
-      </View>
 
-      {/* Content Wrapper */}
-      <View style={styles.contentWrapper}>
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Menu Items */}
-          <View style={styles.menuSection}>
-            {menuItems.map((item, index) => (
-              <TouchableOpacity key={index} style={styles.menuItem} onPress={item.onPress}>
-                <View style={styles.menuIconContainer}>
-                  <Image source={item.icon} style={styles.menuIconImage} resizeMode="contain" />
-                </View>
-                <View style={styles.menuContent}>
-                  <Text style={styles.menuTitle}>{item.title}</Text>
-                  <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-                </View>
-                <Text style={styles.menuArrow}>›</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+        <View style={{ paddingHorizontal: gutter }}>
+          <MenuGroup title="Business">
+            <MenuRow icon="briefcase" label="Business details" hint="Name, phone and contact person" onPress={onNavigateToSettings} />
+            <MenuRow icon="users" label="Drivers" hint="Add drivers and assign them to trips" onPress={onNavigateToDrivers} />
+            <MenuRow icon="bar-chart-2" label="Performance" hint="Bookings, ratings and your top cars" onPress={onNavigateToAnalytics} last />
+          </MenuGroup>
 
-          {/* Logout Button */}
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Image source={require('../../assets/images/logout.png')} style={styles.logoutIcon} resizeMode="contain" />
-            <Text style={styles.logoutText}>Logout</Text>
-          </TouchableOpacity>
+          <MenuGroup title="Money">
+            <MenuRow icon="credit-card" label="Earnings" onPress={() => onTab('earnings')} />
+            <MenuRow icon="home" label="Payout account" hint={profile?.bankDetails ? `${profile.bankDetails.bankName} · ${profile.bankDetails.accountNumber}` : 'Add the account we pay you into'} onPress={onNavigateToBankDetails} last />
+          </MenuGroup>
 
-          {/* Version Info */}
-          <Text style={styles.versionText}>Escardia Vendor v1.0.0</Text>
+          <MenuGroup title="Account">
+            <MenuRow
+              icon="bell"
+              label="Notifications"
+              onPress={onNavigateToNotifications}
+              right={
+                unread > 0 ? (
+                  <View style={styles.badge}>
+                    <AppText variant="smallMedium" color="#FFFFFF" style={{ fontSize: 11 }}>
+                      {unread}
+                    </AppText>
+                  </View>
+                ) : undefined
+              }
+            />
+            <MenuRow icon="smartphone" label="Push notifications" hint="Get alerts for new bookings" onPress={onNavigateToNotificationPreferences} />
+            <MenuRow icon="file-text" label="Documents" hint="Your ID and business documents" onPress={onNavigateToDocuments} />
+            <AppearanceRow last />
+          </MenuGroup>
 
-          <View style={styles.bottomSpacing} />
-        </ScrollView>
-      </View>
+          <MenuGroup title="Help">
+            <MenuRow icon="help-circle" label="Help and support" onPress={onNavigateToSupport} />
+            <MenuRow icon="shield" label="Vendor agreement and privacy" onPress={onNavigateToTermsAndPrivacy} last />
+          </MenuGroup>
 
-      {/* Bottom Navigation */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem} onPress={onNavigateToDashboard}>
-          <Image source={require('../../assets/images/homeicon.png')} style={styles.navIcon} resizeMode="contain" />
-          <Text style={styles.navLabel}>Dashboard</Text>
-        </TouchableOpacity>
+          <MenuGroup>
+            <MenuRow icon="log-out" label="Log out" danger onPress={logout} right={<View />} last />
+          </MenuGroup>
 
-        <TouchableOpacity style={styles.navItem} onPress={onNavigateToFleet}>
-          <Image source={require('../../assets/images/caricon.png')} style={styles.navIcon} resizeMode="contain" />
-          <Text style={styles.navLabel}>Fleet</Text>
-        </TouchableOpacity>
+          <AppText variant="small" color={color.subtle} center style={{ marginTop: 20 }}>
+            Escardia for vendors · Version 1.0
+          </AppText>
+        </View>
+      </ScrollView>
 
-        <TouchableOpacity style={styles.navItem} onPress={onNavigateToBookings}>
-          <Image source={require('../../assets/images/tripicon.png')} style={styles.navIcon} resizeMode="contain" />
-          <Text style={styles.navLabel}>Bookings</Text>
-        </TouchableOpacity>
+      <VendorTabBar active="profile" onNavigate={onTab} />
 
-        <TouchableOpacity style={styles.navItem} onPress={onNavigateToEarnings}>
-          <Image source={require('../../assets/images/walleticon.png')} style={styles.navIcon} resizeMode="contain" />
-          <Text style={styles.navLabel}>Earnings</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.navItem}>
-          <Image
-            source={require('../../assets/images/profileicon.png')}
-            style={styles.navIconActive}
-            resizeMode="contain"
-          />
-          <Text style={styles.navLabelActive}>Profile</Text>
-        </TouchableOpacity>
-      </View>
+      <PhotoSourceSheet
+        visible={logoSheet}
+        title="Business logo"
+        subtitle="Shown on your account. A square logo works best."
+        onClose={() => setLogoSheet(false)}
+        onPick={changeLogo}
+        onRemove={profile?.logoUrl ? () => changeLogo('remove') : undefined}
+      />
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+const Stat = ({ value, label, onPress }: { value: string; label: string; onPress?: () => void }) => (
+  <Pressable onPress={onPress} style={{ flex: 1, alignItems: 'center' }}>
+    <AppText variant="heading" color="#FFFFFF">
+      {value}
+    </AppText>
+    <AppText variant="small" color={color.onDarkMuted} numberOfLines={1}>
+      {label}
+    </AppText>
+  </Pressable>
+);
+
+const styles = themed(() => StyleSheet.create({
+  root: { flex: 1, backgroundColor: color.bg },
   header: {
-    paddingTop: 45,
-    paddingBottom: 60,
-    paddingHorizontal: spacing.lg,
+    backgroundColor: color.navy,
+    paddingHorizontal: gutter,
+    paddingBottom: 22,
+    borderBottomLeftRadius: radius.xxl,
+    borderBottomRightRadius: radius.xxl,
     overflow: 'hidden',
   },
-  headerGradient: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-  },
-  headerPattern: {
-    position: 'absolute',
-    width: '80%',
-    height: '100%',
-    right: -50,
-    opacity: 1,
-  },
-  profileSection: {
-    alignItems: 'center',
-    top: 20,
-  },
-  profileImageContainer: {
-    position: 'relative',
-    marginBottom: spacing.md,
-  },
-  profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: colors.textWhite,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 4,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  profileInitial: {
-    fontSize: typography.fontSize['3xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.primary,
-  },
-  editIcon: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: colors.textWhite,
-  },
-  editIconText: {
-    fontSize: 14,
-  },
-  profileName: {
-    fontSize: typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.textWhite,
-    marginBottom: spacing.xs,
-  },
-  profileEmail: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textWhite,
-    opacity: 0.9,
-    marginBottom: spacing.md,
-  },
-  businessBadge: {
+  glow: { position: 'absolute', width: 300, height: 300, borderRadius: 150, backgroundColor: brand[600], opacity: 0.3, top: -140, right: -100 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  cam: { position: 'absolute', right: -2, bottom: -2, width: 26, height: 26, borderRadius: 13, backgroundColor: color.surface, alignItems: 'center', justifyContent: 'center' },
+  stats: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.lg,
+    marginTop: 20,
+    paddingVertical: 14,
+    borderRadius: radius.lg,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
   },
-  businessIcon: {
-    fontSize: 16,
-    marginRight: spacing.xs,
-  },
-  businessName: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textWhite,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: borderRadius.xl,
-    padding: spacing.md,
-    minHeight: 70,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.textWhite,
-    marginBottom: spacing.xs,
-  },
-  statLabel: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textWhite,
-    opacity: 0.9,
-  },
-  statDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    marginHorizontal: spacing.md,
-  },
-  contentWrapper: {
-    flex: 1,
-    marginTop: -20,
-    backgroundColor: colors.background,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    overflow: 'hidden',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingTop: spacing.xl,
-  },
-  menuSection: {
-    paddingHorizontal: spacing.lg,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.backgroundGray,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  menuIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.primary + '20',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.md,
-  },
-  menuIconImage: {
-    width: 20,
-    height: 20,
-  },
-  menuContent: {
-    flex: 1,
-  },
-  menuTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-    marginBottom: 4,
-  },
-  menuSubtitle: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-  },
-  menuArrow: {
-    fontSize: 24,
-    color: colors.textSecondary,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EF4444',
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-  },
-  logoutIcon: {
-    width: 20,
-    height: 20,
-    marginRight: spacing.sm,
-    tintColor: colors.textWhite,
-  },
-  logoutText: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.textWhite,
-  },
-  versionText: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.lg,
-    marginBottom: spacing.lg,
-  },
-  bottomSpacing: {
-    height: 100,
-  },
-  bottomNav: {
-    flexDirection: 'row',
-    backgroundColor: colors.background,
-    borderTopLeftRadius: borderRadius.xl,
-    borderTopRightRadius: borderRadius.xl,
-    paddingVertical: spacing.md,
-    paddingBottom: 20,
-    position: 'absolute',
-    bottom: 20,
-    left: 20,
-    right: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  navIcon: {
-    width: 24,
-    height: 24,
-    marginBottom: spacing.xs,
-    opacity: 0.5,
-  },
-  navIconActive: {
-    width: 24,
-    height: 24,
-    marginBottom: spacing.xs,
-  },
-  navLabel: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-  },
-  navLabelActive: {
-    fontSize: typography.fontSize.xs,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-});
+  statDivider: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.14)' },
+  badge: { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, backgroundColor: color.primary, alignItems: 'center', justifyContent: 'center' },
+}));

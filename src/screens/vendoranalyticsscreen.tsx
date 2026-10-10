@@ -1,347 +1,207 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-} from 'react-native';
-import { colors, typography, spacing, borderRadius } from '../constants';
+// Vendor performance: bookings, cancellations, ratings and the cars that earn the most.
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
+import { supabase, auth } from '../config/supabase';
+import { getVendorBookings, Booking } from '../services/bookingService';
+import { AppText, Screen, ScreenHeader } from '../ui';
+import { naira } from '../ui/CarCard';
+import { Segmented, StatTile } from '../ui/Kit';
+import { color, gutter, radius, themed, statusBarStyle } from '../theme';
 
 interface VendorAnalyticsScreenProps {
   onNavigateBack: () => void;
 }
 
-export const VendorAnalyticsScreen: React.FC<VendorAnalyticsScreenProps> = ({
-  onNavigateBack,
-}) => {
-  const [timeframe, setTimeframe] = useState<'week' | 'month' | 'year'>('month');
-  const [analytics, setAnalytics] = useState({
-    totalRevenue: 0,
-    totalBookings: 0,
-    averageRating: 0,
-    completionRate: 0,
-    topCar: { name: 'N/A', bookings: 0 },
-    revenueGrowth: 0,
-  });
+type Period = '30' | '90' | 'all';
+type Rating = { overall: number; car_condition: number; driver_rating: number | null; review: string | null; created_at: string };
+
+const DONE = ['completed', 'resolved'];
+
+export const VendorAnalyticsScreen: React.FC<VendorAnalyticsScreenProps> = ({ onNavigateBack }) => {
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [ratings, setRatings] = useState<Rating[]>([]);
+  const [period, setPeriod] = useState<Period>('30');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadAnalytics();
-  }, [timeframe]);
-
-  const loadAnalytics = async () => {
-    setLoading(true);
-    try {
-      const { supabase, auth } = await import('../config/supabase');
-      const vendorId = auth.currentUser?.uid;
-      if (!vendorId) return;
-
-      const now = new Date();
-      const startDate = new Date();
-      if (timeframe === 'week') startDate.setDate(now.getDate() - 7);
-      else if (timeframe === 'month') startDate.setMonth(now.getMonth() - 1);
-      else startDate.setFullYear(now.getFullYear() - 1);
-      const periodLength = now.getTime() - startDate.getTime();
-      const previousStart = new Date(startDate.getTime() - periodLength);
-
-      const { getVendorBookings } = await import('../services/bookingService');
-      const { bookings } = await getVendorBookings(vendorId);
-
-      const inRange = (b: { createdAt: string }, from: Date, to: Date) => {
-        const d = new Date(b.createdAt);
-        return d >= from && d < to;
-      };
-      const filteredBookings = bookings.filter((b) => inRange(b, startDate, now));
-      const previousBookings = bookings.filter((b) => inRange(b, previousStart, startDate));
-
-      // Revenue = vendor's share of completed trips
-      const revenue = (list: typeof bookings) => list.filter((b) => b.status === 'past').reduce((sum, b) => sum + b.vendorAmount, 0);
-      const totalRevenue = revenue(filteredBookings);
-      const previousRevenue = revenue(previousBookings);
-      const revenueGrowth = previousRevenue > 0 ? Math.round(((totalRevenue - previousRevenue) / previousRevenue) * 100) : 0;
-
-      const totalBookings = filteredBookings.length;
-      const completedBookings = filteredBookings.filter((b) => b.status === 'past');
-      const completionRate = totalBookings > 0 ? Math.round((completedBookings.length / totalBookings) * 100) : 0;
-
-      const carBookings: { [key: string]: number } = {};
-      filteredBookings.forEach((b) => {
-        const carKey = `${b.car?.brand} ${b.car?.model}`;
-        carBookings[carKey] = (carBookings[carKey] || 0) + 1;
-      });
-      const topCarEntry = Object.entries(carBookings).sort((x, y) => y[1] - x[1])[0];
-      const topCar = topCarEntry ? { name: topCarEntry[0], bookings: topCarEntry[1] } : { name: 'N/A', bookings: 0 };
-
-      // Real rating from customer reviews
-      const { data: ratings } = await supabase.from('ratings').select('overall').eq('vendor_id', vendorId);
-      const averageRating = ratings && ratings.length
-        ? Math.round((ratings.reduce((sum, r) => sum + r.overall, 0) / ratings.length) * 10) / 10
-        : 0;
-
-      setAnalytics({
-        totalRevenue,
-        totalBookings,
-        averageRating,
-        completionRate,
-        topCar,
-        revenueGrowth,
-      });
-    } catch (error) {
-      console.error('Error loading analytics:', error);
-    } finally {
+    const id = auth.currentUser?.uid ?? '';
+    Promise.all([
+      getVendorBookings(id),
+      supabase.from('ratings').select('overall, car_condition, driver_rating, review, created_at').eq('vendor_id', id).order('created_at', { ascending: false }),
+    ]).then(([b, r]) => {
+      setBookings(b.bookings);
+      setRatings((r.data as Rating[]) ?? []);
       setLoading(false);
+    });
+  }, []);
+
+  const from = period === 'all' ? 0 : Date.now() - Number(period) * 86400000;
+  const inPeriod = useMemo(() => bookings.filter((b) => +new Date(b.createdAt) >= from), [bookings, from]);
+  const done = inPeriod.filter((b) => DONE.includes(b.bookingStatus));
+  const cancelled = inPeriod.filter((b) => b.bookingStatus === 'cancelled');
+  const earned = done.reduce((n, b) => n + b.vendorAmount, 0);
+  const youCancelled = cancelled.filter((b) => b.cancelledBy === 'vendor').length;
+
+  const topCars = useMemo(() => {
+    const m: Record<string, { name: string; photo?: string; trips: number; earned: number }> = {};
+    for (const b of done) {
+      m[b.carId] ??= { name: `${b.car.brand} ${b.car.model}`, photo: b.car.photos?.[0], trips: 0, earned: 0 };
+      m[b.carId].trips++;
+      m[b.carId].earned += b.vendorAmount;
     }
+    return Object.values(m).sort((a, z) => z.earned - a.earned).slice(0, 5);
+  }, [done]);
+
+  const avg = (k: keyof Rating) => {
+    const vals = ratings.map((r) => r[k]).filter((v) => v !== null && v !== undefined).map(Number);
+    return vals.length ? vals.reduce((n, v) => n + v, 0) / vals.length : 0;
   };
+  const reviews = ratings.filter((r) => r.review?.trim()).slice(0, 5);
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-          <Text style={styles.backIcon}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Analytics</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
-      {/* Timeframe Selector */}
-      <View style={styles.timeframeContainer}>
-        <TouchableOpacity
-          style={[styles.timeframeButton, timeframe === 'week' && styles.timeframeButtonActive]}
-          onPress={() => setTimeframe('week')}
-        >
-          <Text style={[styles.timeframeText, timeframe === 'week' && styles.timeframeTextActive]}>
-            Week
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.timeframeButton, timeframe === 'month' && styles.timeframeButtonActive]}
-          onPress={() => setTimeframe('month')}
-        >
-          <Text style={[styles.timeframeText, timeframe === 'month' && styles.timeframeTextActive]}>
-            Month
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.timeframeButton, timeframe === 'year' && styles.timeframeButtonActive]}
-          onPress={() => setTimeframe('year')}
-        >
-          <Text style={[styles.timeframeText, timeframe === 'year' && styles.timeframeTextActive]}>
-            Year
-          </Text>
-        </TouchableOpacity>
-      </View>
-
+    <Screen>
+      <StatusBar style={statusBarStyle()} />
+      <ScreenHeader title="Performance" onBack={onNavigateBack} />
       {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading analytics...</Text>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={color.primary} />
         </View>
       ) : (
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-          {/* Revenue Card */}
-          <View style={styles.bigCard}>
-            <Text style={styles.bigCardLabel}>Total Revenue</Text>
-            <Text style={styles.bigCardValue}>₦{analytics.totalRevenue.toLocaleString()}</Text>
-            <View style={styles.growthIndicator}>
-              <Text style={styles.growthText}>↑ {analytics.revenueGrowth}% vs last {timeframe}</Text>
-            </View>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+          <Segmented
+            options={[
+              { key: '30', label: '30 days' },
+              { key: '90', label: '90 days' },
+              { key: 'all', label: 'All time' },
+            ]}
+            value={period}
+            onChange={setPeriod}
+          />
+
+          <View style={[styles.grid, { marginTop: 16 }]}>
+            <StatTile icon="calendar" label="Bookings" value={String(inPeriod.length)} tone="blue" />
+            <StatTile icon="check-circle" label="Completed" value={String(done.length)} tone="green" />
+          </View>
+          <View style={[styles.grid, { marginTop: 12 }]}>
+            <StatTile icon="credit-card" label="Earned" value={naira(earned)} tone="green" />
+            <StatTile
+              icon="x-circle"
+              label="Cancelled"
+              value={String(cancelled.length)}
+              hint={youCancelled ? `${youCancelled} by you` : undefined}
+              tone={youCancelled ? 'amber' : 'slate'}
+            />
           </View>
 
-          {/* Stats Grid */}
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <Text style={styles.statIcon}>📊</Text>
-              <Text style={styles.statValue}>{analytics.totalBookings}</Text>
-              <Text style={styles.statLabel}>Total Bookings</Text>
+          <AppText variant="heading" style={styles.h}>
+            Ratings
+          </AppText>
+          {ratings.length === 0 ? (
+            <View style={styles.card}>
+              <AppText variant="body" color={color.muted}>
+                Customers can rate a trip once it is completed. Ratings show here.
+              </AppText>
             </View>
-
-            <View style={styles.statCard}>
-              <Text style={styles.statIcon}>⭐</Text>
-              <Text style={styles.statValue}>{analytics.averageRating}</Text>
-              <Text style={styles.statLabel}>Avg Rating</Text>
-            </View>
-
-            <View style={styles.statCard}>
-              <Text style={styles.statIcon}>✓</Text>
-              <Text style={styles.statValue}>{analytics.completionRate}%</Text>
-              <Text style={styles.statLabel}>Completion</Text>
-            </View>
-          </View>
-
-          {/* Top Performer */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🏆 Top Performing Car</Text>
-            <View style={styles.topCarCard}>
-              <View>
-                <Text style={styles.topCarName}>{analytics.topCar.name}</Text>
-                <Text style={styles.topCarBookings}>
-                  {analytics.topCar.bookings} bookings this {timeframe}
-                </Text>
+          ) : (
+            <View style={styles.card}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <View style={{ alignItems: 'center' }}>
+                  <AppText variant="display">{avg('overall').toFixed(1)}</AppText>
+                  <Stars value={avg('overall')} />
+                  <AppText variant="small" color={color.muted} style={{ marginTop: 4 }}>
+                    {ratings.length} rating{ratings.length === 1 ? '' : 's'}
+                  </AppText>
+                </View>
+                <View style={{ flex: 1, gap: 10 }}>
+                  <Bar label="Car condition" value={avg('car_condition')} />
+                  <Bar label="Driver" value={avg('driver_rating')} />
+                  <Bar label="Overall" value={avg('overall')} />
+                </View>
               </View>
+              {reviews.map((r, i) => (
+                <View key={i} style={styles.review}>
+                  <Stars value={r.overall} size={12} />
+                  <AppText variant="body" style={{ marginTop: 4 }}>
+                    “{r.review!.trim()}”
+                  </AppText>
+                  <AppText variant="small" color={color.subtle} style={{ marginTop: 2 }}>
+                    {new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </AppText>
+                </View>
+              ))}
             </View>
-          </View>
+          )}
 
-          <View style={styles.bottomSpacing} />
+          <AppText variant="heading" style={styles.h}>
+            Top cars
+          </AppText>
+          {topCars.length === 0 ? (
+            <View style={styles.card}>
+              <AppText variant="body" color={color.muted}>
+                No completed trips in this period yet.
+              </AppText>
+            </View>
+          ) : (
+            <View style={[styles.card, { paddingVertical: 4 }]}>
+              {topCars.map((c, i) => (
+                <View key={c.name + i} style={[styles.carRow, i < topCars.length - 1 && styles.border]}>
+                  <AppText variant="smallMedium" color={color.muted} style={{ width: 16 }}>
+                    {i + 1}
+                  </AppText>
+                  {c.photo ? <Image source={{ uri: c.photo }} style={styles.thumb} /> : <View style={styles.thumb} />}
+                  <View style={{ flex: 1 }}>
+                    <AppText variant="bodyMedium" numberOfLines={1}>
+                      {c.name}
+                    </AppText>
+                    <AppText variant="small" color={color.muted}>
+                      {c.trips} trip{c.trips === 1 ? '' : 's'}
+                    </AppText>
+                  </View>
+                  <AppText variant="bodyMedium" color={color.success}>
+                    {naira(c.earned)}
+                  </AppText>
+                </View>
+              ))}
+            </View>
+          )}
         </ScrollView>
       )}
-    </View>
+    </Screen>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: 60,
-    paddingBottom: spacing.md,
-  },
-  backButton: {
-    padding: spacing.sm,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: colors.text,
-  },
-  headerTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-  },
-  headerSpacer: {
-    width: 40,
-  },
-  timeframeContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-    gap: spacing.sm,
-  },
-  timeframeButton: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.inputBackground,
-    alignItems: 'center',
-  },
-  timeframeButtonActive: {
-    backgroundColor: colors.primary,
-  },
-  timeframeText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.text,
-    fontWeight: typography.fontWeight.medium,
-  },
-  timeframeTextActive: {
-    color: colors.textWhite,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-    marginTop: spacing.md,
-  },
-  bigCard: {
-    marginHorizontal: spacing.lg,
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.xl,
-    padding: spacing.xl,
-    marginBottom: spacing.lg,
-  },
-  bigCardLabel: {
-    fontSize: typography.fontSize.base,
-    color: colors.textWhite,
-    opacity: 0.9,
-    marginBottom: spacing.xs,
-  },
-  bigCardValue: {
-    fontSize: typography.fontSize['3xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.textWhite,
-    marginBottom: spacing.sm,
-  },
-  growthIndicator: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.sm,
-    alignSelf: 'flex-start',
-  },
-  growthText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textWhite,
-    fontWeight: typography.fontWeight.medium,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing.lg,
-    gap: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: colors.backgroundGray,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    alignItems: 'center',
-  },
-  statIcon: {
-    fontSize: 30,
-    marginBottom: spacing.sm,
-  },
-  statValue: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  statLabel: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  section: {
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  topCarCard: {
-    backgroundColor: colors.backgroundGray,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-  },
-  topCarName: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  topCarBookings: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-  },
-  bottomSpacing: {
-    height: 40,
-  },
-});
+const Stars = ({ value, size = 14 }: { value: number; size?: number }) => (
+  <View style={{ flexDirection: 'row', gap: 2 }}>
+    {[1, 2, 3, 4, 5].map((n) => (
+      <Ionicons key={n} name={value >= n - 0.25 ? 'star' : value >= n - 0.75 ? 'star-half' : 'star-outline'} size={size} color={value >= n - 0.75 ? '#F59E0B' : color.borderStrong} />
+    ))}
+  </View>
+);
+
+const Bar = ({ label, value }: { label: string; value: number }) => (
+  <View>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+      <AppText variant="small" color={color.text}>
+        {label}
+      </AppText>
+      <AppText variant="smallMedium">{value.toFixed(1)}</AppText>
+    </View>
+    <View style={styles.track}>
+      <View style={[styles.fill, { width: `${(value / 5) * 100}%` }]} />
+    </View>
+  </View>
+);
+
+const styles = themed(() => StyleSheet.create({
+  grid: { flexDirection: 'row', gap: 12 },
+  h: { marginTop: 24, marginBottom: 12 },
+  card: { padding: 16, borderRadius: radius.xl, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  track: { height: 6, borderRadius: 3, backgroundColor: color.sunken, marginTop: 4, overflow: 'hidden' },
+  fill: { height: 6, borderRadius: 3, backgroundColor: '#F59E0B' },
+  review: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: color.border },
+  carRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+  border: { borderBottomWidth: 1, borderBottomColor: color.border },
+  thumb: { width: 56, height: 42, borderRadius: 10, backgroundColor: color.sunken },
+}));

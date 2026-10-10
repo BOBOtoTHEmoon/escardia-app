@@ -1,404 +1,189 @@
-// ============================================
-// ESCARDIA - NOTIFICATIONS SCREEN (Updated)
-// File: src/screens/NotificationsScreen.tsx
-// ============================================
-// Reads from:
-// 1. Bookings collection (booking updates)
-// 2. Notifications collection (payments, withdrawals, etc.)
-// ============================================
-
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  RefreshControl,
-  ActivityIndicator,
-} from 'react-native';
-import { colors, typography, spacing, borderRadius } from '../constants';
-import { auth } from '../config/supabase';
-import { getMyNotifications, markNotificationRead, markAllNotificationsRead } from '../services/notificationService';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppNotification, getMyNotifications, markAllNotificationsRead, markNotificationRead } from '../services/notificationService';
+import { AppText, IconName, Screen, ScreenHeader } from '../ui';
+import { color, gutter, radius, themed, statusBarStyle } from '../theme';
 
 interface NotificationsScreenProps {
   onNavigateBack: () => void;
-  userType?: 'user' | 'vendor'; // Support both user and vendor
+  userType?: 'user' | 'vendor';
+  /** Opens the booking a notification is about, when there is one. */
+  onOpenBooking?: (bookingId: string) => void;
 }
 
-interface Notification {
-  id: string;
-  type: 'booking' | 'payment' | 'withdrawal' | 'cancellation' | 'approval' | 'general';
-  title: string;
-  message: string;
-  timestamp: string;
-  read: boolean;
-  source: 'booking' | 'notification'; // Where it came from
-  bookingId?: string;
-  createdAt: Date;
-}
+const LOOK: Record<AppNotification['type'], { icon: IconName; bg: string; fg: string }> = themed(() => ({
+  booking: { icon: 'calendar', bg: color.primarySoft, fg: color.primary },
+  payment: { icon: 'credit-card', bg: color.successSoft, fg: color.success },
+  withdrawal: { icon: 'send', bg: color.violetSoft, fg: color.violet },
+  cancellation: { icon: 'x-circle', bg: color.dangerSoft, fg: color.danger },
+  approval: { icon: 'check-circle', bg: color.successSoft, fg: color.success },
+  general: { icon: 'bell', bg: color.sunken, fg: color.text },
+}));
 
-export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({
-  onNavigateBack,
-  userType = 'vendor',
-}) => {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+const ago = (d: Date) => {
+  const m = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (m < 1) return 'Just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+};
+
+const group = (d: Date) => {
+  const today = new Date().toDateString();
+  const yesterday = new Date(Date.now() - 86400000).toDateString();
+  if (d.toDateString() === today) return 'Today';
+  if (d.toDateString() === yesterday) return 'Yesterday';
+  return 'Earlier';
+};
+
+export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onNavigateBack, onOpenBooking }) => {
+  const insets = useSafeAreaInsets();
+  const [items, setItems] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Format timestamp to relative time
-  const formatTimestamp = (date: Date): string => {
-    try {
-      const now = new Date();
-      const diffMs = now.getTime() - date.getTime();
-      const diffMins = Math.floor(diffMs / 60000);
-      const diffHours = Math.floor(diffMs / 3600000);
-      const diffDays = Math.floor(diffMs / 86400000);
-
-      if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      if (diffHours < 24) return `${diffHours}h ago`;
-      if (diffDays < 7) return `${diffDays}d ago`;
-      
-      return date.toLocaleDateString('en-GB', {
-        day: 'numeric',
-        month: 'short',
-      });
-    } catch (e) {
-      return 'Recently';
-    }
-  };
-
-  // Convert Firestore timestamp to Date
-  const toDate = (timestamp: any): Date => {
-    if (!timestamp) return new Date();
-    if (timestamp.toDate) return timestamp.toDate();
-    if (timestamp instanceof Date) return timestamp;
-    return new Date(timestamp);
-  };
-
-  // Fetch all notifications
-  const fetchNotifications = useCallback(async () => {
-    try {
-      const userId = auth.currentUser?.uid;
-      if (!userId) {
-        setLoading(false);
-        return;
-      }
-
-      // Every booking, payment and payout event creates a notification on the server.
-      const rows = await getMyNotifications(50);
-      const uniqueNotifications: Notification[] = rows.map((n) => ({
-        id: n.id,
-        type: n.type,
-        title: n.title,
-        message: n.message,
-        timestamp: formatTimestamp(n.createdAt),
-        read: n.read,
-        source: 'notification',
-        bookingId: n.bookingId,
-        createdAt: n.createdAt,
-      }));
-
-      setNotifications(uniqueNotifications);
-      console.log(`✅ Total notifications: ${uniqueNotifications.length}`);
-    } catch (error) {
-      console.error('❌ Error loading notifications:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [userType]);
+  const load = useCallback(async () => {
+    setItems(await getMyNotifications(80));
+    setLoading(false);
+    setRefreshing(false);
+  }, []);
 
   useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
+    load();
+  }, [load]);
 
-  // Pull to refresh
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchNotifications();
+  const unread = items.filter((n) => !n.read).length;
+  const sections = useMemo(() => {
+    const out: { title: string; data: AppNotification[] }[] = [];
+    items.forEach((n) => {
+      const t = group(n.createdAt);
+      const g = out.find((x) => x.title === t);
+      if (g) g.data.push(n);
+      else out.push({ title: t, data: [n] });
+    });
+    return out;
+  }, [items]);
+
+  const open = async (n: AppNotification) => {
+    if (!n.read) {
+      setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+      markNotificationRead(n.id);
+    }
+    if (n.bookingId && onOpenBooking) onOpenBooking(n.bookingId);
   };
 
-  // Mark notification as read
-  const markAsRead = async (notification: Notification) => {
-    if (notification.read) return;
-    await markNotificationRead(notification.id);
-    setNotifications((prev) => prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n)));
-  };
-
-  // Mark all as read
-  const markAllAsRead = async () => {
+  const readAll = async () => {
+    setItems((prev) => prev.map((x) => ({ ...x, read: true })));
     await markAllNotificationsRead();
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   };
-
-  // Get icon for notification type
-  const getNotificationIcon = (type: Notification['type']) => {
-    switch (type) {
-      case 'booking': return '📅';
-      case 'payment': return '💰';
-      case 'withdrawal': return '💸';
-      case 'cancellation': return '❌';
-      case 'approval': return '✅';
-      default: return '🔔';
-    }
-  };
-
-  // Get background color for notification type
-  const getIconBackground = (type: Notification['type']) => {
-    switch (type) {
-      case 'booking': return '#3B82F6' + '20';
-      case 'payment': return '#10B981' + '20';
-      case 'withdrawal': return '#8B5CF6' + '20';
-      case 'cancellation': return '#EF4444' + '20';
-      case 'approval': return '#10B981' + '20';
-      default: return '#6B7280' + '20';
-    }
-  };
-
-  const unreadCount = notifications.filter(n => !n.read).length;
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-          <Text style={styles.backIcon}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Notifications</Text>
-        {unreadCount > 0 ? (
-          <TouchableOpacity onPress={markAllAsRead} style={styles.markAllButton}>
-            <Text style={styles.markAllText}>Mark all</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.headerSpacer} />
-        )}
-      </View>
-
-      {/* Unread count badge */}
-      {unreadCount > 0 && (
-        <View style={styles.unreadBanner}>
-          <Text style={styles.unreadBannerText}>
-            {unreadCount} unread notification{unreadCount !== 1 ? 's' : ''}
-          </Text>
-        </View>
-      )}
-
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[colors.primary]}
-            tintColor={colors.primary}
-          />
+    <Screen>
+      <StatusBar style={statusBarStyle()} />
+      <ScreenHeader
+        title="Notifications"
+        subtitle={unread ? `${unread} unread` : undefined}
+        onBack={onNavigateBack}
+        right={
+          unread > 0 ? (
+            <Pressable onPress={readAll} hitSlop={8} style={styles.readAll}>
+              <Feather name="check" size={14} color={color.primary} />
+              <AppText variant="smallMedium" color={color.primary}>
+                Mark all read
+              </AppText>
+            </Pressable>
+          ) : undefined
         }
-      >
-        {loading ? (
-          <View style={styles.loadingState}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>Loading notifications...</Text>
-          </View>
-        ) : notifications.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>🔔</Text>
-            <Text style={styles.emptyTitle}>No Notifications</Text>
-            <Text style={styles.emptyText}>You're all caught up!</Text>
-          </View>
-        ) : (
-          <View style={styles.notificationsList}>
-            {notifications.map((notification) => (
-              <TouchableOpacity
-                key={notification.id}
-                style={[
-                  styles.notificationCard,
-                  !notification.read && styles.notificationUnread,
-                ]}
-                onPress={() => markAsRead(notification)}
-                activeOpacity={0.7}
-              >
-                <View style={[
-                  styles.notificationIcon,
-                  { backgroundColor: getIconBackground(notification.type) }
-                ]}>
-                  <Text style={styles.notificationIconText}>
-                    {getNotificationIcon(notification.type)}
-                  </Text>
+      />
+      {loading ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={color.primary} />
+        </View>
+      ) : (
+        <SectionList
+          sections={sections}
+          keyExtractor={(n) => n.id}
+          stickySectionHeadersEnabled={false}
+          contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: insets.bottom + 32, flexGrow: 1 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                load();
+              }}
+            />
+          }
+          renderSectionHeader={({ section }) => (
+            <AppText variant="caption" color={color.muted} style={{ marginTop: 16, marginBottom: 8 }}>
+              {section.title}
+            </AppText>
+          )}
+          renderItem={({ item: n }) => {
+            const look = LOOK[n.type] ?? LOOK.general;
+            return (
+              <Pressable onPress={() => open(n)} style={[styles.item, !n.read && styles.itemUnread]}>
+                <View style={[styles.icon, { backgroundColor: look.bg }]}>
+                  <Feather name={look.icon} size={17} color={look.fg} />
                 </View>
-                <View style={styles.notificationContent}>
-                  <Text style={[
-                    styles.notificationTitle,
-                    !notification.read && styles.notificationTitleUnread
-                  ]}>
-                    {notification.title}
-                  </Text>
-                  <Text style={styles.notificationMessage} numberOfLines={2}>
-                    {notification.message}
-                  </Text>
-                  <Text style={styles.notificationTime}>{notification.timestamp}</Text>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+                    <AppText variant={n.read ? 'body' : 'bodyMedium'} style={{ flex: 1 }}>
+                      {n.title}
+                    </AppText>
+                    <AppText variant="small" color={color.subtle} style={{ fontSize: 12 }}>
+                      {ago(n.createdAt)}
+                    </AppText>
+                  </View>
+                  {!!n.message && (
+                    <AppText variant="small" color={color.muted} style={{ marginTop: 2 }}>
+                      {n.message}
+                    </AppText>
+                  )}
                 </View>
-                {!notification.read && <View style={styles.unreadDot} />}
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-        <View style={styles.bottomSpacing} />
-      </ScrollView>
-    </View>
+                {!n.read ? <View style={styles.dot} /> : n.bookingId && onOpenBooking ? <Feather name="chevron-right" size={16} color={color.subtle} style={{ marginTop: 2 }} /> : null}
+              </Pressable>
+            );
+          }}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <View style={styles.emptyIcon}>
+                <Feather name="bell" size={24} color={color.primary} />
+              </View>
+              <AppText variant="heading" style={{ marginTop: 16 }}>
+                You&apos;re all caught up
+              </AppText>
+              <AppText variant="body" color={color.muted} center style={{ marginTop: 6 }}>
+                Booking updates, payments and refunds will show up here.
+              </AppText>
+            </View>
+          }
+        />
+      )}
+    </Screen>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-  },
-  header: {
+const styles = themed(() => StyleSheet.create({
+  readAll: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, height: 32, borderRadius: 16, backgroundColor: color.primarySoft },
+  item: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: 60,
-    paddingBottom: spacing.md,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 14,
+    marginBottom: 8,
+    borderRadius: radius.lg,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.border,
   },
-  backButton: {
-    padding: spacing.sm,
-    marginLeft: -spacing.sm,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: colors.text,
-  },
-  headerTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-  },
-  headerSpacer: {
-    width: 60,
-  },
-  markAllButton: {
-    padding: spacing.sm,
-  },
-  markAllText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  unreadBanner: {
-    backgroundColor: colors.primary + '15',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-  },
-  unreadBannerText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.medium,
-    textAlign: 'center',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  loadingState: {
-    alignItems: 'center',
-    paddingVertical: spacing['3xl'],
-  },
-  loadingText: {
-    marginTop: spacing.md,
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: spacing['3xl'],
-  },
-  emptyIcon: {
-    fontSize: 80,
-    marginBottom: spacing.md,
-  },
-  emptyTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  emptyText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  notificationsList: {
-    padding: spacing.lg,
-  },
-  notificationCard: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    position: 'relative',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  notificationUnread: {
-    backgroundColor: '#FFFFFF',
-    borderLeftWidth: 3,
-    borderLeftColor: colors.primary,
-  },
-  notificationIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.md,
-  },
-  notificationIconText: {
-    fontSize: 22,
-  },
-  notificationContent: {
-    flex: 1,
-    paddingRight: spacing.md,
-  },
-  notificationTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.medium,
-    color: colors.text,
-    marginBottom: 4,
-  },
-  notificationTitleUnread: {
-    fontWeight: typography.fontWeight.bold,
-  },
-  notificationMessage: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    marginBottom: 6,
-    lineHeight: 20,
-  },
-  notificationTime: {
-    fontSize: typography.fontSize.xs,
-    color: '#9CA3AF',
-  },
-  unreadDot: {
-    position: 'absolute',
-    top: spacing.md,
-    right: spacing.md,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.primary,
-  },
-  bottomSpacing: {
-    height: 40,
-  },
-});
-
-export default NotificationsScreen;
+  itemUnread: { borderColor: color.primaryLine, backgroundColor: color.highlight },
+  icon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: color.primary, marginTop: 6 },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, paddingBottom: 60 },
+  emptyIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: color.primarySoft, alignItems: 'center', justifyContent: 'center' },
+}));

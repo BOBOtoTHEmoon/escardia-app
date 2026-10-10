@@ -1,529 +1,350 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-  Alert,
-} from 'react-native';
-import { colors, typography, spacing, borderRadius } from '../constants';
+// One car in the vendor's fleet: photos, review state, availability switch, earnings, details and upcoming trips.
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Dimensions, Image, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { auth } from '../config/supabase';
+import { getVendorCarById, updateCar, updateCarStatus, deleteCar, Car } from '../services/carservice';
+import { getVendorBookings, Booking } from '../services/bookingService';
+import { typeLabel } from '../data/carTypes';
+import { useAppSettings } from '../hooks/useAppSettings';
+import { AppText, Button, IconButton, IconName } from '../ui';
+import { BottomBar } from '../ui/Booking';
+import { naira } from '../ui/CarCard';
+import { EmptyState, Pill, carReview } from '../ui/Kit';
+import { VendorBookingCard } from '../ui/VendorCards';
+import { brand, color, gutter, radius, themed } from '../theme';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const PHOTO_HEIGHT = 300;
 
 interface VendorCarDetailScreenProps {
-  onNavigateBack: () => void;
   carId: string;
+  onNavigateBack: () => void;
   onEditCar: (carId: string) => void;
-  onDeleteCar: (carId: string) => void;
+  /** Called after the car is deleted. */
+  onDeleted: () => void;
+  onOpenBooking: (bookingId: string) => void;
 }
 
-export const VendorCarDetailScreen: React.FC<VendorCarDetailScreenProps> = ({
-  onNavigateBack,
-  carId,
-  onEditCar,
-  onDeleteCar,
-}) => {
-  const [car, setCar] = useState<any>(null);
+export const VendorCarDetailScreen: React.FC<VendorCarDetailScreenProps> = ({ carId, onNavigateBack, onEditCar, onDeleted, onOpenBooking }) => {
+  const insets = useSafeAreaInsets();
+  const { settings } = useAppSettings();
+  const [car, setCar] = useState<Car | null>(null);
+  const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [photo, setPhoto] = useState(0);
 
-  useEffect(() => {
-    const fetchCarDetails = async () => {
-      try {
-        console.log('🔵 Loading car details:', carId);
-        const { getVendorCarById } = await import('../services/carservice');
-        const { auth } = await import('../config/supabase');
-        const result = await getVendorCarById(carId, auth.currentUser?.uid ?? '');
-
-        if (result.success && result.car) {
-          setCar(result.car);
-          console.log('✅ Car loaded');
-        }
-      } catch (error) {
-        console.error('❌ Error loading car:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchCarDetails();
+  const load = useCallback(async () => {
+    const id = auth.currentUser?.uid ?? '';
+    const [c, b] = await Promise.all([getVendorCarById(carId, id), getVendorBookings(id)]);
+    setCar(c.success ? c.car! : null);
+    setBookings(b.bookings.filter((x) => x.carId === carId));
+    setLoading(false);
   }, [carId]);
 
-  const handleDelete = () => {
-    Alert.alert(
-      'Delete Car',
-      'Are you sure you want to remove this car from your fleet? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => onDeleteCar(carId),
-        },
-      ]
-    );
-  };
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const getStatusColor = (status: string) => {
-    return status === 'available' ? '#10B981' : '#F59E0B';
-  };
-
-  const getStatusText = (status: string) => {
-    return status === 'available' ? 'Available' : 'Booked';
-  };
+  const earned = useMemo(
+    () => bookings.filter((b) => ['completed', 'resolved'].includes(b.bookingStatus)).reduce((n, b) => n + b.vendorAmount, 0),
+    [bookings]
+  );
+  const upcoming = useMemo(
+    () => bookings.filter((b) => b.bookingStatus === 'confirmed' || b.bookingStatus === 'ongoing').sort((a, b) => +new Date(a.startAt) - +new Date(b.startAt)),
+    [bookings]
+  );
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-            <Text style={styles.backIcon}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Car Details</Text>
-          <View style={styles.headerSpacer} />
-        </View>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading...</Text>
-        </View>
+      <View style={[styles.root, styles.center]}>
+        <ActivityIndicator color={color.primary} />
       </View>
     );
   }
 
   if (!car) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-            <Text style={styles.backIcon}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Car Details</Text>
-          <View style={styles.headerSpacer} />
+      <View style={[styles.root, { paddingTop: insets.top + 8 }]}>
+        <View style={{ paddingHorizontal: gutter }}>
+          <IconButton icon="chevron-left" onPress={onNavigateBack} accessibilityLabel="Go back" />
         </View>
-        <View style={styles.loadingContainer}>
-          <Text style={styles.errorText}>Car not found</Text>
-        </View>
+        <EmptyState icon="alert-circle" title="Car not found" body="It may have been removed." action={<Button title="Back to fleet" size="md" variant="secondary" onPress={onNavigateBack} />} />
       </View>
     );
   }
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-          <Text style={styles.backIcon}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Car Details</Text>
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: getStatusColor(car.status) },
-          ]}
-        >
-          <Text style={styles.statusText}>{getStatusText(car.status)}</Text>
-        </View>
-      </View>
+  const review = carReview(car.approvalStatus, car.isActive, car.status);
+  const takingBookings = car.isActive && car.status !== 'maintenance';
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Car Images */}
-        <View style={styles.imageSection}>
-          {car.photos && car.photos.length > 0 ? (
-            <>
-              <Image
-                source={{ uri: car.photos[activePhotoIndex] }}
-                style={styles.mainImage}
-                resizeMode="cover"
-              />
-              {car.photos.length > 1 && (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.thumbnailScroll}
-                  contentContainerStyle={styles.thumbnailContainer}
-                >
-                  {car.photos.map((photo: string, index: number) => (
-                    <TouchableOpacity
-                      key={index}
-                      onPress={() => setActivePhotoIndex(index)}
-                      style={[
-                        styles.thumbnail,
-                        activePhotoIndex === index && styles.thumbnailActive,
-                      ]}
-                    >
-                      <Image
-                        source={{ uri: photo }}
-                        style={styles.thumbnailImage}
-                        resizeMode="cover"
-                      />
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              )}
-            </>
+  const toggleBookings = async (on: boolean) => {
+    setBusy(true);
+    const r = on && !car.isActive ? await updateCar(car.id, { isActive: true, status: 'available' }) : await updateCarStatus(car.id, on ? 'available' : 'maintenance');
+    setBusy(false);
+    if (!r.success) return Alert.alert('Could not update', r.error || 'Please try again.');
+    setCar({ ...car, status: on ? 'available' : 'maintenance', isActive: on ? true : car.isActive });
+  };
+
+  const remove = () => {
+    Alert.alert('Remove this car?', `${car.brand} ${car.model} will be removed from your fleet. This cannot be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          setBusy(true);
+          const r = await deleteCar(car.id);
+          if (r.success) {
+            setBusy(false);
+            return onDeleted();
+          }
+          // Cars with booking history cannot be deleted; hide them instead.
+          const hidden = await updateCar(car.id, { isActive: false });
+          setBusy(false);
+          if (hidden.success) {
+            setCar({ ...car, isActive: false });
+            Alert.alert('Car hidden', 'This car has past bookings, so we kept its history and hid it from customers instead. You can switch it back on at any time.');
+          } else Alert.alert('Could not remove', r.error || 'Please try again.');
+        },
+      },
+    ]);
+  };
+
+  const specs: { icon: IconName; label: string; value: string }[] = [
+    { icon: 'users', label: 'Seats', value: String(car.seats || '-') },
+    { icon: 'columns', label: 'Doors', value: String(car.doors || '-') },
+    { icon: 'settings', label: 'Gearbox', value: car.transmission ? typeLabel(car.transmission) : '-' },
+    { icon: 'droplet', label: 'Fuel', value: car.fuelType ? typeLabel(car.fuelType) : '-' },
+  ];
+
+  return (
+    <View style={styles.root}>
+      <StatusBar style="light" />
+      <ScrollView showsVerticalScrollIndicator={false} bounces={false} contentContainerStyle={{ paddingBottom: 120 + insets.bottom }}>
+        <View style={{ height: PHOTO_HEIGHT, backgroundColor: color.navy }}>
+          {car.photos.length ? (
+            <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onMomentumScrollEnd={(e) => setPhoto(Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH))}>
+              {car.photos.map((uri) => (
+                <Image key={uri} source={{ uri }} style={{ width: SCREEN_WIDTH, height: PHOTO_HEIGHT }} resizeMode="cover" />
+              ))}
+            </ScrollView>
           ) : (
-            <View style={styles.imagePlaceholder}>
-              <Text style={styles.placeholderText}>🚗</Text>
-              <Text style={styles.placeholderSubtext}>No photos</Text>
+            <View style={[styles.center, { flex: 1 }]}>
+              <Feather name="image" size={36} color="rgba(255,255,255,0.3)" />
+            </View>
+          )}
+          <View style={[styles.photoBar, { top: insets.top + 8 }]}>
+            <IconButton icon="chevron-left" onPress={onNavigateBack} accessibilityLabel="Go back" />
+            <IconButton icon="edit-2" onPress={() => onEditCar(car.id)} accessibilityLabel="Edit car" />
+          </View>
+          {car.photos.length > 1 && (
+            <View style={styles.counter}>
+              <AppText variant="smallMedium" color="#FFFFFF" style={{ fontSize: 12 }}>
+                {photo + 1} / {car.photos.length}
+              </AppText>
             </View>
           )}
         </View>
 
-        {/* Car Info */}
-        <View style={styles.section}>
-          <Text style={styles.carName}>
+        <View style={styles.sheet}>
+          <Pill label={review.label} tone={review.tone} />
+          <AppText variant="title" style={{ marginTop: 10 }}>
             {car.brand} {car.model}
-          </Text>
-          <Text style={styles.carYear}>Year: {car.year}</Text>
-          <View style={styles.typeChip}>
-            <Text style={styles.typeText}>{car.type?.toUpperCase()}</Text>
-          </View>
-        </View>
+          </AppText>
+          <AppText variant="small" color={color.muted} style={{ marginTop: 2 }}>
+            {[car.year, typeLabel(car.type), car.location].filter(Boolean).join(' · ')}
+          </AppText>
 
-        {/* Pricing */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>💰 Pricing</Text>
-          <View style={styles.pricingCard}>
-            <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>Per Day</Text>
-              <Text style={styles.priceValue}>₦{car.pricePerDay?.toLocaleString()}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>Per Hour</Text>
-              <Text style={styles.priceValue}>₦{car.pricePerHour?.toLocaleString()}</Text>
-            </View>
-          </View>
-        </View>
+          {car.approvalStatus === 'pending' && (
+            <Notice icon="clock" tone="amber" title="Escardia is reviewing this car" body="It goes live as soon as it is approved. We will notify you." />
+          )}
+          {car.approvalStatus === 'rejected' && (
+            <Notice
+              icon="alert-circle"
+              tone="red"
+              title="Changes needed"
+              body={car.rejectionReason || 'Edit the car and submit it again.'}
+              action="Edit and resubmit"
+              onAction={() => onEditCar(car.id)}
+            />
+          )}
 
-        {/* Specifications */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🔧 Specifications</Text>
-          <View style={styles.specsCard}>
-            <View style={styles.specRow}>
-              <Text style={styles.specLabel}>Seats</Text>
-              <Text style={styles.specValue}>{car.seats} Seats</Text>
+          {car.approvalStatus === 'approved' && (
+            <View style={styles.toggle}>
+              <View style={[styles.toggleIcon, { backgroundColor: takingBookings ? color.successSoft : color.sunken }]}>
+                <Feather name={takingBookings ? 'check-circle' : 'pause-circle'} size={18} color={takingBookings ? color.success : color.muted} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <AppText variant="bodyMedium">{takingBookings ? 'Taking bookings' : car.isActive ? 'Paused for maintenance' : 'Hidden from customers'}</AppText>
+                <AppText variant="small" color={color.muted}>
+                  {takingBookings ? 'Customers can find and book this car.' : 'Turn on when the car is ready again.'}
+                </AppText>
+              </View>
+              {busy ? (
+                <ActivityIndicator color={color.primary} />
+              ) : (
+                <Switch value={takingBookings} onValueChange={toggleBookings} trackColor={{ true: color.primary, false: color.borderStrong }} thumbColor="#FFFFFF" />
+              )}
             </View>
-            <View style={styles.divider} />
-            <View style={styles.specRow}>
-              <Text style={styles.specLabel}>Doors</Text>
-              <Text style={styles.specValue}>{car.doors} Doors</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.specRow}>
-              <Text style={styles.specLabel}>Transmission</Text>
-              <Text style={styles.specValue}>
-                {car.transmission?.charAt(0).toUpperCase() + car.transmission?.slice(1)}
-              </Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.specRow}>
-              <Text style={styles.specLabel}>Fuel Type</Text>
-              <Text style={styles.specValue}>
-                {car.fuelType?.charAt(0).toUpperCase() + car.fuelType?.slice(1)}
-              </Text>
-            </View>
-          </View>
-        </View>
+          )}
 
-        {/* Location */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📍 Pickup Location</Text>
-          <View style={styles.locationCard}>
-            <Text style={styles.locationText}>{car.location}</Text>
-          </View>
-        </View>
-
-        {/* Description */}
-        {car.description && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>📝 Description</Text>
-            <View style={styles.descriptionCard}>
-              <Text style={styles.descriptionText}>{car.description}</Text>
-            </View>
-          </View>
-        )}
-
-        {/* Statistics */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📊 Statistics</Text>
-          <View style={styles.statsCard}>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{car.totalBookings || 0}</Text>
-              <Text style={styles.statLabel}>Total Bookings</Text>
-            </View>
+          <View style={styles.stats}>
+            <Stat label="Trips" value={String(car.totalBookings)} />
             <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>₦{(car.totalEarnings || 0).toLocaleString()}</Text>
-              <Text style={styles.statLabel}>Total Earnings</Text>
+            <Stat label="You earned" value={naira(earned)} />
+            <View style={styles.statDivider} />
+            <Stat label="Rating" value={car.rating?.totalReviews ? `${car.rating.averageOverall.toFixed(1)} ★` : 'New'} />
+          </View>
+
+          <AppText variant="heading" style={styles.h}>
+            Prices
+          </AppText>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={styles.price}>
+              <AppText variant="small" color={color.muted}>
+                Per day
+              </AppText>
+              <AppText variant="heading">{naira(car.pricePerDay)}</AppText>
+              <AppText variant="small" color={color.success} style={{ fontSize: 12 }}>
+                You get {naira(Math.round(car.pricePerDay * (1 - settings.commissionRate)))}
+              </AppText>
+            </View>
+            <View style={styles.price}>
+              <AppText variant="small" color={color.muted}>
+                Per hour
+              </AppText>
+              <AppText variant="heading">{car.pricePerHour ? naira(car.pricePerHour) : 'Off'}</AppText>
+              <AppText variant="small" color={car.pricePerHour ? color.success : color.muted} style={{ fontSize: 12 }}>
+                {car.pricePerHour ? `You get ${naira(Math.round(car.pricePerHour * (1 - settings.commissionRate)))}` : 'Daily bookings only'}
+              </AppText>
             </View>
           </View>
+
+          <AppText variant="heading" style={styles.h}>
+            Details
+          </AppText>
+          <View style={styles.specs}>
+            {specs.map((s) => (
+              <View key={s.label} style={styles.spec}>
+                <View style={styles.specIcon}>
+                  <Feather name={s.icon} size={16} color={color.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <AppText variant="small" color={color.muted}>
+                    {s.label}
+                  </AppText>
+                  <AppText variant="bodyMedium" numberOfLines={1}>
+                    {s.value}
+                  </AppText>
+                </View>
+              </View>
+            ))}
+          </View>
+          {!!car.description && (
+            <AppText variant="body" color={color.text} style={{ marginTop: 14 }}>
+              {car.description}
+            </AppText>
+          )}
+
+          <AppText variant="heading" style={styles.h}>
+            Upcoming trips
+          </AppText>
+          {upcoming.length ? (
+            upcoming.map((b) => <VendorBookingCard key={b.id} booking={b} onPress={() => onOpenBooking(b.id)} />)
+          ) : (
+            <AppText variant="body" color={color.muted}>
+              No upcoming trips for this car.
+            </AppText>
+          )}
+
+          <Pressable onPress={remove} disabled={busy} style={styles.remove} accessibilityRole="button">
+            <Feather name="trash-2" size={16} color={color.danger} />
+            <AppText variant="bodyMedium" color={color.danger}>
+              Remove from fleet
+            </AppText>
+          </Pressable>
         </View>
-
-        {/* Action Buttons */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.editButton}
-            onPress={() => onEditCar(carId)}
-          >
-            <Text style={styles.editButtonText}>✏️ Edit Car Details</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-            <Text style={styles.deleteButtonText}>🗑️ Delete Car</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.bottomSpacing} />
       </ScrollView>
+
+      <BottomBar button={<Button title="Edit car" icon="edit-2" onPress={() => onEditCar(car.id)} />} />
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
+const Stat = ({ label, value }: { label: string; value: string }) => (
+  <View style={{ flex: 1, alignItems: 'center' }}>
+    <AppText variant="subheading" numberOfLines={1} adjustsFontSizeToFit>
+      {value}
+    </AppText>
+    <AppText variant="small" color={color.muted}>
+      {label}
+    </AppText>
+  </View>
+);
+
+const Notice = ({
+  icon,
+  tone,
+  title,
+  body,
+  action,
+  onAction,
+}: {
+  icon: IconName;
+  tone: 'amber' | 'red';
+  title: string;
+  body: string;
+  action?: string;
+  onAction?: () => void;
+}) => (
+  <View style={[styles.notice, { backgroundColor: tone === 'amber' ? color.warningSoft : color.dangerSoft }]}>
+    <Feather name={icon} size={18} color={tone === 'amber' ? color.warning : color.danger} style={{ marginTop: 1 }} />
+    <View style={{ flex: 1 }}>
+      <AppText variant="bodyMedium" color={tone === 'amber' ? color.warning : color.danger}>
+        {title}
+      </AppText>
+      <AppText variant="small" color={color.text} style={{ marginTop: 2 }}>
+        {body}
+      </AppText>
+      {!!action && (
+        <Pressable onPress={onAction} hitSlop={6} style={{ marginTop: 8 }}>
+          <AppText variant="smallMedium" color={color.primary}>
+            {action}
+          </AppText>
+        </Pressable>
+      )}
+    </View>
+  </View>
+);
+
+const styles = themed(() => StyleSheet.create({
+  root: { flex: 1, backgroundColor: color.bg },
+  center: { alignItems: 'center', justifyContent: 'center' },
+  photoBar: { position: 'absolute', left: gutter, right: gutter, flexDirection: 'row', justifyContent: 'space-between' },
+  counter: { position: 'absolute', right: gutter, bottom: 36, paddingHorizontal: 10, height: 26, borderRadius: 13, backgroundColor: 'rgba(15,23,42,0.6)', justifyContent: 'center' },
+  sheet: { marginTop: -24, backgroundColor: color.bg, borderTopLeftRadius: radius.xxl, borderTopRightRadius: radius.xxl, paddingHorizontal: gutter, paddingTop: 24 },
+  notice: { flexDirection: 'row', gap: 12, marginTop: 16, padding: 14, borderRadius: radius.lg },
+  toggle: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16, padding: 14, borderRadius: radius.lg, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  toggleIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  stats: { flexDirection: 'row', alignItems: 'center', marginTop: 16, paddingVertical: 14, borderRadius: radius.lg, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  statDivider: { width: 1, height: 30, backgroundColor: color.border },
+  h: { marginTop: 24, marginBottom: 12 },
+  price: { flex: 1, padding: 14, borderRadius: radius.lg, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  specs: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  spec: {
+    width: (SCREEN_WIDTH - gutter * 2 - 10) / 2,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: 60,
-    paddingBottom: spacing.md,
-    backgroundColor: colors.background,
+    gap: 10,
+    padding: 12,
+    borderRadius: radius.lg,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.border,
   },
-  backButton: {
-    padding: spacing.sm,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: colors.text,
-  },
-  headerTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-  },
-  headerSpacer: {
-    width: 40,
-  },
-  statusBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: borderRadius.sm,
-  },
-  statusText: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textWhite,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  errorText: {
-    fontSize: typography.fontSize.base,
-    color: '#EF4444',
-  },
-  imageSection: {
-    backgroundColor: colors.backgroundGray,
-  },
-  mainImage: {
-    width: '100%',
-    height: 200,
-  },
-  imagePlaceholder: {
-    width: '100%',
-    height: 100,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.inputBackground,
-  },
-  placeholderText: {
-    fontSize: 100,
-    marginBottom: spacing.sm,
-  },
-  placeholderSubtext: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  thumbnailScroll: {
-    backgroundColor: colors.backgroundGray,
-  },
-  thumbnailContainer: {
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  thumbnail: {
-    width: 80,
-    height: 60,
-    borderRadius: borderRadius.sm,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  thumbnailActive: {
-    borderColor: colors.primary,
-  },
-  thumbnailImage: {
-    width: '100%',
-    height: '100%',
-  },
-  section: {
-    padding: spacing.lg,
-  },
-  carName: {
-    fontSize: typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  carYear: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-    marginBottom: spacing.sm,
-  },
-  typeChip: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.primary + '20',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.lg,
-  },
-  typeText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  sectionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  pricingCard: {
-    backgroundColor: colors.backgroundGray,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-  },
-  priceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-  },
-  priceLabel: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  priceValue: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.primary,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-  },
-  specsCard: {
-    backgroundColor: colors.backgroundGray,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-  },
-  specRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-  },
-  specLabel: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  specValue: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
-  },
-  locationCard: {
-    backgroundColor: colors.backgroundGray,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-  },
-  locationText: {
-    fontSize: typography.fontSize.base,
-    color: colors.text,
-    lineHeight: typography.fontSize.base * 1.5,
-  },
-  descriptionCard: {
-    backgroundColor: colors.backgroundGray,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-  },
-  descriptionText: {
-    fontSize: typography.fontSize.base,
-    color: colors.text,
-    lineHeight: typography.fontSize.base * 1.5,
-  },
-  statsCard: {
-    flexDirection: 'row',
-    backgroundColor: colors.backgroundGray,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.primary,
-    marginBottom: spacing.xs,
-  },
-  statLabel: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: colors.border,
-    marginHorizontal: spacing.md,
-  },
-  editButton: {
-    backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  editButtonText: {
-    color: colors.textWhite,
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  deleteButton: {
-    backgroundColor: '#EF4444',
-    borderRadius: borderRadius.lg,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-  },
-  deleteButtonText: {
-    color: colors.textWhite,
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  bottomSpacing: {
-    height: 40,
-  },
-});
+  specIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: color.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  remove: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 28, height: 48, borderRadius: radius.lg, borderWidth: 1, borderColor: color.dangerBorder, backgroundColor: color.dangerSoft },
+}));

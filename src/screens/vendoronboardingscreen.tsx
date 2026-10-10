@@ -1,315 +1,155 @@
-import React, { useState, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  Dimensions,
-  TouchableOpacity,
-  Image,
-} from 'react-native';
-import { Button } from '../components';
-import { colors, typography, spacing, borderRadius } from '../constants';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-// Vendor onboarding slide data
-const vendorOnboardingData = [
-  {
-    id: '1',
-    title: 'Manage Your Fleet Effortlessly',
-    description: 'Track performance, bookings, and earnings all in one dashboard.',
-    image: require('../../assets/images/vendoronboarding1.png'),
-  },
-  {
-    id: '2',
-    title: 'Add Cars in Minutes',
-    description: 'Update availability, track maintenance, and maximize your fleet\'s uptime.',
-    image: require('../../assets/images/vendoronboarding2.png'),
-  },
-  {
-    id: '3',
-    title: 'Earn Securely',
-    description: 'Withdraw earnings instantly with full transaction transparency.',
-    image: require('../../assets/images/vendoronboarding3.png'),
-  },
-  {
-    id: '4',
-    title: 'Never Miss a Booking',
-    description: 'Get real-time ride requests and manage trips seamlessly.',
-    image: require('../../assets/images/vendoronboarding4.png'),
-  },
-];
+// "Become a vendor" landing: what Escardia does for vendors, how it works, and the way in.
+import React from 'react';
+import { Image, ScrollView, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppText, Button, IconButton, IconName, LogoTile } from '../ui';
+import { useAppSettings } from '../hooks/useAppSettings';
+import { brand, color, gutter, radius, themed } from '../theme';
 
 interface VendorOnboardingScreenProps {
   onComplete: () => void;
   onNavigateToVendorSignIn: () => void;
-   onNavigateBack: () => void;
+  onNavigateBack: () => void;
 }
 
-export const VendorOnboardingScreen: React.FC<VendorOnboardingScreenProps> = ({ 
-  onComplete,
-  onNavigateToVendorSignIn, 
-  onNavigateBack,
-}) => {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const flatListRef = useRef<FlatList>(null);
+export const VendorOnboardingScreen: React.FC<VendorOnboardingScreenProps> = ({ onComplete, onNavigateToVendorSignIn, onNavigateBack }) => {
+  const insets = useSafeAreaInsets();
+  const { settings } = useAppSettings();
+  const commission = `${Math.round(settings.commissionRate * 1000) / 10}%`;
 
-  const handleNext = () => {
-    if (currentIndex < vendorOnboardingData.length - 1) {
-      const nextIndex = currentIndex + 1;
-      flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
-      setCurrentIndex(nextIndex);
-    }
-  };
+  const PERKS: { icon: IconName; title: string; body: string }[] = [
+    { icon: 'shield', title: 'Paid upfront, every time', body: 'Customers pay in full when they book. No chasing payments.' },
+    { icon: 'calendar', title: 'Bookings straight to your phone', body: 'See every booking, assign your driver and track trips in one place.' },
+    { icon: 'trending-up', title: 'Your prices, your fleet', body: 'Set daily and hourly rates and take cars offline whenever you need.' },
+  ];
 
-  const handleSkip = () => {
-    onComplete();
-  };
-
-  const handleGetStarted = () => {
-    onComplete();
-  };
-
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) {
-      setCurrentIndex(viewableItems[0].index || 0);
-    }
-  }).current;
-
-  const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 50,
-  }).current;
-
-  const renderItem = ({ item }: { item: typeof vendorOnboardingData[0] }) => (
-    <View style={styles.slide}>
-      <View style={styles.illustrationContainer}>
-        <Image
-          source={item.image}
-          style={styles.illustration}
-          resizeMode="contain"
-        />
-      </View>
-
-      <Text style={styles.title}>{item.title}</Text>
-      <Text style={styles.description}>{item.description}</Text>
-    </View>
-  );
-
-  const renderPagination = () => (
-    <View style={styles.paginationContainer}>
-      {vendorOnboardingData.map((_, index) => (
-        <View
-          key={index}
-          style={[
-            styles.paginationDot,
-            index === currentIndex && styles.paginationDotActive,
-          ]}
-        />
-      ))}
-    </View>
-  );
+  const STEPS: { title: string; body: string }[] = [
+    { title: 'Create your vendor account', body: 'Your details, your business name and a photo of your ID. About five minutes.' },
+    { title: 'List your cars', body: 'Add photos and prices. Escardia checks your details and each car before it goes live.' },
+    {
+      title: 'Take bookings and get paid',
+      body: `Escardia keeps a ${commission} commission. Your share is released ${settings.payoutHoldHours} hours after each trip, then you withdraw to your bank.`,
+    },
+  ];
 
   return (
-    <View style={styles.container}>
-      {/* Header with Logo */}
-     {/* Header with Logo */}
-<View style={styles.header}>
-  <TouchableOpacity 
-    style={styles.backButton} 
-    onPress={onNavigateBack}
-  >
-    <Text style={styles.backIcon}>←</Text>
-  </TouchableOpacity>
-  
-  <View style={styles.headerCenter}>
-    <Image
-      source={require('../../assets/images/logo.png')}
-      style={styles.logo}
-      resizeMode="contain"
-    />
-    <Text style={styles.headerTitle}>Vendor Onboarding</Text>
-  </View>
-  
-  <View style={styles.headerSpacer} />
-</View>
+    <View style={styles.root}>
+      <StatusBar style="light" />
+      <ScrollView bounces={false} showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
+        <View style={[styles.hero, { paddingTop: insets.top + 12 }]}>
+          <View style={styles.glowA} />
+          <View style={styles.glowB} />
+          <View style={styles.top}>
+            <IconButton icon="chevron-left" dark onPress={onNavigateBack} accessibilityLabel="Go back" />
+            <View style={styles.chip}>
+              <Feather name="briefcase" size={13} color={brand[200]} />
+              <AppText variant="smallMedium" color={color.primaryBorder}>
+                Escardia for vendors
+              </AppText>
+            </View>
+            <LogoTile size={40} />
+          </View>
 
-      {/* Skip Button */}
-      {currentIndex < vendorOnboardingData.length - 1 && (
-        <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-          <Text style={styles.skipText}>Skip</Text>
-        </TouchableOpacity>
-      )}
+          <AppText variant="display" color={color.onDark} style={{ marginTop: 28 }}>
+            Earn with your{'\n'}luxury cars
+          </AppText>
+          <AppText variant="body" color={color.onDarkMuted} style={{ marginTop: 10, maxWidth: 330 }}>
+            List your fleet on Escardia and get bookings from customers across Lagos who want premium cars and professional drivers.
+          </AppText>
 
-      {/* Onboarding Slides */}
-      <FlatList
-        ref={flatListRef}
-        data={vendorOnboardingData}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
-        scrollEnabled={true}
-        onMomentumScrollEnd={(event) => {
-          const index = Math.round(event.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-          setCurrentIndex(index);
-        }}
-      />
+          <Image source={require('../../assets/images/promocar.png')} style={styles.car} resizeMode="contain" />
+        </View>
 
-      {/* Pagination Dots */}
-      {renderPagination()}
+        {/* The light panel runs to the bottom of the screen; its own padding clears the home bar. */}
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 24 }]}>
+          {PERKS.map((p) => (
+            <View key={p.title} style={styles.perk}>
+              <View style={styles.perkIcon}>
+                <Feather name={p.icon} size={18} color={color.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <AppText variant="subheading">{p.title}</AppText>
+                <AppText variant="small" color={color.muted} style={{ marginTop: 2 }}>
+                  {p.body}
+                </AppText>
+              </View>
+            </View>
+          ))}
 
-      {/* Bottom Buttons */}
-      <View style={styles.buttonContainer}>
-        {currentIndex === vendorOnboardingData.length - 1 ? (
-          <>
-            <Button
-              title="Create a new account"
-              onPress={handleGetStarted}
-              style={styles.button}
-            />
-            <Button
-              title="Login"
-              onPress={onNavigateToVendorSignIn}
-              variant="outline"
-              style={styles.button}
-            />
-          </>
-        ) : (
-          <Button
-            title="Next"
-            onPress={handleNext}
-            style={styles.button}
-          />
-        )}
-      </View>
+          <AppText variant="caption" color={color.muted} style={{ marginTop: 24, marginBottom: 12 }}>
+            How it works
+          </AppText>
+          <View style={styles.steps}>
+            {STEPS.map((s, i) => (
+              <View key={s.title} style={styles.stepRow}>
+                <View style={{ alignItems: 'center' }}>
+                  <View style={styles.stepNum}>
+                    <AppText variant="smallMedium" color="#FFFFFF">
+                      {i + 1}
+                    </AppText>
+                  </View>
+                  {i < STEPS.length - 1 && <View style={styles.stepLine} />}
+                </View>
+                <View style={{ flex: 1, paddingBottom: i < STEPS.length - 1 ? 18 : 0 }}>
+                  <AppText variant="bodyMedium">{s.title}</AppText>
+                  <AppText variant="small" color={color.muted} style={{ marginTop: 2 }}>
+                    {s.body}
+                  </AppText>
+                </View>
+              </View>
+            ))}
+          </View>
+
+          <Button title="Become a vendor" iconRight="arrow-right" onPress={onComplete} style={{ marginTop: 28 }} />
+          <Button title="I already have a vendor account" variant="secondary" onPress={onNavigateToVendorSignIn} style={{ marginTop: 12 }} />
+        </View>
+      </ScrollView>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  
-  header: {
-    alignItems: 'center',
-    paddingTop: 60,
-    paddingBottom: spacing.md,
-  },
-  
-  logo: {
-    width: 50,
-    height: 50,
-    marginBottom: spacing.xs,
-  },
-  
-  headerTitle: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeight.medium,
-  },
-  
-  skipButton: {
-    position: 'absolute',
-    top: 60,
-    right: spacing.lg,
-    zIndex: 10,
-    padding: spacing.sm,
-  },
-  
-  skipText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeight.medium,
-  },
-  
-  slide: {
-    width: SCREEN_WIDTH,
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-  },
-  
-  illustrationContainer: {
-    width: 250,
-    height: 250,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.xl,
-  },
-  
-  illustration: {
-    width: '100%',
-    height: '100%',
-  },
-  
-  title: {
-    fontSize: typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-  },
-  
-  description: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: typography.lineHeight.relaxed * typography.fontSize.base,
-  },
-  
-  paginationContainer: {
+const styles = themed(() => StyleSheet.create({
+  root: { flex: 1, backgroundColor: color.navy },
+  hero: { paddingHorizontal: gutter, paddingBottom: 40, overflow: 'hidden' },
+  glowA: { position: 'absolute', width: 340, height: 340, borderRadius: 170, backgroundColor: brand[600], opacity: 0.35, top: -160, right: -130 },
+  glowB: { position: 'absolute', width: 260, height: 260, borderRadius: 130, backgroundColor: brand[500], opacity: 0.16, bottom: -80, left: -90 },
+  top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  chip: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: spacing.lg,
+    gap: 6,
+    paddingHorizontal: 12,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
   },
-  
-  paginationDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.border,
-    marginHorizontal: spacing.xs,
+  car: { width: '100%', height: 200, marginTop: 12, marginBottom: -12 },
+  sheet: {
+    flex: 1,
+    backgroundColor: color.bg,
+    borderTopLeftRadius: radius.xxl,
+    borderTopRightRadius: radius.xxl,
+    marginTop: -24,
+    paddingHorizontal: gutter,
+    paddingTop: 24,
   },
-  
-  paginationDotActive: {
-    backgroundColor: colors.primary,
-    width: 24,
+  perk: {
+    flexDirection: 'row',
+    gap: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderRadius: radius.xl,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.border,
   },
-  
-  buttonContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
-  },
-  
-  button: {
-    marginBottom: spacing.md,
-  },
-  backButton: {
-  position: 'absolute',
-  left: spacing.lg,
-  top: 60,
-  zIndex: 10,
-  padding: spacing.sm,
-},
-
-backIcon: {
-  fontSize: 24,
-  color: colors.text,
-},
-
-headerCenter: {
-  alignItems: 'center',
-},
-
-headerSpacer: {
-  width: 40,
-},
-});
+  perkIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: color.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  steps: { padding: 16, borderRadius: radius.xl, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  stepRow: { flexDirection: 'row', gap: 14 },
+  stepNum: { width: 28, height: 28, borderRadius: 14, backgroundColor: color.primary, alignItems: 'center', justifyContent: 'center' },
+  stepLine: { flex: 1, width: 2, backgroundColor: color.primaryBorder, marginVertical: 4 },
+}));

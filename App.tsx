@@ -1,6 +1,14 @@
 import React, { useRef } from 'react';
-import { View, StyleSheet, Animated } from 'react-native';
+import { BackHandler } from 'react-native';
+import { BackSwipe } from './src/ui/BackSwipe';
+import { View, StyleSheet, Animated, useColorScheme } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { setActiveScheme, color } from './src/theme';
+import { ThemeModeContext, ThemeMode, THEME_MODE_KEY } from './src/ui/Appearance';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useFonts, Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold } from '@expo-google-fonts/poppins';
+import { ForgotPasswordScreen } from './src/screens/forgotpasswordscreen';
 import { OnboardingScreen } from './src/screens/onboardingscreen';
 import { SignUpScreen } from './src/screens/signupscreen';
 import { SignInScreen } from './src/screens/signinscreen';
@@ -9,7 +17,7 @@ import { HomeScreen } from './src/screens/homescreen';
 import { ProfileScreen } from './src/screens/profilescreen';
 import { CarDetailsScreen } from './src/screens/cardetailsscreen';
 import { useEffect, useState } from 'react';
-import { auth, onAuthStateChanged } from './src/config/supabase';
+import { auth, onAuthStateChanged, supabase } from './src/config/supabase';
 import { getUserProfile } from './src/services/authservice';
 import { TripDetailScreen } from './src/screens/tripdetailsscreen';
 import { RideModeScreen } from './src/screens/ridemodescreen';
@@ -19,7 +27,6 @@ import { CarsScreen } from './src/screens/carsscreen';
 import { TripsScreen } from './src/screens/tripsscreen';
 import { FavoriteCarsScreen } from './src/screens/favouritecarsscreen';
 import { createBooking } from './src/services/bookingService';
-import { SplashScreen } from './src/screens/SplashScreen';
 import { WelcomeScreen } from './src/screens/welcomescreen';
 import { SupportScreen } from './src/screens/supportscreen';
 import { ContactUsScreen } from './src/screens/contactusscreen';
@@ -28,16 +35,13 @@ import { PoliciesScreen } from './src/screens/policiesscreen';
 import { SecurityLoginSafetyScreen } from './src/screens/securityloginsafetyscreen';
 import { SafetyTipsScreen } from './src/screens/safetytipsscreen';
 import { ChangePasswordScreen } from './src/screens/changepasswordscreen';
-import { ChatWithUsScreen } from './src/screens/chatwithusscreen';
 import { WalletScreen } from './src/screens/walletscreen';
 import { TransactionsScreen } from './src/screens/transactionsscreen';
 import { TripBookingScreen } from './src/screens/tripbookingscreen';
-import { EditTripScreen } from './src/screens/edittripscreen';
 import CardPaymentScreen from './src/screens/cardpaymentscreen';
 import BankTransferScreen from './src/screens/banktransferscreen';
 import { VendorOnboardingScreen } from './src/screens/vendoronboardingscreen';
 import { VendorAccountCreationScreen } from './src/screens/vendoraccountcreationscreen';
-import { VendorPhoneVerificationScreen } from './src/screens/vendorphoneverificationscreen';
 import { VendorBusinessRegistrationScreen } from './src/screens/vendorbusinessregistrationscreen';
 import { VendorIDVerificationScreen } from './src/screens/vendorIDverificationscreen';
 import { VendorSignInScreen } from './src/screens/vendorsigninscreen';
@@ -52,7 +56,7 @@ import { VendorEarningsScreen } from './src/screens/vendorearningsscreen';
 import { ManageDriversScreen } from './src/screens/managedriversscreen';
 import { NotificationsScreen } from './src/screens/notificationsscreen';
 import { WithdrawFundsScreen } from './src/screens/withdrawfundsscreen';
-import type { VendorAccountData } from './src/screens/vendoraccountcreationscreen';
+import type { VendorTab } from './src/ui/TabBar';
 import { EditCarScreen } from './src/screens/editcarscreen';
 import { VendorSettingsScreen } from './src/screens/vendorsettingsscreen';
 import { VendorBankDetailsScreen } from './src/screens/vendorbankdetailsscreen';
@@ -65,9 +69,58 @@ import { AddMoneyScreen } from './src/screens/addmoneyscreen';
 import { WalletPaymentScreen } from './src/screens/WalletPaymentScreen';
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState <
-   'splash' |'welcome' |'onboarding'| 'vendorOnboarding' | 'vendorAccountCreation' | 'myFleet' |'vendorSignIn'|'vendorPhoneVerification'| 'vendorBusinessRegistration'|'vendorIDVerification'|'vendorBookings'|'vendorBookingDetail'| 'vendorCarDetail'|'vendorDashboard'|'vendorProfile'| 'vendorEarnings'|'addCar'| 'manageDrivers'| 'withdrawFunds'|'editCar' |'signup' | 'notifications' | 'signin' | 'verify' | 'home' | 'profile' | 'carDetails' | 'tripDetails' | 'rideMode'| 'payment' | 'confirmation' | 'cars' | 'trips'| 'search' | 'favorites' | 'support' | 'contactUs' | 'faq' | 'policies'|'securityLoginSafety' | 'safetyTips' | 'changePassword'| 'chatWithUs'| 'wallet' | 'transactions'| 'tripDetail' | 'editTrip' | 'tripBooking' | 'editTrip' |'cardPayment' | 'bankTransfer'| 'vendorSettings' | 'vendorBankDetails' | 'vendorDocuments' | 'vendorAnalytics' | 'vendorNotificationPreferences' | 'vendorTermsAndPrivacy' | 'vendorHelpAndSupport'| 'addMoney' | 'walletPayment' 
-  >('splash');
+  const [fontsLoaded] = useFonts({ Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold });
+
+  // ---- Light / dark mode ----
+  // Follows the phone unless the user picked Light or Dark in Appearance (saved on the phone).
+  const systemScheme = useColorScheme();
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
+  const [themeLoaded, setThemeLoaded] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem(THEME_MODE_KEY)
+      .then((v) => {
+        if (v === 'light' || v === 'dark' || v === 'system') setThemeModeState(v);
+      })
+      .catch(() => {})
+      .finally(() => setThemeLoaded(true));
+  }, []);
+  const setThemeMode = (m: ThemeMode) => {
+    setThemeModeState(m);
+    AsyncStorage.setItem(THEME_MODE_KEY, m).catch(() => {});
+  };
+  const scheme = themeMode === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : themeMode;
+  setActiveScheme(scheme); // colours for everything drawn below
+  type Screen = 'splash' |'welcome' |'onboarding'| 'forgotPassword' | 'vendorOnboarding' | 'vendorAccountCreation' | 'myFleet' |'vendorSignIn'|'vendorPhoneVerification'| 'vendorBusinessRegistration'|'vendorIDVerification'|'vendorBookings'|'vendorBookingDetail'| 'vendorCarDetail'|'vendorDashboard'|'vendorProfile'| 'vendorEarnings'|'addCar'| 'manageDrivers'| 'withdrawFunds'|'editCar' |'signup' | 'notifications' | 'signin' | 'verify' | 'home' | 'profile' | 'carDetails' | 'tripDetails' | 'rideMode'| 'payment' | 'confirmation' | 'cars' | 'trips'| 'search' | 'favorites' | 'support' | 'contactUs' | 'faq' | 'policies'|'securityLoginSafety' | 'safetyTips' | 'changePassword'| 'chatWithUs'| 'wallet' | 'transactions'| 'tripDetail' | 'editTrip' | 'tripBooking' | 'editTrip' |'cardPayment' | 'bankTransfer'| 'vendorSettings' | 'vendorBankDetails' | 'vendorDocuments' | 'vendorAnalytics' | 'vendorNotificationPreferences' | 'vendorTermsAndPrivacy' | 'vendorHelpAndSupport'| 'addMoney' | 'walletPayment';
+  const [currentScreen, setScreenState] = useState<Screen>('splash');
+
+  // ---- Back history (swipe from the left edge, Android back) ----
+  // Tab screens start a fresh history. Some screens are never returned to (splash, code
+  // screens, payment screens) so you can't swipe back into a payment you already made.
+  const screenRef = useRef<Screen>('splash');
+  const historyRef = useRef<Screen[]>([]);
+  const ROOTS: Screen[] = ['welcome', 'home', 'cars', 'trips', 'profile', 'vendorDashboard', 'myFleet', 'vendorBookings', 'vendorEarnings', 'vendorProfile'];
+  const NEVER_RETURN: Screen[] = ['splash', 'verify', 'vendorPhoneVerification', 'cardPayment', 'walletPayment', 'bankTransfer'];
+  const NO_SWIPE: Screen[] = ['splash', 'confirmation'];
+
+  const setCurrentScreen = (to: Screen) => {
+    const prev = screenRef.current;
+    if (to === prev) return;
+    const h = historyRef.current;
+    if (ROOTS.includes(to)) historyRef.current = [];
+    else if (h[h.length - 1] === to) h.pop(); // a Back button that goes to the previous screen
+    else if (!NEVER_RETURN.includes(prev)) h.push(prev);
+    screenRef.current = to;
+    setScreenState(to);
+  };
+
+  const canSwipeBack = historyRef.current.length > 0 && !NO_SWIPE.includes(currentScreen);
+  const goBackInHistory = () => {
+    const to = historyRef.current.pop();
+    if (!to) return false;
+    screenRef.current = to;
+    setScreenState(to);
+    return true;
+  };
   
   const [user, setUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -81,8 +134,76 @@ export default function App() {
   const [pendingEmail, setPendingEmail] = useState('');
   const [vendorProfile, setVendorProfile] = useState<any>(null);
   const [selectedCarId, setSelectedCarId] = useState<string | null>(null);
+  const [notificationsFrom, setNotificationsFrom] = useState<'home' | 'profile' | 'vendorDashboard' | 'vendorProfile'>('vendorDashboard');
+  const [carsFocus, setCarsFocus] = useState<'search' | 'filters' | null>(null);
+  const [carDetailsFrom, setCarDetailsFrom] = useState<'home' | 'cars' | 'favorites'>('home');
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
-  const [vendorAccountData, setVendorAccountData] = useState<VendorAccountData | null>(null);
+
+  // Remembers where each screen was opened from, so Back returns there.
+  const [backTo, setBackTo] = useState<Partial<Record<string, typeof currentScreen>>>({});
+  const openFrom = (to: typeof currentScreen) => {
+    setBackTo((m) => ({ ...m, [to]: currentScreen }));
+    setCurrentScreen(to);
+  };
+  const goBack = (from: typeof currentScreen, fallback: typeof currentScreen) => setCurrentScreen(backTo[from] ?? fallback);
+
+  const VENDOR_TABS: Record<VendorTab, typeof currentScreen> = {
+    dashboard: 'vendorDashboard',
+    fleet: 'myFleet',
+    bookings: 'vendorBookings',
+    earnings: 'vendorEarnings',
+    profile: 'vendorProfile',
+  };
+  const goVendorTab = (tab: VendorTab) => setCurrentScreen(VENDOR_TABS[tab]);
+
+  const openVendorBooking = (bookingId: string) => {
+    setSelectedBookingId(bookingId);
+    openFrom('vendorBookingDetail');
+  };
+  const openVendorCar = (carId: string) => {
+    setSelectedCarId(carId);
+    openFrom('vendorCarDetail');
+  };
+
+  const loadVendorProfile = async () => {
+    const u = auth.currentUser;
+    if (!u) return null;
+    const { getVendorProfile } = await import('./src/services/vendorauthservice');
+    const r = await getVendorProfile(u.uid);
+    if (r.success && r.data) setVendorProfile(r.data);
+    return r.success ? r.data ?? null : null;
+  };
+
+  /** After a vendor signs in (or reopens the app): finish sign up if needed, else the dashboard. */
+  const handleVendorSignedIn = async () => {
+    const u = auth.currentUser;
+    if (u) {
+      import('./src/services/notificationService').then(({ savePushToken }) => savePushToken(u.uid, 'vendor')).catch(() => {});
+    }
+    const p = await loadVendorProfile();
+    if (p && !p.businessName) {
+      setVendorData({ firstName: p.firstName, lastName: p.lastName, email: p.email, phoneNumber: p.phoneNumber });
+      setCurrentScreen('vendorBusinessRegistration');
+      return;
+    }
+    setCurrentScreen('vendorDashboard');
+  };
+
+  /** On launch: go straight in if already signed in, otherwise the welcome screen. */
+  const handleSplashDone = async () => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const uid = data.session?.user.id;
+      if (uid) {
+        const { data: p } = await supabase.from('profiles').select('role').eq('id', uid).maybeSingle();
+        if (p?.role === 'vendor') return handleVendorSignedIn();
+        if (p?.role === 'customer') return handleSignInSuccess();
+      }
+    } catch {
+      // Offline or signed out: fall through to the welcome screen.
+    }
+    setCurrentScreen('welcome');
+  };
   const [bookingFormData, setBookingFormData] = useState<any>({
   // Trip booking data
   pickupMethod: 'vendor',
@@ -96,6 +217,20 @@ export default function App() {
   escortCounts: { legion: 0, private: 0 },
   manualHiluxCount: 0,
 });
+
+  // Android back button / back gesture.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      const cur = screenRef.current;
+      if (NO_SWIPE.includes(cur)) return true;
+      if (goBackInHistory()) return true;
+      // On a tab, Back goes to the first tab before leaving the app.
+      if (['cars', 'trips', 'profile'].includes(cur)) return setCurrentScreen('home'), true;
+      if (['myFleet', 'vendorBookings', 'vendorEarnings', 'vendorProfile'].includes(cur)) return setCurrentScreen('vendorDashboard'), true;
+      return false;
+    });
+    return () => sub.remove();
+  }, []);
 
   // Listen for auth state changes
   useEffect(() => {
@@ -114,6 +249,13 @@ export default function App() {
 
     return unsubscribe;
   }, []);
+
+  const refreshUserProfile = async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const result = await getUserProfile(uid);
+    if (result.success) setUserProfile(result.data);
+  };
 
   const handleOnboardingComplete = () => {
     setCurrentScreen('signup');
@@ -151,7 +293,7 @@ export default function App() {
   };
 
   const handleForgotPassword = () => {
-    console.log('Navigate to Forgot Password');
+    openFrom('forgotPassword');
   };
 
   const handleVerifySuccess = async () => {
@@ -174,8 +316,8 @@ export default function App() {
   };
 
   const handleNavigateToCarDetails = (carId: string) => {
-    console.log('Viewing car:', carId);
     setSelectedCarId(carId);
+    setCarDetailsFrom(currentScreen === 'favorites' ? 'favorites' : currentScreen === 'cars' ? 'cars' : 'home');
     setCurrentScreen('carDetails');
   };
 
@@ -187,47 +329,6 @@ export default function App() {
     console.log('Trip data:', tripData);
     setBookingData({ tripData: tripData, escortData: null });
     setCurrentScreen('rideMode');
-  };
-
-  const handleNavigateToVendorBookingDetail = (bookingId: string) => {
-    setSelectedBookingId(bookingId);
-    setCurrentScreen('vendorBookingDetail');
-  };
-
-  const handleNavigateBackToVendorBookings = () => {
-    setCurrentScreen('vendorBookings');
-  };
-
-  const handleNavigateToVendorCarDetail = (carId: string) => {
-    setSelectedCarId(carId);
-    setCurrentScreen('vendorCarDetail');
-  };
-
-  const handleNavigateBackToFleet = () => {
-    setCurrentScreen('myFleet');
-  };
-
-  const handleEditCar = (carId: string) => {
-    setSelectedCarId(carId);
-    setCurrentScreen('editCar');
-  };
-
-  const handleDeleteCar = async (carId: string) => {
-    try {
-      const { deleteCar } = await import('./src/services/carservice');
-      const result = await deleteCar(carId);
-      if (!result.success) {
-        alert(result.error || 'Failed to delete car');
-        return;
-      }
-
-      alert('Car deleted successfully!');
-      setSelectedCarId(null);
-      setCurrentScreen('myFleet');
-    } catch (error) {
-      console.error('Error deleting car:', error);
-      alert('Failed to delete car');
-    }
   };
 
   const handleMakePayment = async () => {
@@ -358,7 +459,8 @@ export default function App() {
     }
   };
 
-  const handleNavigateToCars = () => {
+  const handleNavigateToCars = (focus?: 'search' | 'filters') => {
+    setCarsFocus(focus === 'search' || focus === 'filters' ? focus : null);
     setCurrentScreen('cars');
   };
 
@@ -379,6 +481,25 @@ export default function App() {
     setCurrentScreen('cars');
   };
 
+  /** After any successful payment: keep the real trip ID and amount, clear the form, show the receipt. */
+  const handleBookingPaid = (method: string, result?: { id: string | null; code: string | null; total: number }) => {
+    setSelectedPaymentMethod(method);
+    if (result?.total) setPaymentAmount(result.total);
+    setBookingData((prev: any) => ({ ...prev, bookingId: result?.id ?? prev?.bookingId, bookingCode: result?.code ?? prev?.bookingCode }));
+    setBookingFormData({
+      pickupMethod: 'vendor',
+      rateType: 'day',
+      deliveryAddress: '',
+      startDate: null,
+      endDate: null,
+      startTime: null,
+      stopTime: null,
+      escortCounts: { legion: 0, private: 0 },
+      manualHiluxCount: 0,
+    });
+    setCurrentScreen('confirmation');
+  };
+
 const handleContinueToPayment = (rideModeData: any) => {
   setBookingData((prev: any) => ({
     ...prev,
@@ -392,23 +513,23 @@ const handleContinueToPayment = (rideModeData: any) => {
   setCurrentScreen('payment');
 };
 
-const handleVendorAccountCreation = async (data: VendorAccountData) => {
-  // Creates the vendor login and emails a 6-digit code.
-  const { startVendorSignUp } = await import('./src/services/vendorauthservice');
-  const result = await startVendorSignUp(data);
-  if (!result.success) {
-    alert(result.error || 'Could not create your account');
-    return;
-  }
-  setVendorData(data);
-  // Skip the code screen while email confirmation is switched off in Supabase.
-  setCurrentScreen(result.needsVerification ? 'vendorPhoneVerification' : 'vendorBusinessRegistration');
-};
+  // No animated splash for now: once fonts are ready, go straight to the right first screen.
+  useEffect(() => {
+    if (fontsLoaded && themeLoaded && screenRef.current === 'splash') handleSplashDone();
+  }, [fontsLoaded, themeLoaded]);
+
+  // Wait for Poppins so screens never flash in the system font.
+  if (!fontsLoaded || !themeLoaded) return <View style={{ flex: 1, backgroundColor: '#0D1A3F' }} />;
 
   return (
-    <>
+    <SafeAreaProvider>
+      <ThemeModeContext.Provider value={{ mode: themeMode, setMode: setThemeMode }}>
+      {/* Keyed by theme so every screen redraws in the new colours when it changes. */}
+      <View key={scheme} style={{ flex: 1, backgroundColor: color.bg }}>
+      <BackSwipe enabled={canSwipeBack} onBack={goBackInHistory}>
       <StatusBar style="auto" />
-      {currentScreen === 'splash' && <SplashScreen onFinish={() => setCurrentScreen('welcome')} />}
+      {/* Plain brand colour for the split second while we check if someone is signed in. */}
+      {currentScreen === 'splash' && <View style={{ flex: 1, backgroundColor: '#0D1A3F' }} />}
       {currentScreen === 'welcome' && <WelcomeScreen onGetStarted={() => setCurrentScreen('onboarding')} />}
       {currentScreen === 'onboarding' && (
         <OnboardingScreen
@@ -433,21 +554,31 @@ const handleVendorAccountCreation = async (data: VendorAccountData) => {
           }}
           onNavigateToSignUp={handleNavigateToSignUp}
           onForgotPassword={handleForgotPassword}
-          onNavigateBack={() => setCurrentScreen('signup')}
+          onNavigateBack={() => setCurrentScreen('onboarding')}
         />
       )}
-      {currentScreen === 'verify' && <VerifyCodeScreen email={pendingEmail} onVerifySuccess={handleVerifySuccess} />}
+      {currentScreen === 'forgotPassword' && (
+        <ForgotPasswordScreen
+          onNavigateBack={() => goBack('forgotPassword', 'signin')}
+          onDone={backTo.forgotPassword === 'vendorSignIn' ? handleVendorSignedIn : handleSignInSuccess}
+        />
+      )}
+      {currentScreen === 'verify' && (
+        <VerifyCodeScreen email={pendingEmail} onVerifySuccess={handleVerifySuccess} onNavigateBack={() => setCurrentScreen('signup')} />
+      )}
       {currentScreen === 'home' && (
         <HomeScreen
           userName={userProfile?.firstName || 'Guest'}
+          avatarUrl={userProfile?.avatarUrl}
           onNavigateToProfile={handleNavigateToProfile}
-          onNavigateToCarDetails={(carId) => {
-            setSelectedCarId(carId);
-            setCurrentScreen('carDetails');
-          }}
+          onNavigateToCarDetails={handleNavigateToCarDetails}
           onNavigateToCars={handleNavigateToCars}
           onNavigateToTrips={handleNavigateToTrips}
           onNavigateToSearch={handleNavigateToSearch}
+          onNavigateToNotifications={() => {
+            setNotificationsFrom('home');
+            setCurrentScreen('notifications');
+          }}
         />
       )}
       {currentScreen === 'profile' && (
@@ -468,12 +599,17 @@ const handleVendorAccountCreation = async (data: VendorAccountData) => {
           onNavigateToWallet={() => setCurrentScreen('wallet')}
           onNavigateToVendorOnboarding={() => setCurrentScreen('vendorOnboarding')}
           onNavigateToWelcome={() => setCurrentScreen('welcome')}
+          onNavigateToNotifications={() => {
+            setNotificationsFrom('profile');
+            setCurrentScreen('notifications');
+          }}
+          onProfileChanged={refreshUserProfile}
         />
       )}
       {currentScreen === 'carDetails' && selectedCarId && (
         <CarDetailsScreen
           carId={selectedCarId}
-          onNavigateBack={handleNavigateBackToHome}
+          onNavigateBack={() => setCurrentScreen(carDetailsFrom)}
           onNavigateToTripDetails={(carData) => {
             setSelectedCar({
               id: selectedCarId,
@@ -515,6 +651,7 @@ const handleVendorAccountCreation = async (data: VendorAccountData) => {
       {currentScreen === 'confirmation' && (
         <BookingConfirmationScreen
           onBackToHome={() => setCurrentScreen('home')}
+          onViewTrips={() => setCurrentScreen('trips')}
           bookingData={bookingData}
           totalAmount={paymentAmount}
           paymentMethod={selectedPaymentMethod}
@@ -522,6 +659,7 @@ const handleVendorAccountCreation = async (data: VendorAccountData) => {
       )}
       {currentScreen === 'cars' && (
         <CarsScreen
+          initialFocus={carsFocus}
           onNavigateToCarDetails={handleNavigateToCarDetails}
           onNavigateToHome={handleNavigateBackToHome}
           onNavigateToProfile={handleNavigateToProfile}
@@ -533,78 +671,8 @@ const handleVendorAccountCreation = async (data: VendorAccountData) => {
           onNavigateToHome={handleNavigateBackToHome}
           onNavigateToCars={handleNavigateToCars}
           onNavigateToProfile={handleNavigateToProfile}
-          onNavigateToTripDetail={(firebaseBooking) => {
-            const calculateDuration = (startDate: string, endDate: string) => {
-              const parts1 = startDate.split(' ');
-              const parts2 = endDate.split(' ');
-
-              const months: { [key: string]: number } = {
-                Jan: 0,
-                Feb: 1,
-                Mar: 2,
-                Apr: 3,
-                May: 4,
-                Jun: 5,
-                Jul: 6,
-                Aug: 7,
-                Sep: 8,
-                Oct: 9,
-                Nov: 10,
-                Dec: 11,
-              };
-
-              const start = new Date(parseInt(parts1[2]), months[parts1[1]], parseInt(parts1[0]));
-              const end = new Date(parseInt(parts2[2]), months[parts2[1]], parseInt(parts2[0]));
-
-              const diffTime = Math.abs(end.getTime() - start.getTime());
-              return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            };
-
-            const durationDays = calculateDuration(firebaseBooking.startDate, firebaseBooking.endDate);
-
-            const transformedData = {
-              id: firebaseBooking.id,
-              vendorId: firebaseBooking.vendorId,
-              status: firebaseBooking.status,
-              rideMode: firebaseBooking.rideMode,
-              durationType: firebaseBooking.durationType || 'day',
-              durationValue: durationDays,
-              pickupLocation: firebaseBooking.pickupLocation,
-              car: {
-                model: firebaseBooking.car?.model || 'Unknown',
-                year: firebaseBooking.car?.year || '2024',
-                price: (firebaseBooking.car?.pricePerDay || firebaseBooking.car?.price || 0).toString(),
-                image: require('./assets/images/car-placeholder.png'),
-                photos: firebaseBooking.car?.photos || [],
-                seats: firebaseBooking.car?.seats || 4,
-                doors: firebaseBooking.car?.doors || 4,
-                ac: '6+',
-                transmission: firebaseBooking.car?.transmission || 'Automatic',
-                 vendorId: firebaseBooking.car?.vendorId || firebaseBooking.vendorId,
-              },
-              startDate: firebaseBooking.startDate,
-              startTime: firebaseBooking.startTime,
-              endDate: firebaseBooking.endDate,
-              endTime: firebaseBooking.stopTime,
-              escort: firebaseBooking.escort, 
-              escortCount: Array.isArray(firebaseBooking.escort)
-                ? firebaseBooking.escort.reduce((sum: number, e: any) => sum + e.count, 0)
-                : firebaseBooking.escort?.count || 0,
-              paymentMethod: firebaseBooking.paymentMethod || 'Escardia wallet',
-              totalCost: (firebaseBooking.totalPrice || 0).toString(),
-              driver: {
-                name: 'Uche Igwe',
-                phone: '08000000000',
-                photo: require('./assets/images/driver-placeholder.png'),
-              },
-              vendor: {
-                name: 'Uche Igwe',
-                phone: '08000000000',
-                photo: require('./assets/images/vendor-placeholder.png'),
-              },
-            };
-
-            setSelectedTrip(transformedData);
+          onNavigateToTripDetail={(booking) => {
+            setSelectedTrip(booking);
             setCurrentScreen('tripDetail');
           }}
         />
@@ -625,7 +693,6 @@ const handleVendorAccountCreation = async (data: VendorAccountData) => {
         />
       )}
 
-      {currentScreen === 'chatWithUs' && <ChatWithUsScreen onNavigateBack={() => setCurrentScreen('contactUs')} />}
 
       {currentScreen === 'faq' && <FAQScreen onNavigateBack={() => setCurrentScreen('support')} />}
 
@@ -633,7 +700,7 @@ const handleVendorAccountCreation = async (data: VendorAccountData) => {
       {currentScreen === 'securityLoginSafety' && (
         <SecurityLoginSafetyScreen
           onNavigateBack={() => setCurrentScreen('profile')}
-          onNavigateToChangePassword={() => setCurrentScreen('changePassword')}
+          onNavigateToChangePassword={() => openFrom('changePassword')}
           onNavigateToSafetyTips={() => setCurrentScreen('safetyTips')}
         />
       )}
@@ -644,14 +711,13 @@ const handleVendorAccountCreation = async (data: VendorAccountData) => {
 
       {currentScreen === 'changePassword' && (
         <ChangePasswordScreen
-          onNavigateBack={() => setCurrentScreen('securityLoginSafety')}
-          onPasswordChanged={() => setCurrentScreen('securityLoginSafety')}
+          onNavigateBack={() => goBack('changePassword', 'securityLoginSafety')}
+          onPasswordChanged={() => goBack('changePassword', 'securityLoginSafety')}
         />
       )}
       {currentScreen === 'contactUs' && (
         <ContactUsScreen
           onNavigateBack={() => setCurrentScreen('support')}
-          onNavigateToChatWithUs={() => setCurrentScreen('chatWithUs')}
         />
       )}
       {currentScreen === 'wallet' && (
@@ -678,40 +744,10 @@ const handleVendorAccountCreation = async (data: VendorAccountData) => {
     onFormDataChange={(data: any) => setBookingFormData((prev: any) => ({ ...prev, ...data }))}
   />
 )}
-      {currentScreen === 'editTrip' && selectedTrip && (
-        <EditTripScreen
-          tripData={selectedTrip}
-          onNavigateBack={() => setCurrentScreen('tripDetail')}
-          onSaveChanges={async (updatedData) => {
-            const { updateBooking } = await import('./src/services/bookingService');
-            const result = await updateBooking(updatedData.id, updatedData);
-
-            if (result.success) {
-              alert('Trip updated successfully');
-              setCurrentScreen('tripDetail');
-            } else {
-              alert('Failed to update trip: ' + result.error);
-            }
-          }}
-        />
-      )}
 {currentScreen === 'cardPayment' && (
   <CardPaymentScreen
     onNavigateBack={() => setCurrentScreen('payment')}
-    onPaymentComplete={(method: string) => {
-      setBookingFormData({
-        pickupMethod: 'vendor',
-        rateType: 'day',
-        deliveryAddress: '',
-        startDate: null,
-        endDate: null,
-        startTime: null,
-        stopTime: null,
-        escortCounts: { legion: 0, private: 0 },
-        manualHiluxCount: 0,
-      });
-      setCurrentScreen('confirmation');
-    }}
+    onPaymentComplete={handleBookingPaid}
     totalAmount={paymentAmount}
     bookingData={bookingData}
   />
@@ -719,263 +755,178 @@ const handleVendorAccountCreation = async (data: VendorAccountData) => {
  {currentScreen === 'bankTransfer' && (
   <BankTransferScreen
     onNavigateBack={() => setCurrentScreen('payment')}
-    onPaymentComplete={(method: string) => {
-      setBookingFormData({
-        pickupMethod: 'vendor',
-        rateType: 'day',
-        deliveryAddress: '',
-        startDate: null,
-        endDate: null,
-        startTime: null,
-        stopTime: null,
-        escortCounts: { legion: 0, private: 0 },
-        manualHiluxCount: 0,
-      });
-      setCurrentScreen('confirmation');
-    }}
+    onPaymentComplete={handleBookingPaid}
     totalAmount={paymentAmount}
     bookingData={bookingData}
   />
 )}
+      {/* ---------------- Vendor sign up and sign in ---------------- */}
       {currentScreen === 'vendorOnboarding' && (
         <VendorOnboardingScreen
           onComplete={() => setCurrentScreen('vendorAccountCreation')}
           onNavigateToVendorSignIn={() => setCurrentScreen('vendorSignIn')}
-          onNavigateBack={() => {
-            if (user) {
-              setCurrentScreen('profile');
-            } else {
-              setCurrentScreen('onboarding');
-            }
-          }}
+          onNavigateBack={() => setCurrentScreen(user ? 'profile' : 'onboarding')}
         />
       )}
       {currentScreen === 'vendorAccountCreation' && (
         <VendorAccountCreationScreen
-          onContinue={handleVendorAccountCreation}
+          onAccountCreated={(data, needsVerification) => {
+            setVendorData(data);
+            // Skip the code screen while email confirmation is switched off in Supabase.
+            setCurrentScreen(needsVerification ? 'vendorPhoneVerification' : 'vendorBusinessRegistration');
+          }}
           onNavigateBack={() => setCurrentScreen('vendorOnboarding')}
           onNavigateToVendorSignIn={() => setCurrentScreen('vendorSignIn')}
         />
       )}
       {currentScreen === 'vendorPhoneVerification' && vendorData && (
-        // Vendors confirm their email with a 6-digit code before uploading documents.
+        // Vendors confirm their email with a 6-digit code before their business details.
         <VerifyCodeScreen
           email={vendorData.email}
           onVerifySuccess={() => setCurrentScreen('vendorBusinessRegistration')}
+          onNavigateBack={() => setCurrentScreen('vendorAccountCreation')}
         />
       )}
       {currentScreen === 'vendorBusinessRegistration' && (
         <VendorBusinessRegistrationScreen
-          onNavigateBack={() => setCurrentScreen('vendorPhoneVerification')}
+          initial={vendorData ?? undefined}
+          onNavigateBack={() => setCurrentScreen(vendorProfile ? 'vendorSignIn' : 'vendorAccountCreation')}
           onContinue={(businessData) => {
             setVendorData((prev: any) => ({ ...prev, ...businessData }));
             setCurrentScreen('vendorIDVerification');
           }}
         />
       )}
-      {currentScreen === 'vendorIDVerification' && (
+      {currentScreen === 'vendorIDVerification' && vendorData && (
         <VendorIDVerificationScreen
+          vendorData={vendorData}
           onNavigateBack={() => setCurrentScreen('vendorBusinessRegistration')}
-          onComplete={async (idData) => {
-            const completeVendorData = { ...vendorData, ...idData };
-            setVendorData(completeVendorData);
-
-            console.log('🔵 Starting vendor registration...');
-
-            const { registerVendor } = await import('./src/services/vendorauthservice');
-
-            const result = await registerVendor(completeVendorData);
-
-            if (result.success) {
-              console.log('✅ Vendor registered! ID:', result.vendorId);
-
-              const { getVendorProfile } = await import('./src/services/vendorauthservice');
-              const profileResult = await getVendorProfile(result.vendorId!);
-
-              if (profileResult.success && profileResult.data) {
-                setVendorProfile(profileResult.data);
-              }
-
-              alert('Registration successful! Welcome to Escardia Vendor!');
-              setCurrentScreen('vendorDashboard');
-            } else {
-              console.error('❌ Registration failed:', result.error);
-              alert('Registration failed: ' + result.error);
-            }
-          }}
-        />
-      )}
-{currentScreen === 'vendorSignIn' && (
-  <VendorSignInScreen
-    onSignInSuccess={async () => {
-      const { getVendorProfile } = await import('./src/services/vendorauthservice');
-      const { savePushToken } = await import('./src/services/notificationService');  // ← ADD THIS
-      const user = auth.currentUser;
-
-      if (user) {
-        // Save push token ← ADD THIS
-        try {
-          await savePushToken(user.uid, 'vendor');
-        } catch (error) {
-          console.log('Push token error:', error);
-        }
-
-        console.log('🔵 Loading vendor profile...');
-        const result = await getVendorProfile(user.uid);
-
-        if (result.success && result.data) {
-          setVendorProfile(result.data);
-          console.log('✅ Vendor profile loaded:', result.data);
-        }
-      }
-
-      setCurrentScreen('vendorDashboard');
-    }}
-    onNavigateToSignUp={() => setCurrentScreen('vendorAccountCreation')}
-    onForgotPassword={() => {
-      alert('Password reset coming soon!');
-    }}
-    onNavigateBack={() => setCurrentScreen('vendorAccountCreation')}
-  />
-)}
-      {currentScreen === 'vendorDashboard' && (
-        <VendorDashboardScreen
-          vendorName={vendorProfile?.businessName || vendorProfile?.firstName || 'Vendor'}
-          onNavigateToFleet={() => setCurrentScreen('myFleet')}
-          onNavigateToBookings={() => setCurrentScreen('vendorBookings')}
-          onNavigateToBookingDetails={(bookingId) => {
-            setSelectedBookingId(bookingId);
-            setCurrentScreen('vendorBookingDetail');
-          }}
-          onNavigateToEarnings={() => setCurrentScreen('vendorEarnings')}
-          onNavigateToDrivers={() => setCurrentScreen('manageDrivers')}
-          onNavigateToProfile={() => setCurrentScreen('vendorProfile')}
-          onNavigateToNotifications={() => setCurrentScreen('notifications')}
-          onNavigateToWithdrawFunds={() => setCurrentScreen('withdrawFunds')}
-          onAddCar={() => setCurrentScreen('addCar')}
-          hasUnreadNotifications={false}
-        />
-      )}
-      {currentScreen === 'addCar' && (
-        <AddCarScreen
-          onNavigateBack={() => setCurrentScreen('vendorDashboard')}
-          onCarAdded={() => {
+          onComplete={async () => {
+            await loadVendorProfile();
+            const u = auth.currentUser;
+            if (u) import('./src/services/notificationService').then(({ savePushToken }) => savePushToken(u.uid, 'vendor')).catch(() => {});
+            setVendorData(null);
             setCurrentScreen('vendorDashboard');
           }}
         />
       )}
-      {currentScreen === 'myFleet' && (
-        <MyFleetScreen
-          onNavigateBack={handleNavigateBackToHome}
-          onNavigateToDashboard={() => setCurrentScreen('vendorDashboard')}
-          onNavigateToBookings={() => setCurrentScreen('vendorBookings')}
-          onNavigateToEarnings={() => setCurrentScreen('vendorEarnings')}
-          onNavigateToProfile={() => setCurrentScreen('vendorProfile')}
-          onAddCar={() => setCurrentScreen('addCar')}
-          onViewCarDetails={handleNavigateToVendorCarDetail}
+      {currentScreen === 'vendorSignIn' && (
+        <VendorSignInScreen
+          onSignInSuccess={handleVendorSignedIn}
+          onNeedsVerification={(email) => {
+            setVendorData({ email });
+            setCurrentScreen('vendorPhoneVerification');
+          }}
+          onNavigateToSignUp={() => setCurrentScreen('vendorOnboarding')}
+          onForgotPassword={() => openFrom('forgotPassword')}
+          onNavigateBack={() => setCurrentScreen(user ? 'profile' : 'vendorOnboarding')}
         />
       )}
-      {currentScreen === 'vendorBookings' && (
-        <VendorBookingsScreen
-          onNavigateToDashboard={() => setCurrentScreen('vendorDashboard')}
-          onNavigateToFleet={() => setCurrentScreen('myFleet')}
-          onNavigateToProfile={() => setCurrentScreen('vendorProfile')}
-          onViewBookingDetails={handleNavigateToVendorBookingDetail}
+
+      {/* ---------------- Vendor tabs ---------------- */}
+      {currentScreen === 'vendorDashboard' && (
+        <VendorDashboardScreen
+          vendorName={vendorProfile?.businessName || vendorProfile?.firstName || 'Your business'}
+          logoUrl={vendorProfile?.logoUrl}
+          onTab={goVendorTab}
+          onNavigateToBookingDetails={openVendorBooking}
+          onNavigateToCarDetail={openVendorCar}
+          onNavigateToDrivers={() => openFrom('manageDrivers')}
+          onNavigateToNotifications={() => {
+            setNotificationsFrom('vendorDashboard');
+            setCurrentScreen('notifications');
+          }}
+          onNavigateToWithdrawFunds={() => openFrom('withdrawFunds')}
+          onNavigateToBankDetails={() => openFrom('vendorBankDetails')}
+          onAddCar={() => openFrom('addCar')}
         />
       )}
-  {currentScreen === 'vendorProfile' && (
-  <VendorProfileScreen
-    vendorName={vendorProfile?.firstName + ' ' + vendorProfile?.lastName || 'Vendor'}
-    vendorEmail={vendorProfile?.email || ''}
-    businessName={vendorProfile?.businessName || 'Business'}
-    onNavigateToDashboard={() => setCurrentScreen('vendorDashboard')}
-    onNavigateToFleet={() => setCurrentScreen('myFleet')}
-    onNavigateToBookings={() => setCurrentScreen('vendorBookings')}
-    onNavigateToEarnings={() => setCurrentScreen('vendorEarnings')}
-    onNavigateToSettings={() => setCurrentScreen('vendorSettings')}
-    onNavigateToSupport={() => setCurrentScreen('vendorHelpAndSupport')}
-    onNavigateToNotificationPreferences={() => setCurrentScreen('vendorNotificationPreferences')}
-    onNavigateToDocuments={() => setCurrentScreen('vendorDocuments')}
-    onNavigateToBankDetails={() => setCurrentScreen('vendorBankDetails')}
-    onNavigateToAnalytics={() => setCurrentScreen('vendorAnalytics')}
-    onNavigateToTermsAndPrivacy={() => setCurrentScreen('vendorTermsAndPrivacy')}
-    onLogout={async () => {
-      const { signOutVendor } = await import('./src/services/vendorauthservice');
-      await signOutVendor();
-      setVendorProfile(null);
-      alert('Logged out successfully!');
-      setCurrentScreen('welcome');
-    }}
-  />
-)}
+      {currentScreen === 'myFleet' && <MyFleetScreen onTab={goVendorTab} onAddCar={() => openFrom('addCar')} onViewCarDetails={openVendorCar} />}
+      {currentScreen === 'vendorBookings' && <VendorBookingsScreen onTab={goVendorTab} onViewBookingDetails={openVendorBooking} />}
+      {currentScreen === 'vendorEarnings' && (
+        <VendorEarningsScreen onTab={goVendorTab} onWithdraw={() => openFrom('withdrawFunds')} onOpenBooking={openVendorBooking} />
+      )}
+      {currentScreen === 'vendorProfile' && (
+        <VendorProfileScreen
+          onTab={goVendorTab}
+          onNavigateToSettings={() => openFrom('vendorSettings')}
+          onNavigateToSupport={() => openFrom('vendorHelpAndSupport')}
+          onNavigateToNotifications={() => {
+            setNotificationsFrom('vendorProfile');
+            setCurrentScreen('notifications');
+          }}
+          onNavigateToNotificationPreferences={() => openFrom('vendorNotificationPreferences')}
+          onNavigateToDocuments={() => openFrom('vendorDocuments')}
+          onNavigateToBankDetails={() => openFrom('vendorBankDetails')}
+          onNavigateToDrivers={() => openFrom('manageDrivers')}
+          onNavigateToAnalytics={() => openFrom('vendorAnalytics')}
+          onNavigateToTermsAndPrivacy={() => openFrom('vendorTermsAndPrivacy')}
+          onProfileChanged={loadVendorProfile}
+          onLogout={async () => {
+            const { signOutVendor } = await import('./src/services/vendorauthservice');
+            await signOutVendor();
+            setVendorProfile(null);
+            setCurrentScreen('welcome');
+          }}
+        />
+      )}
+
+      {/* ---------------- Vendor details ---------------- */}
       {currentScreen === 'vendorBookingDetail' && selectedBookingId && (
-        <VendorBookingDetailScreen onNavigateBack={handleNavigateBackToVendorBookings} bookingId={selectedBookingId} />
+        <VendorBookingDetailScreen
+          key={selectedBookingId}
+          bookingId={selectedBookingId}
+          onNavigateBack={() => goBack('vendorBookingDetail', 'vendorBookings')}
+          onManageDrivers={() => openFrom('manageDrivers')}
+        />
       )}
       {currentScreen === 'vendorCarDetail' && selectedCarId && (
         <VendorCarDetailScreen
-          onNavigateBack={handleNavigateBackToFleet}
+          key={selectedCarId}
           carId={selectedCarId}
-          onEditCar={handleEditCar}
-          onDeleteCar={handleDeleteCar}
+          onNavigateBack={() => goBack('vendorCarDetail', 'myFleet')}
+          onEditCar={(carId) => {
+            setSelectedCarId(carId);
+            setCurrentScreen('editCar');
+          }}
+          onDeleted={() => {
+            setSelectedCarId(null);
+            setCurrentScreen('myFleet');
+          }}
+          onOpenBooking={openVendorBooking}
         />
       )}
-      {currentScreen === 'vendorEarnings' && (
-        <VendorEarningsScreen
-          onNavigateToDashboard={() => setCurrentScreen('vendorDashboard')}
-          onNavigateToFleet={() => setCurrentScreen('myFleet')}
-          onNavigateToBookings={() => setCurrentScreen('vendorBookings')}
-          onNavigateToProfile={() => setCurrentScreen('vendorProfile')}
-        />
-      )}
-      {currentScreen === 'manageDrivers' && (
-        <ManageDriversScreen
-          onNavigateBack={() => setCurrentScreen('vendorDashboard')}
-          onNavigateToDashboard={() => setCurrentScreen('vendorDashboard')}
-          onNavigateToFleet={() => setCurrentScreen('myFleet')}
-          onNavigateToBookings={() => setCurrentScreen('vendorBookings')}
-          onNavigateToProfile={() => setCurrentScreen('vendorProfile')}
-        />
-      )}
-      {currentScreen === 'notifications' && (
-        <NotificationsScreen onNavigateBack={() => setCurrentScreen('vendorDashboard')} />
-      )}
-      {currentScreen === 'withdrawFunds' && (
-        <WithdrawFundsScreen onNavigateBack={() => setCurrentScreen('vendorDashboard')} />
+      {currentScreen === 'addCar' && (
+        <AddCarScreen onNavigateBack={() => goBack('addCar', 'myFleet')} onCarAdded={() => setCurrentScreen('myFleet')} />
       )}
       {currentScreen === 'editCar' && selectedCarId && (
-        <EditCarScreen
-          carId={selectedCarId}
-          onNavigateBack={() => {
-            setCurrentScreen('vendorCarDetail');
-          }}
-          onSaveSuccess={() => {
-            setCurrentScreen('vendorCarDetail');
-          }}
-        />
+        <EditCarScreen carId={selectedCarId} onNavigateBack={() => setCurrentScreen('vendorCarDetail')} onSaveSuccess={() => setCurrentScreen('vendorCarDetail')} />
       )}
+      {currentScreen === 'manageDrivers' && <ManageDriversScreen onNavigateBack={() => goBack('manageDrivers', 'vendorProfile')} />}
+      {currentScreen === 'withdrawFunds' && (
+        <WithdrawFundsScreen onNavigateBack={() => goBack('withdrawFunds', 'vendorEarnings')} onNavigateToBankDetails={() => openFrom('vendorBankDetails')} />
+      )}
+      {currentScreen === 'vendorBankDetails' && <VendorBankDetailsScreen onNavigateBack={() => goBack('vendorBankDetails', 'vendorProfile')} />}
       {currentScreen === 'vendorSettings' && (
         <VendorSettingsScreen
-          onNavigateBack={() => setCurrentScreen('vendorProfile')}
-          vendorProfile={vendorProfile}
+          onNavigateBack={() => goBack('vendorSettings', 'vendorProfile')}
+          onChangePassword={() => openFrom('changePassword')}
+          onSaved={loadVendorProfile}
         />
       )}
-      {currentScreen === 'vendorBankDetails' && (
-        <VendorBankDetailsScreen onNavigateBack={() => setCurrentScreen('vendorProfile')} />
-      )}
-      {currentScreen === 'vendorDocuments' && (
-        <VendorDocumentsScreen onNavigateBack={() => setCurrentScreen('vendorProfile')} />
-      )}
-      {currentScreen === 'vendorAnalytics' && (
-        <VendorAnalyticsScreen onNavigateBack={() => setCurrentScreen('vendorProfile')} />
-      )}
+      {currentScreen === 'vendorDocuments' && <VendorDocumentsScreen onNavigateBack={() => goBack('vendorDocuments', 'vendorProfile')} />}
+      {currentScreen === 'vendorAnalytics' && <VendorAnalyticsScreen onNavigateBack={() => goBack('vendorAnalytics', 'vendorProfile')} />}
       {currentScreen === 'vendorNotificationPreferences' && (
-        <VendorNotificationPreferencesScreen onNavigateBack={() => setCurrentScreen('vendorProfile')} />
+        <VendorNotificationPreferencesScreen onNavigateBack={() => goBack('vendorNotificationPreferences', 'vendorProfile')} />
       )}
-      {currentScreen === 'vendorTermsAndPrivacy' && (
-        <VendorTermsAndPrivacyScreen onNavigateBack={() => setCurrentScreen('vendorProfile')} />
-      )}
-      {currentScreen === 'vendorHelpAndSupport' && (
-        <VendorHelpAndSupportScreen onNavigateBack={() => setCurrentScreen('vendorProfile')} />
+      {currentScreen === 'vendorTermsAndPrivacy' && <VendorTermsAndPrivacyScreen onNavigateBack={() => goBack('vendorTermsAndPrivacy', 'vendorProfile')} />}
+      {currentScreen === 'vendorHelpAndSupport' && <VendorHelpAndSupportScreen onNavigateBack={() => goBack('vendorHelpAndSupport', 'vendorProfile')} />}
+
+      {currentScreen === 'notifications' && (
+        <NotificationsScreen
+          onNavigateBack={() => setCurrentScreen(notificationsFrom)}
+          onOpenBooking={notificationsFrom === 'vendorDashboard' || notificationsFrom === 'vendorProfile' ? openVendorBooking : undefined}
+        />
       )}
       {currentScreen === 'addMoney' && (
   <AddMoneyScreen
@@ -986,25 +937,14 @@ const handleVendorAccountCreation = async (data: VendorAccountData) => {
 {currentScreen === 'walletPayment' && (
   <WalletPaymentScreen
     onNavigateBack={() => setCurrentScreen('payment')}
-    onPaymentComplete={(method: string) => {
-      setBookingFormData({
-        pickupMethod: 'vendor',
-        rateType: 'day',
-        deliveryAddress: '',
-        startDate: null,
-        endDate: null,
-        startTime: null,
-        stopTime: null,
-        escortCounts: { legion: 0, private: 0 },
-        manualHiluxCount: 0,
-      });
-      setCurrentScreen('confirmation');
-    }}
+    onPaymentComplete={handleBookingPaid}
     totalAmount={paymentAmount}
     bookingData={bookingData}
   />
 )}
-    </>
+      </BackSwipe>
+      </View>
+      </ThemeModeContext.Provider>
+    </SafeAreaProvider>
   );
 }
-

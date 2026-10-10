@@ -1,42 +1,36 @@
-import React, { useState, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  Dimensions,
-  TouchableOpacity,
-  Image,
-} from 'react-native';
-import { Button } from '../components';
-import { colors, typography, spacing, borderRadius } from '../constants';
+import React, { useRef, useState } from 'react';
+import { Animated, Dimensions, FlatList, Image, Pressable, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppText, Button } from '../ui';
+import { brand, color, gutter, themed, statusBarStyle } from '../theme';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Onboarding slide data
-const onboardingData = [
+const SLIDES = [
   {
     id: '1',
-    title: 'Ride in Style, Anytime',
-    description: 'From luxury sedans to exotic supercars, customize your dream ride in just a tap away.',
+    title: 'Ride in style, anytime',
+    description: 'From executive sedans to exotic SUVs, find the right car for the moment in a few taps.',
     image: require('../../assets/images/onboarding1.png'),
   },
   {
     id: '2',
-    title: 'One Tap, Multiple Rides',
-    description: 'Need more than one car? No problem. Book a fleet in one go.',
+    title: 'One booking, many cars',
+    description: 'Moving with a team or an entourage? Book a whole fleet in one go.',
     image: require('../../assets/images/onboarding2.png'),
   },
   {
     id: '3',
-    title: 'Need a Ride? We Got You',
-    description: 'Browse our fleet of luxury and exotic cars and book in seconds.',
+    title: 'Drivers you can trust',
+    description: 'Every vendor and car is checked by Escardia before it goes live.',
     image: require('../../assets/images/onboarding3.png'),
   },
   {
     id: '4',
-    title: 'Ride Safe, Ride Secure',
-    description: 'Choose from our fleet of optional professional security escorts.',
+    title: 'Ride safe, ride secure',
+    description: 'Add professional security escorts and a Hilux backup to any trip.',
     image: require('../../assets/images/onboarding4.png'),
   },
 ];
@@ -47,271 +41,157 @@ interface OnboardingScreenProps {
   onNavigateToVendorOnboarding: () => void;
 }
 
-export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ 
-  onComplete, 
-  onNavigateToSignIn,
-  onNavigateToVendorOnboarding 
-}) => {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const flatListRef = useRef<FlatList>(null);
+export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete, onNavigateToSignIn, onNavigateToVendorOnboarding }) => {
+  const insets = useSafeAreaInsets();
+  const [index, setIndex] = useState(0);
+  const listRef = useRef<FlatList>(null);
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const last = index === SLIDES.length - 1;
 
-  // Handle next button press
-  const handleNext = () => {
-    if (currentIndex < onboardingData.length - 1) {
-      const nextIndex = currentIndex + 1;
-      flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
-      setCurrentIndex(nextIndex);
-    }
+  const goTo = (i: number) => {
+    listRef.current?.scrollToIndex({ index: i, animated: true });
+    setIndex(i);
   };
-
-  // Handle skip button
-  const handleSkip = () => {
-    onComplete();
-  };
-
-  // Handle get started (on last slide)
-  const handleGetStarted = () => {
-    onComplete();
-  };
-
-  // Update current index on scroll
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) {
-      setCurrentIndex(viewableItems[0].index || 0);
-    }
-  }).current;
-
-  const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 50,
-  }).current;
-
-  // Render each onboarding slide
-  const renderItem = ({ item }: { item: typeof onboardingData[0] }) => (
-    <View style={styles.slide}>
-      {/* Illustration Image */}
-      <View style={styles.illustrationContainer}>
-        <Image
-          source={item.image}
-          style={styles.illustration}
-          resizeMode="contain"
-        />
-      </View>
-
-      {/* Title */}
-      <Text style={styles.title}>{item.title}</Text>
-
-      {/* Description */}
-      <Text style={styles.description}>{item.description}</Text>
-    </View>
-  );
-
-  // Render pagination dots
-  const renderPagination = () => (
-    <View style={styles.paginationContainer}>
-      {onboardingData.map((_, index) => (
-        <View
-          key={index}
-          style={[
-            styles.paginationDot,
-            index === currentIndex && styles.paginationDotActive,
-          ]}
-        />
-      ))}
-    </View>
-  );
 
   return (
-    <View style={styles.container}>
-      {/* Logo and Become a Vendor Button */}
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <StatusBar style={statusBarStyle()} />
+
       <View style={styles.header}>
-        <View style={styles.logoContainer}>
-          <Image
-            source={require('../../assets/images/logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
+        <View style={styles.brand}>
+          <Image source={require('../../assets/images/logo.png')} style={styles.logo} resizeMode="contain" />
+          <AppText variant="subheading">Escardia</AppText>
         </View>
-        
-        <TouchableOpacity 
-          style={styles.becomeVendorButton} 
-          onPress={onNavigateToVendorOnboarding}
-        >
-          <Text style={styles.becomeVendorText}>Become a Vendor</Text>
-        </TouchableOpacity>
+        <Pressable onPress={onNavigateToVendorOnboarding} style={({ pressed }) => [styles.vendorChip, pressed && { backgroundColor: color.primaryBorder }]}>
+          <Feather name="briefcase" size={13} color={color.primary} />
+          <AppText variant="smallMedium" color={color.primary}>
+            Become a vendor
+          </AppText>
+        </Pressable>
       </View>
 
-      {/* Skip Button */}
-      {currentIndex < onboardingData.length - 1 && (
-        <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-          <Text style={styles.skipText}>Skip</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Onboarding Slides */}
-      <FlatList
-        ref={flatListRef}
-        data={onboardingData}
-        renderItem={renderItem}
+      <Animated.FlatList
+        ref={listRef as never}
+        data={SLIDES}
         keyExtractor={(item) => item.id}
         horizontal
         pagingEnabled
+        bounces={false}
         showsHorizontalScrollIndicator={false}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
-        scrollEnabled={true}
-        onMomentumScrollEnd={(event) => {
-          const index = Math.round(event.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-          setCurrentIndex(index);
-        }}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: false })}
+        scrollEventThrottle={16}
+        onMomentumScrollEnd={(e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH))}
+        renderItem={({ item, index: i }) => (
+          <View style={styles.slide}>
+            <View style={styles.stage}>
+              <View style={styles.stageInner}>
+                <Image source={item.image} style={styles.illustration} resizeMode="contain" />
+              </View>
+            </View>
+            <AppText variant="caption" color={color.primary} style={{ marginBottom: 10 }}>
+              {String(i + 1).padStart(2, '0')} / {String(SLIDES.length).padStart(2, '0')}
+            </AppText>
+            <AppText variant="title" center>
+              {item.title}
+            </AppText>
+            <AppText variant="body" color={color.muted} center style={{ marginTop: 10, maxWidth: 320 }}>
+              {item.description}
+            </AppText>
+          </View>
+        )}
       />
 
-      {/* Pagination Dots */}
-      {renderPagination()}
+      <View style={styles.dots}>
+        {SLIDES.map((_, i) => {
+          const range = [(i - 1) * SCREEN_WIDTH, i * SCREEN_WIDTH, (i + 1) * SCREEN_WIDTH];
+          return (
+            <Animated.View
+              key={i}
+              style={[
+                styles.dot,
+                {
+                  width: scrollX.interpolate({ inputRange: range, outputRange: [8, 24, 8], extrapolate: 'clamp' }),
+                  backgroundColor: scrollX.interpolate({
+                    inputRange: range,
+                    outputRange: [color.borderStrong, color.primary, color.borderStrong],
+                    extrapolate: 'clamp',
+                  }),
+                },
+              ]}
+            />
+          );
+        })}
+      </View>
 
-      {/* Bottom Buttons */}
-      <View style={styles.buttonContainer}>
-        {currentIndex === onboardingData.length - 1 ? (
-          // Last slide: Show "Create Account" and "Login"
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
+        {last ? (
           <>
-            <Button
-              title="Create a new account"
-              onPress={handleGetStarted}
-              style={styles.button}
-            />
-            <Button
-              title="Login"
-              onPress={onNavigateToSignIn}
-              variant="outline"
-              style={styles.button}
-            />
+            <Button title="Create an account" iconRight="arrow-right" onPress={onComplete} />
+            <Button title="I already have an account" variant="secondary" onPress={onNavigateToSignIn} style={{ marginTop: 12 }} />
           </>
         ) : (
-          // Other slides: Show "Next"
-          <Button
-            title="Next"
-            onPress={handleNext}
-            style={styles.button}
-          />
+          <View style={styles.row}>
+            <Pressable onPress={onComplete} hitSlop={12} style={styles.skip}>
+              <AppText variant="bodyMedium" color={color.muted}>
+                Skip
+              </AppText>
+            </Pressable>
+            <Button title="Next" iconRight="arrow-right" onPress={() => goTo(index + 1)} style={{ flex: 1 }} />
+          </View>
         )}
       </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  
+const STAGE = Math.min(SCREEN_WIDTH - 72, 300);
+
+const styles = themed(() => StyleSheet.create({
+  root: { flex: 1, backgroundColor: color.bg },
   header: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 60,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
+    paddingHorizontal: gutter,
+    paddingVertical: 12,
   },
-  
-  logoContainer: {
-    alignItems: 'flex-start',
-  },
-  
-  logo: {
-    width: 50,
-    height: 80,
-    right: -139,
-  },
-  
-  becomeVendorButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.lg,
-  },
-  
-  becomeVendorText: {
-    color: colors.textWhite,
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  
-  skipButton: {
-    position: 'absolute',
-    top: 150,
-    right: spacing.lg,
-    zIndex: 10,
-    padding: spacing.sm,
-  },
-  
-  skipText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeight.medium,
-  },
-  
-  slide: {
-    width: SCREEN_WIDTH,
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-  },
-  
-  illustrationContainer: {
-    width: 250,
-    height: 250,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.xl,
-  },
-  
-  illustration: {
-    width: '100%',
-    height: '100%',
-  },
-  
-  title: {
-    fontSize: typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-  },
-  
-  description: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: typography.lineHeight.relaxed * typography.fontSize.base,
-  },
-  
-  paginationContainer: {
+  brand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  logo: { width: 28, height: 28 },
+  vendorChip: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: spacing.lg,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: color.primarySoft,
+    borderWidth: 1,
+    borderColor: color.primaryBorder,
   },
-  
-  paginationDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.border,
-    marginHorizontal: spacing.xs,
+  slide: { width: SCREEN_WIDTH, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
+  stage: {
+    width: STAGE,
+    height: STAGE,
+    borderRadius: STAGE / 2,
+    backgroundColor: color.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 36,
   },
-  
-  paginationDotActive: {
-    backgroundColor: colors.primary,
-    width: 24,
+  stageInner: {
+    width: STAGE - 36,
+    height: STAGE - 36,
+    borderRadius: (STAGE - 36) / 2,
+    backgroundColor: '#FFFFFF', // the illustrations are drawn for a white background
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
-  
-  buttonContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
-  },
-  
-  button: {
-    marginBottom: spacing.md,
-  },
-});
+  illustration: { width: '86%', height: '86%' },
+  dots: { flexDirection: 'row', justifyContent: 'center', gap: 6, paddingVertical: 20 },
+  dot: { height: 8, borderRadius: 4 },
+  footer: { paddingHorizontal: gutter },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  skip: { paddingHorizontal: 12, height: 56, justifyContent: 'center' },
+}));
+

@@ -1,29 +1,23 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  Image,
-} from 'react-native';
-import { Button, Input, SocialButton } from '../components';
-import { colors, typography, spacing } from '../constants';
+import React, { useRef, useState } from 'react';
+import { TextInput, View } from 'react-native';
 import { signInWithEmail } from '../services/authservice';
+import { AppText, Banner, Button, LinkText, TextField } from '../ui';
+import { AuthLayout } from '../ui/AuthLayout';
+import { color } from '../theme';
 
 interface SignInScreenProps {
   onSignInSuccess: () => void;
-    onNeedsVerification?: (email: string) => void;
+  onNeedsVerification?: (email: string) => void;
   onNavigateToSignUp: () => void;
   onForgotPassword: () => void;
-   onNavigateBack: () => void;
+  onNavigateBack: () => void;
 }
+
+const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 
 export const SignInScreen: React.FC<SignInScreenProps> = ({
   onSignInSuccess,
-    onNeedsVerification,
+  onNeedsVerification,
   onNavigateToSignUp,
   onForgotPassword,
   onNavigateBack,
@@ -31,51 +25,19 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [formError, setFormError] = useState('');
+  const passwordRef = useRef<TextInput>(null);
 
-  // Validation errors
-  const [errors, setErrors] = useState({
-    email: '',
-    password: '',
-  });
-
-  // Validate email
-  const validateEmail = (email: string) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-  };
-
-// Handle Sign In
   const handleSignIn = async () => {
-    // Clear previous errors
-    setErrors({
-      email: '',
-      password: '',
-    });
+    const next: typeof errors = {};
+    if (!email.trim()) next.email = 'Enter your email';
+    else if (!isEmail(email)) next.email = 'That email does not look right';
+    if (!password) next.password = 'Enter your password';
+    setErrors(next);
+    setFormError('');
+    if (Object.keys(next).length) return;
 
-    let isValid = true;
-    const newErrors = { ...errors };
-
-    // Validate email
-    if (!email) {
-      newErrors.email = 'Email is required';
-      isValid = false;
-    } else if (!validateEmail(email)) {
-      newErrors.email = 'Please enter a valid email';
-      isValid = false;
-    }
-
-    // Validate password
-    if (!password) {
-      newErrors.password = 'Password is required';
-      isValid = false;
-    }
-
-    if (!isValid) {
-      setErrors(newErrors);
-      return;
-    }
-
-    // Sign in with Firebase
     setLoading(true);
     const result = await signInWithEmail(email, password);
     setLoading(false);
@@ -85,192 +47,65 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({
     } else if ((result as { needsVerification?: boolean }).needsVerification && onNeedsVerification) {
       onNeedsVerification(email.trim().toLowerCase());
     } else {
-      newErrors.email = result.error || 'Sign in failed. Please check your credentials.';
-      setErrors(newErrors);
+      setFormError(result.error || 'Email or password is incorrect.');
     }
   };
 
-  // Handle Social Sign In
-  const handleSocialSignIn = (provider: 'apple' | 'google' | 'facebook') => {
-    console.log(`Sign in with ${provider}`);
-    // TODO: Integrate social auth here
-  };
-
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+    <AuthLayout
+      title="Welcome back"
+      subtitle="Sign in to book your next ride."
+      onBack={onNavigateBack}
+      footer={
+        <AppText variant="body" color={color.muted}>
+          New to Escardia? <LinkText onPress={onNavigateToSignUp}>Create an account</LinkText>
+        </AppText>
+      }
     >
-      <ScrollView
-  contentContainerStyle={styles.scrollContent}
-  showsVerticalScrollIndicator={false}
->
-  {/* Back Button */}
-  <TouchableOpacity style={styles.backButton} onPress={onNavigateBack}>
-    <Text style={styles.backArrow}>←</Text>
-  </TouchableOpacity>
-      
-        {/* Header */}
-        <View style={styles.header}>
-          <Image
-            source={require('../../assets/images/logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <Text style={styles.title}>Sign In</Text>
-        </View>
+      {!!formError && <Banner text={formError} />}
 
-        {/* Form */}
-        <View style={styles.form}>
-          {/* Email Input */}
-          <Input
-            label="Email"
-            placeholder="Enter your email"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            error={errors.email}
-          />
+      <TextField
+        label="Email"
+        icon="mail"
+        placeholder="you@example.com"
+        value={email}
+        onChangeText={(v) => {
+          setEmail(v);
+          if (errors.email) setErrors({ ...errors, email: undefined });
+        }}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoComplete="email"
+        textContentType="emailAddress"
+        returnKeyType="next"
+        onSubmitEditing={() => passwordRef.current?.focus()}
+        error={errors.email}
+      />
 
-          {/* Password Input */}
-          <Input
-            label="Password"
-            placeholder="Enter your password"
-            value={password}
-            onChangeText={setPassword}
-            isPassword
-            error={errors.password}
-          />
+      <TextField
+        ref={passwordRef}
+        label="Password"
+        icon="lock"
+        placeholder="Your password"
+        value={password}
+        onChangeText={(v) => {
+          setPassword(v);
+          if (errors.password) setErrors({ ...errors, password: undefined });
+        }}
+        isPassword
+        autoComplete="password"
+        textContentType="password"
+        returnKeyType="go"
+        onSubmitEditing={handleSignIn}
+        error={errors.password}
+        containerStyle={{ marginBottom: 10 }}
+      />
 
-          {/* Forgot Password Link */}
-          <TouchableOpacity
-            onPress={onForgotPassword}
-            style={styles.forgotPasswordContainer}
-          >
-            <Text style={styles.forgotPasswordText}>Forgot password?</Text>
-          </TouchableOpacity>
+      <View style={{ alignItems: 'flex-end', marginBottom: 28 }}>
+        <LinkText onPress={onForgotPassword}>Forgot password?</LinkText>
+      </View>
 
-          {/* Sign In Button */}
-          <Button
-            title="Sign In"
-            onPress={handleSignIn}
-            loading={loading}
-            style={styles.signInButton}
-          />
-
-          {/* Social Sign In */}
-          <View style={styles.socialContainer}>
-            <SocialButton
-              provider="apple"
-              onPress={() => handleSocialSignIn('apple')}
-            />
-            <SocialButton
-              provider="google"
-              onPress={() => handleSocialSignIn('google')}
-            />
-
-          </View>
-
-          {/* Sign Up Link */}
-          <TouchableOpacity
-            onPress={onNavigateToSignUp}
-            style={styles.signUpContainer}
-          >
-            <Text style={styles.signUpText}>
-              Don't have an account?{' '}
-              <Text style={styles.signUpLink}>Sign Up</Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      <Button title="Sign in" iconRight="arrow-right" onPress={handleSignIn} loading={loading} />
+    </AuthLayout>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  
-  scrollContent: {
-    paddingHorizontal: spacing.lg,
-     paddingTop: 30,
-    paddingBottom: spacing.lg,
-  },
-  
- header: {
-    alignItems: 'center',
-    marginBottom: spacing.md,
-     marginTop: -60,
-  },
-  
-  logo: {
-    width: 50,
-    height: 90,
-    marginTop: spacing ['3xl'],
-  },
-  
-  title: {
-    fontSize: typography.fontSize['3xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  
-  form: {
-    flex: 1,
-  },
-  
-  forgotPasswordContainer: {
-    alignItems: 'flex-end',
-    marginTop: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  
-  forgotPasswordText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.medium,
-  },
-  
-  signInButton: {
-    marginTop: spacing.md,
-  },
-  
-  socialContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: spacing.xl,
-  },
-  
-  signUpContainer: {
-    alignItems: 'center',
-    marginTop: spacing.xl,
-  },
-  
-  signUpText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-  
-  signUpLink: {
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  backButton: {
-  width: 40,
-  height: 40,
-  justifyContent: 'center',
-  alignItems: 'flex-start',
-  marginBottom: spacing.md,
-  marginTop: spacing.xl,
-},
-
-backArrow: {
-  fontSize: 28,
-  color: colors.text,
-},
-});

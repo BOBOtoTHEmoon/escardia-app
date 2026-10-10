@@ -1,90 +1,46 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
+import { AppText, IconName, Screen, ScreenHeader } from '../ui';
+import { color, gutter, radius, themed, statusBarStyle } from '../theme';
 
 interface SafetyTipsScreenProps {
   onNavigateBack: () => void;
 }
 
-export const SafetyTipsScreen: React.FC<SafetyTipsScreenProps> = ({ onNavigateBack }) => {
-  const safetyTips = [
-    'Always keep your app updated to the latest version.',
-    'Never share your password or one-time codes with anyone.',
-    "Confirm the driver's name, photo, and plate number before entering a ride.",
-    'Use biometric login for faster and safer access.',
-    'Report any suspicious activity through the in-app help center.',
-  ];
+const TIPS: { icon: IconName; title: string; body: string }[] = [
+  { icon: 'user-check', title: 'Check before you get in', body: 'Make sure the car and driver match what you see in My Trips. If anything is different, do not get in and call the vendor or Escardia.' },
+  { icon: 'lock', title: 'Keep your codes private', body: 'Never share your password or one-time codes. Escardia staff will never ask for them.' },
+  { icon: 'credit-card', title: 'Pay only in the app', body: 'Every trip is paid through Escardia. Do not pay drivers or vendors directly for a booked trip.' },
+  { icon: 'share-2', title: 'Tell someone your plans', body: 'Share your trip ID and times with a friend or family member, especially for late-night trips.' },
+  { icon: 'alert-triangle', title: 'Report problems quickly', body: 'Use Report a problem on the trip screen during the trip or within 24 hours after. In an emergency, call 112 first.' },
+  { icon: 'download', title: 'Keep the app updated', body: 'Updates include the latest security fixes.' },
+];
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-          <Text style={styles.backIcon}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Safety Tips</Text>
-        <View style={styles.placeholder} />
-      </View>
-
-      <ScrollView style={styles.content}>
-        {safetyTips.map((tip, index) => (
-          <View key={index} style={styles.tipItem}>
-            <Text style={styles.bullet}>•</Text>
-            <Text style={styles.tipText}>{tip}</Text>
+export const SafetyTipsScreen: React.FC<SafetyTipsScreenProps> = ({ onNavigateBack }) => (
+  <Screen>
+    <StatusBar style={statusBarStyle()} />
+    <ScreenHeader title="Safety tips" onBack={onNavigateBack} />
+    <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }}>
+      {TIPS.map((t) => (
+        <View key={t.title} style={styles.tip}>
+          <View style={styles.icon}>
+            <Feather name={t.icon} size={18} color={color.primary} />
           </View>
-        ))}
-      </ScrollView>
-    </View>
-  );
-};
+          <View style={{ flex: 1 }}>
+            <AppText variant="subheading">{t.title}</AppText>
+            <AppText variant="body" color={color.text} style={{ marginTop: 2 }}>
+              {t.body}
+            </AppText>
+          </View>
+        </View>
+      ))}
+    </ScrollView>
+  </Screen>
+);
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#E8EAF6',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 50,
-    paddingBottom: 20,
-    backgroundColor: '#E8EAF6',
-  },
-  backButton: {
-    padding: 8,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: '#000',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
-  },
-  placeholder: {
-    width: 40,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 20,
-  },
-  tipItem: {
-    flexDirection: 'row',
-    marginBottom: 20,
-  },
-  bullet: {
-    fontSize: 20,
-    color: '#000',
-    marginRight: 12,
-    marginTop: -2,
-  },
-  tipText: {
-    flex: 1,
-    fontSize: 15,
-    color: '#000',
-    lineHeight: 22,
-  },
-});
+const styles = themed(() => StyleSheet.create({
+  tip: { flexDirection: 'row', gap: 14, padding: 16, marginTop: 10, borderRadius: radius.lg, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  icon: { width: 40, height: 40, borderRadius: 12, backgroundColor: color.primarySoft, alignItems: 'center', justifyContent: 'center' },
+}));

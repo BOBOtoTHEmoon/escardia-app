@@ -1,176 +1,132 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { LayoutAnimation, Platform, Pressable, ScrollView, StyleSheet, UIManager, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
+import { AppText, Screen, ScreenHeader } from '../ui';
+import { color, gutter, radius, themed, statusBarStyle } from '../theme';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) UIManager.setLayoutAnimationEnabledExperimental(true);
 
 interface FAQScreenProps {
   onNavigateBack: () => void;
 }
 
-interface FAQItem {
-  question: string;
-  answer: string;
-}
+// Keep these in line with how the app and the database actually behave.
+const FAQS: { group: string; items: { q: string; a: string }[] }[] = [
+  {
+    group: 'Booking',
+    items: [
+      {
+        q: 'How do I book a car?',
+        a: 'Find a car on the Cars tab, tap Book now, choose your dates and how you want to get the car, add security if you need it, then pay. Your trip shows up in My Trips straight away.',
+      },
+      {
+        q: 'Does every car come with a driver?',
+        a: 'Yes. Every Escardia trip includes a professional driver supplied by the vendor. Self-drive is coming later.',
+      },
+      {
+        q: 'How far ahead do I need to book?',
+        a: 'At least a few hours before pick-up so the vendor can prepare the car. The app shows the earliest time you can choose.',
+      },
+      {
+        q: 'Can the car come to me?',
+        a: 'Yes. Choose Deliver to me when booking and enter your address. A delivery fee is added and shown before you pay.',
+      },
+      {
+        q: 'Can I add security?',
+        a: 'Yes. On the Security step you can add LEGION or PRIVATE personnel. Teams of 3 or more need a Hilux backup vehicle, which the app adds for you. Security is priced per person, per day.',
+      },
+    ],
+  },
+  {
+    group: 'Payments and refunds',
+    items: [
+      {
+        q: 'How can I pay?',
+        a: 'By card, bank transfer or USSD through Paystack, or from your Escardia wallet. Escardia never sees your card details.',
+      },
+      {
+        q: 'Is the price fixed?',
+        a: 'Yes. The price on the Review and pay screen is confirmed by Escardia before you pay and does not change after.',
+      },
+      {
+        q: 'What happens if I cancel?',
+        a: 'Cancel 24 hours or more before pick-up for a full refund. From 12 to 24 hours before you get 50% back, from 2 to 12 hours before you get 25%, and nothing in the last 2 hours. Refunds go to your Escardia wallet straight away.',
+      },
+      {
+        q: 'Can I change my trip after paying?',
+        a: 'Paid trips cannot be edited in the app because the price and availability would change. Cancel and book again, or contact support and we will help.',
+      },
+      {
+        q: 'How do I top up my wallet?',
+        a: 'Go to Profile, then Wallet, then Add money. Pay with Paystack and the money is added as soon as it clears.',
+      },
+    ],
+  },
+  {
+    group: 'During and after your trip',
+    items: [
+      {
+        q: 'How do I reach my driver or vendor?',
+        a: 'Open the trip in My Trips. You can call or text your driver and the vendor from there.',
+      },
+      {
+        q: 'Something went wrong on my trip. What do I do?',
+        a: 'Open the trip and tap Report a problem. You can do this during the trip or up to 24 hours after it ends. The vendor is not paid until Escardia has looked into it, and we may refund you to your wallet.',
+      },
+      {
+        q: 'How are vendors and cars checked?',
+        a: 'Escardia checks every vendor’s ID and business documents and approves every car and its photos before customers can see it.',
+      },
+    ],
+  },
+];
 
 export const FAQScreen: React.FC<FAQScreenProps> = ({ onNavigateBack }) => {
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
-
-  const faqs: FAQItem[] = [
-    {
-      question: 'How do I book a ride?',
-      answer: 'Booking a ride on Escardia is simple and fast. Open the app and enter your pick-up and drop-off locations, select your preferred ride type, and confirm your booking. Once confirmed, your assigned driver’s details appear instantly, and you can track your driver in real-time until pickup',
-    },
-    {
-      question: 'Can I add a guard or escort to my ride?',
-      answer: ' Yes, you can request a security guard or escort for additional protection. Select “Add Security Escort” during booking, review the cost, and confirm. This service is ideal for VIP movements, late-night trips, or sensitive transfers. Availability may vary by location',
-    },
-    {
-      question: 'How do I track my ride?',
-      answer: ' Once your ride has been booked, you can monitor your driver’s movement live on the app. You’ll receive notifications for “Driver En Route,” “Driver Arrived,” and “Trip Started” so you’re informed from start to finish',
-    },
-    {
-      question: 'Is the price fixed or does it change?',
-      answer: ' Fares are calculated based on distance, route, and time. Once confirmed, your fare is locked in and won’t change unless you modify your route or delay the trip. Escardia ensures full price transparency',
-    },
-    {
-      question: 'How do I pay for my ride?',
-      answer: ' Escardia supports multiple payment options: card, Escardia wallet, transfer, or cash (where available). Choose your preferred payment before confirming the trip. Digital receipts are available in your trip history.',
-    },
-    {
-      question: 'Can I schedule a ride in advance?',
-      answer: ' Yes, you can plan your ride ahead of time. Tap “Schedule Ride,” choose your pick-up time, and confirm. A driver will be assigned before your scheduled time for reliability and punctuality',
-    },
-    {
-      question: 'How do I contact my driver?',
-      answer: ' After booking, your driver’s name, contact number, and vehicle details appear in the app. You can call or message them directly through the app without sharing your personal number',
-    },
-    {
-      question: 'What if I need to cancel my ride?',
-      answer: ' You can cancel anytime before pickup. Go to the active ride screen, tap “Cancel Ride,” and select a reason. A small fee may apply if the driver is already on the way. Refunds for prepaid trips are processed automatically',
-    },
-    {
-      question: ' What is Escardia Self-Drive?',
-      answer: 'Escardia Self-Drive allows you to rent and drive vehicles yourself. You can browse, reserve, and pay directly in the app. Each vehicle is verified, insured, and regularly inspected for safety',
-    },
-    {
-      question: ' How does insurance work on self-drive rentals?',
-      answer: 'All self-drive vehicles come with standard insurance, including third-party liability and basic damage protection. Vendors may also offer extended coverage options. Insurance type and coverage limits are visible before booking',
-    },
-    {
-      question: 'What happens if there’s damage to the vehicle?',
-      answer: ' If damage occurs, report it immediately through the Help Desk. Submit photos and a description. The report is reviewed and assigned a severity level: • Level 1 – Minor: scratches or small dents • Level 2 – Moderate: bumper or mirror damage • Level 3 – Severe: major bodywork or engine damage. Costs are handled based on severity and coverage.',
-    },
-    {
-      question: 'How are damage costs calculated?',
-      answer: ' Costs depend on repair estimates, severity, and insurance coverage. Escardia provides a transparent damage assessment report before any deductions are made.',
-    },
-    {
-      question: 'Who can I contact for help or emergencies?',
-      answer: 'You can reach Escardia’s Help Desk 24/7 in the app under Support → Help Desk. Our team responds quickly and can connect you with emergency services or roadside assistance if needed',
-    },
-  ];
-
-  const toggleExpand = (index: number) => {
-    setExpandedIndex(expandedIndex === index ? null : index);
+  const [open, setOpen] = useState<string | null>(null);
+  const toggle = (q: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setOpen(open === q ? null : q);
   };
- 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-          <Text style={styles.backIcon}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>FAQ</Text>
-        <View style={styles.placeholder} />
-      </View>
-
-      <ScrollView style={styles.content}>
-        {faqs.map((faq, index) => (
-          <View key={index} style={styles.faqItem}>
-            <TouchableOpacity
-              style={styles.questionContainer}
-              onPress={() => toggleExpand(index)}
-            >
-              <Text style={styles.questionText}>{faq.question}</Text>
-              <Text style={styles.expandIcon}>
-                {expandedIndex === index ? '−' : '+'}
-              </Text>
-            </TouchableOpacity>
-            
-            {expandedIndex === index && (
-              <View style={styles.answerContainer}>
-                <Text style={styles.answerText}>{faq.answer}</Text>
-              </View>
-            )}
+    <Screen>
+      <StatusBar style={statusBarStyle()} />
+      <ScreenHeader title="FAQs" onBack={onNavigateBack} />
+      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+        {FAQS.map((g) => (
+          <View key={g.group} style={{ marginTop: 18 }}>
+            <AppText variant="caption" color={color.muted} style={{ marginBottom: 8, marginLeft: 4 }}>
+              {g.group}
+            </AppText>
+            <View style={styles.group}>
+              {g.items.map((f, i) => {
+                const isOpen = open === f.q;
+                return (
+                  <Pressable key={f.q} onPress={() => toggle(f.q)} style={[styles.item, i < g.items.length - 1 && styles.border]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <AppText variant="bodyMedium" style={{ flex: 1 }}>
+                        {f.q}
+                      </AppText>
+                      <Feather name={isOpen ? 'minus' : 'plus'} size={18} color={isOpen ? color.primary : color.subtle} />
+                    </View>
+                    {isOpen && (
+                      <AppText variant="body" color={color.text} style={{ marginTop: 8 }}>
+                        {f.a}
+                      </AppText>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
         ))}
       </ScrollView>
-    </View>
+    </Screen>
   );
 };
-    const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 50,
-    paddingBottom: 20,
-    backgroundColor: '#FFFFFF',
-  },
-  backButton: {
-    padding: 8,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: '#000',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
-  },
-  placeholder: {
-    width: 40,
-  },
-  content: {
-    flex: 1,
-    padding: 20,
-  },
-  faqItem: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    marginBottom: 12,
-    overflow: 'hidden',
-  },
-  questionContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 18,
-  },
-  questionText: {
-    flex: 1,
-    fontSize: 15,
-    color: '#000',
-    marginRight: 12,
-  },
-  expandIcon: {
-    fontSize: 24,
-    color: '#0066FF',
-    fontWeight: 'bold',
-  },
-  answerContainer: {
-    padding: 18,
-    paddingTop: 0,
-    backgroundColor: '#F8F9FA',
-  },
-  answerText: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
-  },
-});
+
+const styles = themed(() => StyleSheet.create({
+  group: { backgroundColor: color.surface, borderRadius: radius.xl, borderWidth: 1, borderColor: color.border, overflow: 'hidden' },
+  item: { paddingHorizontal: 16, paddingVertical: 14 },
+  border: { borderBottomWidth: 1, borderBottomColor: color.border },
+}));

@@ -1,32 +1,14 @@
-// ============================================
-// ESCARDIA - WALLET SCREEN (Updated)
-// File: src/screens/WalletScreen.tsx
-// ============================================
-
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  Image,
-  RefreshControl,
-  ActivityIndicator,
-  Alert,
-} from 'react-native';
-import { colors, typography, spacing, borderRadius } from '../constants';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
 import { auth } from '../config/supabase';
-import {
-  getOrCreateWallet,
-  getRecentTransactions,
-  formatAmount,
-  formatTransactionDate,
-  getTransactionTitle,
-  getTransactionSubtitle,
-  Wallet,
-  Transaction,
-} from '../services/walletService';
+import { getOrCreateWallet, getRecentTransactions, getTransactionTitle, Transaction, Wallet } from '../services/walletService';
+import { AppText, Button, Screen, ScreenHeader } from '../ui';
+import { Panel } from '../ui/Booking';
+import { naira } from '../ui/CarCard';
+import { TransactionRow } from '../ui/Status';
+import { brand, color, gutter, radius, themed, statusBarStyle } from '../theme';
 
 interface WalletScreenProps {
   onNavigateBack: () => void;
@@ -34,523 +16,145 @@ interface WalletScreenProps {
   onNavigateToAddMoney?: () => void;
 }
 
-export const WalletScreen: React.FC<WalletScreenProps> = ({
-  onNavigateBack,
-  onNavigateToTransactions,
-  onNavigateToAddMoney,
-}) => {
+export const txDate = (iso: any) =>
+  new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ', ' + new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+export const WalletScreen: React.FC<WalletScreenProps> = ({ onNavigateBack, onNavigateToTransactions, onNavigateToAddMoney }) => {
   const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [txs, setTxs] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Load wallet data
-  const loadWalletData = useCallback(async () => {
-    try {
-      const user = auth.currentUser;
-      if (!user) {
-        console.log('No user logged in');
-        setLoading(false);
-        return;
-      }
-
-      // Load wallet
-      const walletData = await getOrCreateWallet(user.uid);
-      setWallet(walletData);
-
-      // Load recent transactions
-      const recentTxns = await getRecentTransactions(user.uid, 5);
-      setTransactions(recentTxns);
-    } catch (error) {
-      console.error('Error loading wallet data:', error);
-      Alert.alert('Error', 'Failed to load wallet data. Please try again.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+  const load = useCallback(async () => {
+    const uid = auth.currentUser?.uid;
+    if (uid) {
+      const [w, t] = await Promise.all([getOrCreateWallet(uid), getRecentTransactions(uid, 6)]);
+      setWallet(w);
+      setTxs(t);
     }
+    setLoading(false);
+    setRefreshing(false);
   }, []);
 
   useEffect(() => {
-    loadWalletData();
-  }, [loadWalletData]);
-
-  // Pull to refresh
-  const onRefresh = () => {
-    setRefreshing(true);
-    loadWalletData();
-  };
-
-  // Handle add money press
-  const handleAddMoney = () => {
-    if (onNavigateToAddMoney) {
-      onNavigateToAddMoney();
-    }
-  };
-
-  // Loading state
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-            <Text style={styles.backIcon}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Wallet</Text>
-          <View style={styles.placeholder} />
-        </View>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading wallet...</Text>
-        </View>
-      </View>
-    );
-  }
+    load();
+  }, [load]);
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-          <Text style={styles.backIcon}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Wallet</Text>
-        <View style={styles.placeholder} />
-      </View>
-
+    <Screen>
+      <StatusBar style={statusBarStyle()} />
+      <ScreenHeader title="Wallet" onBack={onNavigateBack} />
       <ScrollView
-        style={styles.content}
+        contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[colors.primary]}
-            tintColor={colors.primary}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
           />
         }
-        showsVerticalScrollIndicator={false}
       >
-        {/* Wallet Card */}
-        <View style={styles.walletCard}>
-          <View style={styles.walletHeader}>
-            <Text style={styles.walletLabel}>Available Balance</Text>
-            <View style={styles.walletBadge}>
-              <Text style={styles.walletBadgeText}>NGN</Text>
+        <View style={styles.card}>
+          <View style={styles.glow} />
+          <View style={styles.ring} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <AppText variant="small" color={color.onDarkMuted}>
+              Available balance
+            </AppText>
+            <View style={styles.ngn}>
+              <AppText variant="smallMedium" color="#FFFFFF" style={{ fontSize: 11 }}>
+                NGN
+              </AppText>
             </View>
           </View>
-
-          <Text style={styles.walletBalance}>
-            ₦{formatAmount(wallet?.balance || 0)}
-          </Text>
-
-          <View style={styles.walletActions}>
-            <TouchableOpacity style={styles.addMoneyButton} onPress={handleAddMoney}>
-              <Text style={styles.addMoneyIcon}>+</Text>
-              <Text style={styles.addMoneyText}>Add Money</Text>
-            </TouchableOpacity>
-          </View>
+          <AppText variant="display" color="#FFFFFF" style={{ marginTop: 8 }}>
+            {loading ? '…' : naira(wallet?.balance ?? 0)}
+          </AppText>
+          {!!wallet?.pending && (
+            <AppText variant="small" color={color.onDarkMuted} style={{ marginTop: 2 }}>
+              {naira(wallet.pending)} on hold
+            </AppText>
+          )}
+          <Button title="Add money" variant="white" icon="plus" size="md" onPress={onNavigateToAddMoney} style={{ marginTop: 20, alignSelf: 'flex-start' }} />
         </View>
 
-        {/* Quick Actions */}
-        <View style={styles.quickActionsSection}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <View style={styles.actionsGrid}>
-            <TouchableOpacity style={styles.actionItem} onPress={handleAddMoney}>
-              <View style={[styles.actionIcon, { backgroundColor: '#10B981' + '20' }]}>
-                <Text style={styles.actionIconText}>💳</Text>
+        <View style={styles.tips}>
+          {[
+            { icon: 'zap' as const, title: 'Pay instantly', body: 'Book without a card or bank app.' },
+            { icon: 'rotate-ccw' as const, title: 'Refunds land here', body: 'Cancelled trips are refunded to your wallet.' },
+          ].map((t) => (
+            <View key={t.title} style={styles.tip}>
+              <View style={styles.tipIcon}>
+                <Feather name={t.icon} size={15} color={color.primary} />
               </View>
-              <Text style={styles.actionLabel}>Add Money</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionItem} onPress={onNavigateToTransactions}>
-              <View style={[styles.actionIcon, { backgroundColor: '#3B82F6' + '20' }]}>
-                <Text style={styles.actionIconText}>📊</Text>
-              </View>
-              <Text style={styles.actionLabel}>History</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionItem}
-              onPress={() => Alert.alert('Coming Soon', 'Send money feature coming soon!')}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#8B5CF6' + '20' }]}>
-                <Text style={styles.actionIconText}>📤</Text>
-              </View>
-              <Text style={styles.actionLabel}>Send</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionItem}
-              onPress={() => Alert.alert('Help', 'Contact support@escardia.com for wallet issues.')}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#F59E0B' + '20' }]}>
-                <Text style={styles.actionIconText}>❓</Text>
-              </View>
-              <Text style={styles.actionLabel}>Help</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Info Box */}
-        <View style={styles.infoBox}>
-          <Text style={styles.infoIcon}>💡</Text>
-          <View style={styles.infoContent}>
-            <Text style={styles.infoTitle}>Pay faster with your wallet</Text>
-            <Text style={styles.infoText}>
-              Add money to your wallet and enjoy instant payments when booking cars.
-            </Text>
-          </View>
-        </View>
-
-        {/* Recent Activity */}
-        <View style={styles.activitySection}>
-          <View style={styles.activityHeader}>
-            <Text style={styles.sectionTitle}>Recent Activity</Text>
-            {transactions.length > 0 && (
-              <TouchableOpacity onPress={onNavigateToTransactions}>
-                <Text style={styles.seeAllText}>See All</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {transactions.length === 0 ? (
-            <View style={styles.emptyTransactions}>
-              <Text style={styles.emptyIcon}>📋</Text>
-              <Text style={styles.emptyTitle}>No Transactions Yet</Text>
-              <Text style={styles.emptyText}>
-                Add money to your wallet to get started
-              </Text>
-              <TouchableOpacity style={styles.emptyButton} onPress={handleAddMoney}>
-                <Text style={styles.emptyButtonText}>+ Add Money</Text>
-              </TouchableOpacity>
+              <AppText variant="smallMedium" style={{ marginTop: 10 }}>
+                {t.title}
+              </AppText>
+              <AppText variant="small" color={color.muted} style={{ marginTop: 2 }}>
+                {t.body}
+              </AppText>
             </View>
-          ) : (
-            transactions.map((transaction) => (
-              <View key={transaction.id} style={styles.transactionItem}>
-                <View
-                  style={[
-                    styles.transactionIcon,
-                    transaction.type === 'credit'
-                      ? styles.transactionIconCredit
-                      : styles.transactionIconDebit,
-                  ]}
-                >
-                  <Text style={styles.transactionIconText}>
-                    {transaction.type === 'credit' ? '↓' : '↑'}
-                  </Text>
-                </View>
+          ))}
+        </View>
 
-                <View style={styles.transactionDetails}>
-                  <Text style={styles.transactionTitle} numberOfLines={1}>
-                    {getTransactionTitle(transaction)}
-                  </Text>
-                  <Text style={styles.transactionSubtitle}>
-                    {getTransactionSubtitle(transaction)}
-                  </Text>
-                </View>
-
-                <View style={styles.transactionRight}>
-                  <Text
-                    style={[
-                      styles.transactionAmount,
-                      transaction.type === 'credit'
-                        ? styles.creditAmount
-                        : styles.debitAmount,
-                    ]}
-                  >
-                    {transaction.type === 'credit' ? '+' : '-'}₦
-                    {formatAmount(transaction.amount)}
-                  </Text>
-                  <Text style={styles.transactionTime}>
-                    {formatTransactionDate(transaction.createdAt)}
-                  </Text>
-                </View>
-              </View>
-            ))
+        <View style={styles.sectionHead}>
+          <AppText variant="heading">Recent activity</AppText>
+          {txs.length > 0 && (
+            <Pressable onPress={onNavigateToTransactions} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+              <AppText variant="smallMedium" color={color.primary} style={{ fontSize: 14 }}>
+                See all
+              </AppText>
+              <Feather name="chevron-right" size={16} color={color.primary} />
+            </Pressable>
           )}
         </View>
 
-        {/* Bottom Spacing */}
-        <View style={{ height: 40 }} />
+        <Panel style={{ paddingVertical: 4 }}>
+          {loading ? (
+            <View style={{ height: 120 }} />
+          ) : txs.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 28 }}>
+              <Feather name="list" size={22} color={color.subtle} />
+              <AppText variant="bodyMedium" style={{ marginTop: 10 }}>
+                No activity yet
+              </AppText>
+              <AppText variant="small" color={color.muted} center style={{ marginTop: 4 }}>
+                Top-ups, payments and refunds will show here.
+              </AppText>
+            </View>
+          ) : (
+            txs.map((t, i) => (
+              <TransactionRow
+                key={t.id}
+                title={getTransactionTitle(t)}
+                subtitle={txDate(t.createdAt)}
+                amount={t.amount}
+                credit={t.type === 'credit'}
+                pending={t.status === 'pending'}
+                last={i === txs.length - 1}
+              />
+            ))
+          )}
+        </Panel>
+
+        <AppText variant="small" color={color.muted} center style={{ marginTop: 18, paddingHorizontal: 12 }}>
+          Wallet money can be used for bookings. Questions about your balance? Contact support from your profile.
+        </AppText>
       </ScrollView>
-    </View>
+    </Screen>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  backButton: {
-    padding: 8,
-    marginLeft: -8,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: '#000',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
-  },
-  placeholder: {
-    width: 40,
-  },
-  content: {
-    flex: 1,
-    padding: 20,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-
-  // Wallet Card
-  walletCard: {
-    backgroundColor: '#1E3A8A',
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 24,
-  },
-  walletHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  walletLabel: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-  },
-  walletBadge: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  walletBadgeText: {
-    fontSize: 12,
-    color: '#FFFFFF',
-    fontWeight: '500',
-  },
-  walletBalance: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 20,
-    marginTop: 8,
-  },
-  walletActions: {
-    flexDirection: 'row',
-  },
-  addMoneyButton: {
-    flex: 1,
-    backgroundColor: '#10B981',
-    borderRadius: 12,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addMoneyIcon: {
-    fontSize: 18,
-    color: '#FFFFFF',
-    marginRight: 8,
-    fontWeight: 'bold',
-  },
-  addMoneyText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-
-  // Quick Actions
-  quickActionsSection: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#000',
-    marginBottom: 12,
-  },
-  actionsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  actionItem: {
-    width: '23%',
-    alignItems: 'center',
-  },
-  actionIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  actionIconText: {
-    fontSize: 22,
-  },
-  actionLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: colors.text,
-    textAlign: 'center',
-  },
-
-  // Info Box
-  infoBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#EFF6FF',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 24,
-  },
-  infoIcon: {
-    fontSize: 24,
-    marginRight: 12,
-  },
-  infoContent: {
-    flex: 1,
-  },
-  infoTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E40AF',
-    marginBottom: 4,
-  },
-  infoText: {
-    fontSize: 13,
-    color: '#3B82F6',
-    lineHeight: 18,
-  },
-
-  // Activity Section
-  activitySection: {
-    marginBottom: 24,
-  },
-  activityHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  seeAllText: {
-    fontSize: 14,
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  emptyTransactions: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 32,
-    alignItems: 'center',
-  },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 12,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 4,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  emptyButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  emptyButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  transactionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 14,
-    marginBottom: 10,
-  },
-  transactionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  transactionIconCredit: {
-    backgroundColor: '#D1FAE5',
-  },
-  transactionIconDebit: {
-    backgroundColor: '#FEE2E2',
-  },
-  transactionIconText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  transactionDetails: {
-    flex: 1,
-  },
-  transactionTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 4,
-  },
-  transactionSubtitle: {
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  transactionRight: {
-    alignItems: 'flex-end',
-  },
-  transactionAmount: {
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  creditAmount: {
-    color: '#10B981',
-  },
-  debitAmount: {
-    color: '#EF4444',
-  },
-  transactionTime: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-});
-
-export default WalletScreen;
+const styles = themed(() => StyleSheet.create({
+  card: { padding: 22, borderRadius: radius.xl, backgroundColor: color.navy, overflow: 'hidden' },
+  glow: { position: 'absolute', width: 240, height: 240, borderRadius: 120, backgroundColor: brand[600], opacity: 0.35, right: -80, top: -120 },
+  ring: { position: 'absolute', width: 180, height: 180, borderRadius: 90, borderWidth: 24, borderColor: 'rgba(255,255,255,0.04)', left: -60, bottom: -100 },
+  ngn: { paddingHorizontal: 8, height: 22, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.12)', justifyContent: 'center' },
+  tips: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  tip: { flex: 1, padding: 14, borderRadius: radius.lg, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  tipIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: color.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 24, marginBottom: 10 },
+}));

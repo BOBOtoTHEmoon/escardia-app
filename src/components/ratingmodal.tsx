@@ -1,15 +1,9 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  Modal,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  ScrollView,
-  Image,
-  Alert,
-} from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppText, Button, IconButton } from '../ui';
+import { color, font, gutter, radius, themed, isDark } from '../theme';
 
 interface RatingModalProps {
   visible: boolean;
@@ -28,260 +22,113 @@ interface RatingData {
   review: string;
 }
 
-const RatingModal: React.FC<RatingModalProps> = ({
-  visible,
-  onClose,
-  onSubmit,
-  tripData,
-}) => {
+const WORDS = ['', 'Poor', 'Fair', 'Good', 'Great', 'Excellent'];
+
+const Stars = ({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) => (
+  <View style={styles.block}>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+      <AppText variant="bodyMedium">{label}</AppText>
+      <AppText variant="smallMedium" color={value ? color.warning : color.subtle}>
+        {WORDS[value] || 'Tap to rate'}
+      </AppText>
+    </View>
+    <View style={styles.stars}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Pressable key={n} onPress={() => onChange(n)} hitSlop={6} accessibilityLabel={`${n} star${n > 1 ? 's' : ''}`}>
+          <Ionicons name={n <= value ? 'star' : 'star-outline'} size={34} color={n <= value ? '#F59E0B' : color.borderStrong} />
+        </Pressable>
+      ))}
+    </View>
+  </View>
+);
+
+const RatingModal: React.FC<RatingModalProps> = ({ visible, onClose, onSubmit, tripData }) => {
+  const insets = useSafeAreaInsets();
   const [carCondition, setCarCondition] = useState(0);
   const [driverRating, setDriverRating] = useState(0);
-  const [overallExperience, setOverallExperience] = useState(0);
+  const [overall, setOverall] = useState(0);
   const [review, setReview] = useState('');
 
-  const handleSubmit = () => {
-    if (carCondition === 0 || overallExperience === 0) {
-      Alert.alert('Missing Ratings', 'Please rate the car condition and overall experience');
+  useEffect(() => {
+    if (visible) {
+      setCarCondition(0);
+      setDriverRating(0);
+      setOverall(0);
+      setReview('');
+    }
+  }, [visible]);
+
+  const submit = () => {
+    if (!carCondition || !overall || (tripData.hadDriver && !driverRating)) {
+      Alert.alert('Almost there', 'Please give a star rating for each question.');
       return;
     }
-
-    if (tripData.hadDriver && driverRating === 0) {
-      Alert.alert('Missing Rating', 'Please rate your driver');
-      return;
-    }
-
-    const ratingData: RatingData = {
+    onSubmit({
       carCondition,
       driverRating: tripData.hadDriver ? driverRating : null,
-      overallExperience,
+      overallExperience: overall,
       review: review.trim(),
-    };
-
-    onSubmit(ratingData);
-    resetForm();
-  };
-
-  const handleSkip = () => {
-    resetForm();
-    onClose();
-  };
-
-  const resetForm = () => {
-    setCarCondition(0);
-    setDriverRating(0);
-    setOverallExperience(0);
-    setReview('');
-  };
-
-  const renderStars = (rating: number, onPress: (star: number) => void) => {
-    return (
-      <View style={styles.starsContainer}>
-        {[1, 2, 3, 4, 5].map((star) => (
-          <TouchableOpacity key={star} onPress={() => onPress(star)}>
-            <Image
-              source={
-                star <= rating
-                  ? require('../../assets/images/staricon.png')
-                  : require('../../assets/images/staricon.png')
-              }
-              style={styles.starIcon}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
+    });
   };
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={handleSkip}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          <ScrollView
-            style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Header */}
-            <View style={styles.header}>
-              <Text style={styles.title}>Rate Your Trip</Text>
-              <Text style={styles.carName}>{tripData.carName}</Text>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={styles.handle} />
+          <View style={styles.header}>
+            <View style={{ flex: 1 }}>
+              <AppText variant="heading">Rate your trip</AppText>
+              <AppText variant="small" color={color.muted}>
+                {tripData.carName}
+              </AppText>
             </View>
-
-            {/* Car Condition Rating */}
-            <View style={styles.ratingSection}>
-              <Text style={styles.ratingLabel}>Car Condition</Text>
-              <Text style={styles.ratingDescription}>
-                How was the car's cleanliness and condition?
-              </Text>
-              {renderStars(carCondition, setCarCondition)}
-            </View>
-
-            {/* Driver Rating - Only if hadDriver */}
-            {tripData.hadDriver && (
-              <View style={styles.ratingSection}>
-                <Text style={styles.ratingLabel}>Driver Service</Text>
-                <Text style={styles.ratingDescription}>
-                  How professional and safe was your driver?
-                </Text>
-                {renderStars(driverRating, setDriverRating)}
-              </View>
-            )}
-
-            {/* Overall Experience Rating */}
-            <View style={styles.ratingSection}>
-              <Text style={styles.ratingLabel}>Overall Experience</Text>
-              <Text style={styles.ratingDescription}>
-                How would you rate your overall experience?
-              </Text>
-              {renderStars(overallExperience, setOverallExperience)}
-            </View>
-
-            {/* Review Input */}
-            <View style={styles.reviewSection}>
-              <Text style={styles.ratingLabel}>
-                Write a Review <Text style={styles.optional}>(Optional)</Text>
-              </Text>
-              <TextInput
-                style={styles.reviewInput}
-                placeholder="Share your experience with other users..."
-                placeholderTextColor="#999999"
-                multiline
-                numberOfLines={4}
-                value={review}
-                onChangeText={setReview}
-                textAlignVertical="top"
-              />
-            </View>
-
-            {/* Buttons */}
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={styles.submitButton}
-                onPress={handleSubmit}
-              >
-                <Text style={styles.submitButtonText}>Submit Rating</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-                <Text style={styles.skipButtonText}>Skip for Now</Text>
-              </TouchableOpacity>
-            </View>
+            <IconButton icon="x" size={36} onPress={onClose} accessibilityLabel="Close" />
+          </View>
+          <ScrollView contentContainerStyle={{ paddingHorizontal: gutter }} keyboardShouldPersistTaps="handled">
+            <Stars label="Car condition" value={carCondition} onChange={setCarCondition} />
+            {tripData.hadDriver && <Stars label="Your driver" value={driverRating} onChange={setDriverRating} />}
+            <Stars label="Overall experience" value={overall} onChange={setOverall} />
+            <AppText variant="bodyMedium" style={{ marginTop: 18, marginBottom: 8 }}>
+              Anything to add? <AppText variant="small" color={color.muted}>(optional)</AppText>
+            </AppText>
+            <TextInput
+              keyboardAppearance={isDark() ? 'dark' : 'light'}
+              value={review}
+              onChangeText={setReview}
+              placeholder="Tell other riders what it was like"
+              placeholderTextColor={color.subtle}
+              multiline
+              maxLength={500}
+              style={styles.input}
+            />
+            <Button title="Submit rating" onPress={submit} style={{ marginTop: 18 }} />
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
 
-const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'flex-end',
-  },
-  modalContainer: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    height: '85%',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 24,
-    paddingBottom: 40,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 32,
-    paddingTop: 8,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#000000',
-    marginBottom: 8,
-  },
-  carName: {
-    fontSize: 16,
-    color: '#666666',
-    fontWeight: '500',
-  },
-  ratingSection: {
-    marginBottom: 32,
-  },
-  ratingLabel: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000000',
-    marginBottom: 4,
-  },
-  ratingDescription: {
-    fontSize: 14,
-    color: '#666666',
-    marginBottom: 16,
-  },
-  starsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  starIcon: {
-    width: 40,
-    height: 20,
-  },
-  reviewSection: {
-    marginBottom: 32,
-  },
-  optional: {
-    fontSize: 14,
-    color: '#999999',
-    fontWeight: '400',
-  },
-  reviewInput: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    color: '#000000',
-    minHeight: 120,
-    marginTop: 8,
-  },
-  buttonContainer: {
-    gap: 12,
-    marginTop: 8,
-  },
-  submitButton: {
-    backgroundColor: '#2F5FED',
-    borderRadius: 12,
-    padding: 18,
-    alignItems: 'center',
-  },
-  submitButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  skipButton: {
-    backgroundColor: 'transparent',
-    borderRadius: 12,
-    padding: 18,
-    alignItems: 'center',
+const styles = themed(() => StyleSheet.create({
+  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: color.overlay },
+  sheet: { backgroundColor: color.surface, borderTopLeftRadius: radius.xxl, borderTopRightRadius: radius.xxl, maxHeight: '90%' },
+  handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: color.border, marginTop: 10 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: gutter, paddingTop: 12, paddingBottom: 4 },
+  block: { marginTop: 18 },
+  stars: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  input: {
+    minHeight: 90,
+    padding: 12,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#CCCCCC',
+    borderColor: color.border,
+    fontFamily: font.regular,
+    fontSize: 15,
+    color: color.ink,
+    textAlignVertical: 'top',
   },
-  skipButtonText: {
-    color: '#666666',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});
+}));
 
 export default RatingModal;

@@ -21,7 +21,9 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { colors, typography, spacing } from '../constants';
+import { Feather } from '@expo/vector-icons';
+import { AppText } from '../ui';
+import { color, font, space, themed } from '../theme';
 import { PAYSTACK_CONFIG } from '../services/paystackService';
 
 interface PaystackWebViewProps {
@@ -110,17 +112,24 @@ export const PaystackWebView: React.FC<PaystackWebViewProps> = ({
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onCancel} style={styles.closeButton}>
-            <Text style={styles.closeButtonText}>✕</Text>
+            <Feather name="x" size={18} color={color.ink} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Complete Payment</Text>
+          <View style={{ alignItems: 'center' }}>
+            <AppText variant="subheading">Secure payment</AppText>
+            <AppText variant="small" color={color.muted} style={{ fontSize: 12 }}>
+              Powered by Paystack
+            </AppText>
+          </View>
           <View style={styles.headerSpacer} />
         </View>
 
         {/* Loading Indicator */}
         {loading && (
           <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>Loading payment page...</Text>
+            <ActivityIndicator size="large" color={color.primary} />
+            <AppText variant="body" color={color.muted} style={{ marginTop: 12 }}>
+              Loading the payment page…
+            </AppText>
           </View>
         )}
 
@@ -149,46 +158,49 @@ export const PaystackWebView: React.FC<PaystackWebViewProps> = ({
 
         {/* Security Footer */}
         <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            🔒 Secured by Paystack
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Feather name="lock" size={12} color={color.success} />
+            <AppText variant="small" color={color.muted}>
+              Your details go straight to Paystack, never to Escardia
+            </AppText>
+          </View>
         </View>
       </SafeAreaView>
     </Modal>
   );
 };
 
-const styles = StyleSheet.create({
+const styles = themed(() => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: color.surface,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.background,
+    borderBottomColor: color.border,
+    backgroundColor: color.surface,
   },
   closeButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.inputBackground,
+    backgroundColor: color.sunken,
     justifyContent: 'center',
     alignItems: 'center',
   },
   closeButtonText: {
     fontSize: 18,
-    color: colors.text,
+    color: color.ink,
   },
   headerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.semiBold,
-    color: colors.text,
+    fontSize: 18,
+    fontFamily: font.semibold,
+    color: color.ink,
   },
   headerSpacer: {
     width: 36,
@@ -198,27 +210,27 @@ const styles = StyleSheet.create({
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.background,
+    backgroundColor: color.surface,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,
   },
   loadingText: {
-    marginTop: spacing.md,
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
+    marginTop: space.md,
+    fontSize: 15,
+    color: color.muted,
   },
   footer: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
+    paddingVertical: space.sm,
+    paddingHorizontal: space.lg,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: color.border,
     alignItems: 'center',
   },
   footerText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
+    fontSize: 13,
+    color: color.muted,
   },
-});
+}));
 
-export default PaystackWebView;
+export default PaystackWebView;

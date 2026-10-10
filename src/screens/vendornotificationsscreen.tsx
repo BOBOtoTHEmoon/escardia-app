@@ -1,271 +1,112 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Switch,
-  Alert,
-} from 'react-native';
-import { colors, typography, spacing, borderRadius } from '../constants';
+// Push notifications for vendors: whether they are on for this phone, and what Escardia sends.
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, AppState, Linking, ScrollView, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { Feather } from '@expo/vector-icons';
+import { auth } from '../config/supabase';
+import { getNotificationPermissionStatus, savePushToken } from '../services/notificationService';
+import { AppText, Button, IconName, Screen, ScreenHeader } from '../ui';
+import { color, gutter, radius, themed, statusBarStyle } from '../theme';
 
 interface VendorNotificationPreferencesScreenProps {
   onNavigateBack: () => void;
 }
 
-export const VendorNotificationPreferencesScreen: React.FC<VendorNotificationPreferencesScreenProps> = ({
-  onNavigateBack,
-}) => {
-  const [preferences, setPreferences] = useState({
-    emailNotifications: true,
-    pushNotifications: true,
-    smsNotifications: false,
-    
-    newBookings: true,
-    bookingUpdates: true,
-    cancellations: true,
-    
-    payments: true,
-    withdrawals: true,
-    
-    promotions: false,
-    tips: true,
-  });
-  const [loading, setLoading] = useState(true);
+const WHAT: { icon: IconName; title: string; body: string }[] = [
+  { icon: 'calendar', title: 'New bookings', body: 'As soon as a customer pays for one of your cars.' },
+  { icon: 'x-circle', title: 'Cancellations', body: 'When a customer cancels a booking.' },
+  { icon: 'alert-triangle', title: 'Problems on a trip', body: 'If a customer reports a problem.' },
+  { icon: 'credit-card', title: 'Money', body: 'When earnings are released and when withdrawals are paid or fail.' },
+  { icon: 'check-circle', title: 'Approvals', body: 'When your account or a car is approved or needs changes.' },
+];
 
-  useEffect(() => {
-    loadPreferences();
+export const VendorNotificationPreferencesScreen: React.FC<VendorNotificationPreferencesScreenProps> = ({ onNavigateBack }) => {
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const check = useCallback(() => {
+    getNotificationPermissionStatus()
+      .then(setStatus)
+      .catch(() => setStatus('undetermined'));
   }, []);
 
-  const loadPreferences = async () => {
-    try {
-      // Preferences are saved on this phone.
-      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-      const saved = await AsyncStorage.getItem('escardia.vendorNotificationPreferences');
-      if (saved) setPreferences(JSON.parse(saved));
-    } catch (error) {
-      console.error('Error loading preferences:', error);
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    check();
+    // Re-check when they come back from the phone's settings.
+    const sub = AppState.addEventListener('change', (s) => s === 'active' && check());
+    return () => sub.remove();
+  }, [check]);
+
+  const turnOn = async () => {
+    if (status === 'denied') return Linking.openSettings();
+    setBusy(true);
+    const uid = auth.currentUser?.uid;
+    if (uid) await savePushToken(uid, 'vendor');
+    setBusy(false);
+    check();
   };
 
-  const handleSave = async () => {
-    try {
-      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-      await AsyncStorage.setItem('escardia.vendorNotificationPreferences', JSON.stringify(preferences));
-
-      Alert.alert('Success', 'Preferences saved successfully!');
-    } catch (error) {
-      console.error('Error saving preferences:', error);
-      Alert.alert('Error', 'Failed to save preferences');
-    }
-  };
-
-  const togglePreference = (key: keyof typeof preferences) => {
-    setPreferences(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const PreferenceRow = ({ 
-    title, 
-    subtitle, 
-    value, 
-    onToggle 
-  }: { 
-    title: string; 
-    subtitle: string; 
-    value: boolean; 
-    onToggle: () => void;
-  }) => (
-    <View style={styles.preferenceRow}>
-      <View style={styles.preferenceLeft}>
-        <Text style={styles.preferenceTitle}>{title}</Text>
-        <Text style={styles.preferenceSubtitle}>{subtitle}</Text>
-      </View>
-      <Switch
-        value={value}
-        onValueChange={onToggle}
-        trackColor={{ false: colors.border, true: colors.primary }}
-      />
-    </View>
-  );
+  const on = status === 'granted';
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onNavigateBack} style={styles.backButton}>
-          <Text style={styles.backIcon}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Notifications</Text>
-        <TouchableOpacity onPress={handleSave}>
-          <Text style={styles.saveText}>Save</Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* General */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🔔 General</Text>
-          
-          <PreferenceRow
-            title="Email Notifications"
-            subtitle="Receive updates via email"
-            value={preferences.emailNotifications}
-            onToggle={() => togglePreference('emailNotifications')}
-          />
-
-          <PreferenceRow
-            title="Push Notifications"
-            subtitle="Receive push notifications on your device"
-            value={preferences.pushNotifications}
-            onToggle={() => togglePreference('pushNotifications')}
-          />
-
-          <PreferenceRow
-            title="SMS Notifications"
-            subtitle="Receive text messages for important updates"
-            value={preferences.smsNotifications}
-            onToggle={() => togglePreference('smsNotifications')}
-          />
+    <Screen>
+      <StatusBar style={statusBarStyle()} />
+      <ScreenHeader title="Push notifications" onBack={onNavigateBack} />
+      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }}>
+        <View style={[styles.status, { backgroundColor: on ? color.successSoft : color.warningSoft }]}>
+          {status === null ? (
+            <ActivityIndicator color={color.primary} />
+          ) : (
+            <>
+              <View style={[styles.statusIcon, { backgroundColor: on ? color.success : color.warning }]}>
+                <Feather name={on ? 'bell' : 'bell-off'} size={20} color="#FFFFFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <AppText variant="subheading">{on ? 'On for this phone' : 'Off for this phone'}</AppText>
+                <AppText variant="small" color={color.text} style={{ marginTop: 2 }}>
+                  {on
+                    ? 'You will get an alert the moment something needs you.'
+                    : 'Turn them on so you never miss a booking. Everything still shows in your notifications inbox.'}
+                </AppText>
+              </View>
+            </>
+          )}
         </View>
+        {status !== null && !on && (
+          <Button title={status === 'denied' ? 'Open phone settings' : 'Turn on notifications'} icon="bell" onPress={turnOn} loading={busy} style={{ marginTop: 14 }} />
+        )}
 
-        {/* Bookings */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📅 Bookings</Text>
-          
-          <PreferenceRow
-            title="New Bookings"
-            subtitle="Get notified when you receive a new booking"
-            value={preferences.newBookings}
-            onToggle={() => togglePreference('newBookings')}
-          />
-
-          <PreferenceRow
-            title="Booking Updates"
-            subtitle="Updates on ongoing bookings"
-            value={preferences.bookingUpdates}
-            onToggle={() => togglePreference('bookingUpdates')}
-          />
-
-          <PreferenceRow
-            title="Cancellations"
-            subtitle="Notify when customers cancel bookings"
-            value={preferences.cancellations}
-            onToggle={() => togglePreference('cancellations')}
-          />
+        <AppText variant="heading" style={{ marginTop: 26, marginBottom: 12 }}>
+          What we notify you about
+        </AppText>
+        <View style={styles.list}>
+          {WHAT.map((w, i) => (
+            <View key={w.title} style={[styles.row, i < WHAT.length - 1 && styles.border]}>
+              <View style={styles.icon}>
+                <Feather name={w.icon} size={16} color={color.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <AppText variant="bodyMedium">{w.title}</AppText>
+                <AppText variant="small" color={color.muted}>
+                  {w.body}
+                </AppText>
+              </View>
+            </View>
+          ))}
         </View>
-
-        {/* Financial */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>💰 Financial</Text>
-          
-          <PreferenceRow
-            title="Payment Alerts"
-            subtitle="Get notified of successful payments"
-            value={preferences.payments}
-            onToggle={() => togglePreference('payments')}
-          />
-
-          <PreferenceRow
-            title="Withdrawal Confirmations"
-            subtitle="Confirm when funds are withdrawn"
-            value={preferences.withdrawals}
-            onToggle={() => togglePreference('withdrawals')}
-          />
-        </View>
-
-        {/* Marketing */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📢 Marketing</Text>
-          
-          <PreferenceRow
-            title="Promotions & Offers"
-            subtitle="Receive promotional content and special offers"
-            value={preferences.promotions}
-            onToggle={() => togglePreference('promotions')}
-          />
-
-          <PreferenceRow
-            title="Tips & Tricks"
-            subtitle="Get helpful tips to grow your business"
-            value={preferences.tips}
-            onToggle={() => togglePreference('tips')}
-          />
-        </View>
-
-        <View style={styles.bottomSpacing} />
+        <AppText variant="small" color={color.muted} style={{ marginTop: 12 }}>
+          These are about your bookings and money, so they cannot be switched off one by one. To stop all alerts, turn notifications off in your phone settings.
+        </AppText>
       </ScrollView>
-    </View>
+    </Screen>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: 60,
-    paddingBottom: spacing.md,
-  },
-  backButton: {
-    padding: spacing.sm,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: colors.text,
-  },
-  headerTitle: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-  },
-  saveText: {
-    fontSize: typography.fontSize.base,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  section: {
-    padding: spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.md,
-  },
-  preferenceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  preferenceLeft: {
-    flex: 1,
-    marginRight: spacing.md,
-  },
-  preferenceTitle: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.medium,
-    color: colors.text,
-    marginBottom: 4,
-  },
-  preferenceSubtitle: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-  },
-  bottomSpacing: {
-    height: 40,
-  },
-});
+const styles = themed(() => StyleSheet.create({
+  status: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: radius.xl, minHeight: 80 },
+  statusIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  list: { backgroundColor: color.surface, borderRadius: radius.xl, borderWidth: 1, borderColor: color.border, overflow: 'hidden' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
+  border: { borderBottomWidth: 1, borderBottomColor: color.border },
+  icon: { width: 36, height: 36, borderRadius: 11, backgroundColor: color.primarySoft, alignItems: 'center', justifyContent: 'center' },
+}));

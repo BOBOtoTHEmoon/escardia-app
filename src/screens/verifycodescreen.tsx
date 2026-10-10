@@ -1,284 +1,145 @@
-import React, { useState, useRef, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-} from 'react-native';
-import { Image } from 'react-native';
-import { Button } from '../components';
-import { colors, typography, spacing, borderRadius } from '../constants';
+import React, { useEffect, useState } from 'react';
+import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import { StatusBar } from 'expo-status-bar';
 import { verifyEmailCode, resendVerificationCode } from '../services/authservice';
+import { AppText, Banner, Button, IconButton, LinkText, OtpInput, Screen } from '../ui';
+import { brand, color, gutter, themed, statusBarStyle } from '../theme';
 
 interface VerifyCodeScreenProps {
   onVerifySuccess: () => void;
+  onNavigateBack?: () => void;
   email?: string;
 }
 
-export const VerifyCodeScreen: React.FC<VerifyCodeScreenProps> = ({
-  onVerifySuccess,
-  email,
-}) => {
-  const [code, setCode] = useState(['', '', '', '', '', '']);
+export const VerifyCodeScreen: React.FC<VerifyCodeScreenProps> = ({ onVerifySuccess, onNavigateBack, email }) => {
+  const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [timer, setTimer] = useState(60);
-  const [canResend, setCanResend] = useState(false);
 
-  // Refs for input fields
-  const inputRefs = useRef<(TextInput | null)[]>([]);
-  // Countdown timer
   useEffect(() => {
-    if (timer > 0) {
-      const interval = setInterval(() => {
-        setTimer((prev) => prev - 1);
-      }, 1000);
-      return () => clearInterval(interval);
-    } else {
-      setCanResend(true);
-    }
+    if (timer <= 0) return;
+    const t = setTimeout(() => setTimer(timer - 1), 1000);
+    return () => clearTimeout(t);
   }, [timer]);
 
-  // Handle code input
-  const handleCodeChange = (text: string, index: number) => {
-    // Only allow numbers
-    if (text && !/^\d+$/.test(text)) return;
-
-    const newCode = [...code];
-    newCode[index] = text;
-    setCode(newCode);
-    setError('');
-
-    // Auto-focus next input
-    if (text && index < 5) {
-      inputRefs.current[index + 1]?.focus();
-    }
-  };
-
-  // Handle backspace
-  const handleKeyPress = (e: any, index: number) => {
-    if (e.nativeEvent.key === 'Backspace' && !code[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
-    }
-  };
-
-    // Handle verify
-  const handleVerify = async () => {
-    const fullCode = code.join('');
-
-    if (fullCode.length !== 6) {
-      setError('Please enter the complete 6-digit code');
+  const verify = async (value = code) => {
+    if (value.length !== 6) {
+      setError('Enter all 6 digits');
       return;
     }
     if (!email) {
-      setError('Missing email address. Please go back and sign up again.');
+      setError('We lost your email address. Go back and sign up again.');
       return;
     }
-
     setLoading(true);
-    const result = await verifyEmailCode(email, fullCode);
+    setError('');
+    const result = await verifyEmailCode(email, value);
     setLoading(false);
-
-    if (result.success) {
-      onVerifySuccess();
-    } else {
-      setError(result.error || 'That code is wrong or has expired');
-    }
+    if (result.success) onVerifySuccess();
+    else setError(result.error || 'That code is wrong or has expired');
   };
 
-  // Handle resend code
-  const handleResend = async () => {
-    if (!canResend || !email) return;
-
+  const resend = async () => {
+    if (timer > 0 || !email) return;
     const result = await resendVerificationCode(email);
     if (!result.success) {
-      setError(result.error || 'Could not resend the code');
+      setError(result.error || 'We could not send a new code');
       return;
     }
     setError('');
+    setNotice('A new code is on its way.');
+    setCode('');
     setTimer(60);
-    setCanResend(false);
-    setCode(['', '', '', '', '', '']);
-    inputRefs.current[0]?.focus();
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <View style={styles.content}>
-        {/* Logo */}
-        <View style={styles.logoContainer}>
-          <Image
-            source={require('../../assets/images/logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
+    <Screen>
+      <StatusBar style={statusBarStyle()} />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.top}>{onNavigateBack && <IconButton icon="chevron-left" onPress={onNavigateBack} accessibilityLabel="Go back" />}</View>
+
+        <View style={styles.content}>
+          <View style={styles.iconRing}>
+            <View style={styles.iconCircle}>
+              <Feather name="mail" size={26} color={color.primary} />
+            </View>
+          </View>
+
+          <AppText variant="title" center>
+            Check your email
+          </AppText>
+          <AppText variant="body" color={color.muted} center style={{ marginTop: 8, marginBottom: 32 }}>
+            We sent a 6-digit code to{'\n'}
+            <AppText variant="bodyMedium" color={color.ink}>
+              {email || 'your email'}
+            </AppText>
+          </AppText>
+
+          <OtpInput
+            value={code}
+            autoFocus
+            error={!!error}
+            onChange={(v) => {
+              setCode(v);
+              setError('');
+              setNotice('');
+              if (v.length === 6) verify(v);
+            }}
           />
+
+          <View style={{ marginTop: 20 }}>
+            {!!error && <Banner text={error} />}
+            {!!notice && !error && <Banner tone="success" text={notice} />}
+          </View>
+
+          <Button title="Verify email" onPress={() => verify()} loading={loading} disabled={code.length !== 6} style={{ marginTop: 8 }} />
+
+          <View style={styles.resend}>
+            <AppText variant="body" color={color.muted}>
+              Didn&apos;t get it?{' '}
+            </AppText>
+            {timer > 0 ? (
+              <AppText variant="bodyMedium" color={color.subtle}>
+                Resend in 0:{String(timer).padStart(2, '0')}
+              </AppText>
+            ) : (
+              <LinkText onPress={resend}>Send a new code</LinkText>
+            )}
+          </View>
+          <AppText variant="small" color={color.subtle} center style={{ marginTop: 12 }}>
+            Check your spam folder if it is not in your inbox.
+          </AppText>
         </View>
-
-        {/* Title */}
-        <Text style={styles.title}>Verify Code</Text>
-
-        {/* Subtitle */}
-        <Text style={styles.subtitle}>
-          {email
-            ? `We've sent a code to ${email}`
-            : "Enter the code we've sent to your email"}
-        </Text>
-
-       {/* OTP Input Fields */}
-        <View style={styles.otpContainer}>
-          {code.map((digit, index) => (
-            <TextInput
-              key={index}
-              ref={(el) => {
-                inputRefs.current[index] = el;
-              }}
-              style={[
-                styles.otpInput,
-                digit && styles.otpInputFilled,
-                error && styles.otpInputError,
-              ]}
-              value={digit}
-              onChangeText={(text) => handleCodeChange(text, index)}
-              onKeyPress={(e) => handleKeyPress(e, index)}
-              keyboardType="number-pad"
-              maxLength={1}
-              selectTextOnFocus
-            />
-          ))}
-        </View>
-
-        {/* Error Message */}
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-        {/* Verify Button */}
-        <Button
-          title="Verify"
-          onPress={handleVerify}
-          loading={loading}
-          style={styles.verifyButton}
-        />
-
-        {/* Resend Code */}
-        <View style={styles.resendContainer}>
-          <Text style={styles.resendText}>Didn't receive any code? </Text>
-          <TouchableOpacity onPress={handleResend} disabled={!canResend}>
-            <Text
-              style={[
-                styles.resendLink,
-                !canResend && styles.resendLinkDisabled,
-              ]}
-            >
-              {canResend ? 'Resend' : `Resend in ${timer}s`}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </Screen>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-
-  content: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing['2xl'],
+const styles = themed(() => StyleSheet.create({
+  top: { height: 56, paddingHorizontal: gutter, justifyContent: 'center' },
+  content: { flex: 1, paddingHorizontal: gutter, paddingTop: 24 },
+  iconRing: {
+    alignSelf: 'center',
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: color.primarySoft,
     alignItems: 'center',
-  },
-
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: spacing.xl,
-  },
-
-  logo: {
-    width: 80,
-    height: 40,
-  },
-
-  title: {
-    fontSize: typography.fontSize['3xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-
-  subtitle: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: spacing.xl,
-    paddingHorizontal: spacing.lg,
-  },
-
-  otpContainer: {
-    flexDirection: 'row',
     justifyContent: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
+    marginBottom: 24,
   },
-
-  otpInput: {
-    width: 50,
-    height: 56,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.inputBackground,
-    fontSize: typography.fontSize['2xl'],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    textAlign: 'center',
-  },
-
-  otpInputFilled: {
-    borderColor: colors.primary,
-    backgroundColor: colors.background,
-  },
-
-  otpInputError: {
-    borderColor: colors.error,
-  },
-
-  errorText: {
-    fontSize: typography.fontSize.sm,
-    color: colors.error,
-    marginBottom: spacing.md,
-  },
-
-  verifyButton: {
-    width: '100%',
-    marginTop: spacing.lg,
-  },
-
-  resendContainer: {
-    flexDirection: 'row',
+  iconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: color.surface,
     alignItems: 'center',
-    marginTop: spacing.xl,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: color.primaryBorder,
   },
-
-  resendText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-  },
-
-  resendLink: {
-    fontSize: typography.fontSize.base,
-    color: colors.primary,
-    fontWeight: typography.fontWeight.semiBold,
-  },
-
-  resendLinkDisabled: {
-    color: colors.textLight,
-  },
-});
+  resend: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 24 },
+}));
