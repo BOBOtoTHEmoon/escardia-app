@@ -10,9 +10,13 @@ export const CONTACT = {
   phone: '+2349116511460',
   phoneDisplay: '+234 911 651 1460',
   whatsapp: 'https://wa.me/2349116511460',
-  email: 'contact@escardia.com',
-  instagram: 'https://instagram.com/escardia.co',
-  x: 'https://twitter.com/escardiaCo',
+  email: 'hello@escardia.app',
+  instagram: 'https://instagram.com/escardiaapp',
+  x: 'https://x.com/escardiaapp',
+  handle: '@escardiaapp',
+  website: 'https://escardia.app',
+  privacy: 'https://escardia.app/privacy',
+  terms: 'https://escardia.app/terms',
 };
 
 interface ContactUsScreenProps {
@@ -36,8 +40,8 @@ export const ContactUsScreen: React.FC<ContactUsScreenProps> = ({ onNavigateBack
         <MenuRow icon="mail" label="Email" hint={CONTACT.email} onPress={() => open(`mailto:${CONTACT.email}`)} last />
       </MenuGroup>
       <MenuGroup title="Social">
-        <MenuRow icon="instagram" label="Instagram" hint="@escardia.co" onPress={() => open(CONTACT.instagram)} />
-        <MenuRow icon="twitter" label="X" hint="@escardiaCo" onPress={() => open(CONTACT.x)} last />
+        <MenuRow icon="instagram" label="Instagram" hint={CONTACT.handle} onPress={() => open(CONTACT.instagram)} />
+        <MenuRow icon="twitter" label="X" hint={CONTACT.handle} onPress={() => open(CONTACT.x)} last />
       </MenuGroup>
     </ScrollView>
   </Screen>

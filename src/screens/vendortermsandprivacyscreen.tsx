@@ -42,7 +42,7 @@ export const VendorTermsAndPrivacyScreen: React.FC<VendorTermsAndPrivacyScreenPr
           </View>
         ))}
         <AppText variant="small" color={color.subtle} style={{ marginTop: 6 }}>
-          Last updated {AGREEMENT_UPDATED}. Questions? Email support@escardia.com.
+          Last updated {AGREEMENT_UPDATED}. Questions? Email hello@escardia.app.
         </AppText>
       </ScrollView>
     </Screen>

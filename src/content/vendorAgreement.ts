@@ -74,7 +74,7 @@ export const vendorPrivacy: Section[] = [
   },
   {
     title: 'Your choices',
-    body: 'You can update your details in the app at any time. To close your account or ask for a copy of your data, contact support@escardia.com.',
+    body: 'You can update your details in the app at any time. To close your account or ask for a copy of your data, contact hello@escardia.app.',
   },
 ];
 

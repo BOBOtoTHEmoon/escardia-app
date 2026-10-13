@@ -6,6 +6,7 @@ import { signUpWithEmail } from '../services/authservice';
 import { AppText, Banner, Button, Checkbox, IconButton, LinkText, TextField } from '../ui';
 import { AuthLayout } from '../ui/AuthLayout';
 import { color, gutter, themed } from '../theme';
+import { CONTACT } from './contactusscreen';
 
 interface SignUpScreenProps {
   onSignUpSuccess: (email: string, needsVerification: boolean) => void;
@@ -147,8 +148,8 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onN
           clear('password');
         }}
         isPassword
-        autoComplete="new-password"
-        textContentType="newPassword"
+        autoComplete="off"
+        textContentType="oneTimeCode"
         returnKeyType="next"
         onSubmitEditing={() => confirmRef.current?.focus()}
         error={errors.password}
@@ -180,8 +181,8 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onN
           clear('confirmPassword');
         }}
         isPassword
-        autoComplete="new-password"
-        textContentType="newPassword"
+        autoComplete="off"
+        textContentType="oneTimeCode"
         returnKeyType="done"
         error={errors.confirmPassword}
       />
@@ -200,7 +201,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onN
               Terms and Conditions
             </LinkText>{' '}
             and{' '}
-            <LinkText style={{ fontSize: 13 }} onPress={() => Linking.openURL('https://www.escardia.com/privacy').catch(() => {})}>
+            <LinkText style={{ fontSize: 13 }} onPress={() => Linking.openURL(CONTACT.privacy).catch(() => {})}>
               Privacy Policy
             </LinkText>
           </AppText>
@@ -229,30 +230,43 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onN
 
 const TERMS: { title: string; body: string }[] = [
   {
-    title: '1. Acceptance of terms',
-    body: 'By using the Escardia app, you agree to these Terms and Conditions. If you do not agree, please do not use our services.',
+    title: '1. About these terms',
+    body: 'These terms apply when you use the Escardia app. By creating an account or making a booking, you agree to them. If you do not agree, please do not use Escardia.',
   },
   {
-    title: '2. Eligibility',
-    body: "You must be at least 18 years old and hold a valid driver's licence to rent a vehicle through Escardia.",
+    title: '2. What Escardia does',
+    body: 'Escardia is a marketplace. Independent vendors list their cars and supply a professional driver for every trip. Escardia checks vendors and cars, takes payment, and supports you before, during and after your trip.',
   },
   {
-    title: '3. Your account',
-    body: 'Give accurate information when you sign up. You are responsible for keeping your login details safe and for everything done with your account.',
+    title: '3. Who can use Escardia',
+    body: 'You must be at least 18. Give accurate information when you sign up and keep your login details safe. You are responsible for everything done with your account.',
   },
   {
     title: '4. Bookings and payments',
     body:
-      '• All bookings depend on the car being available\n• The price you see at checkout includes Escardia’s service fee\n• You pay in full before the trip starts\n• Refunds depend on how early you cancel, as shown before you book',
+      '• Every booking depends on the car being available\n• Every trip includes a driver supplied by the vendor\n• You pay in full before the trip starts\n• The price on the Review and pay screen includes the car, any delivery, security and Hilux fees, and Escardia’s service fee. It does not change after you pay',
   },
   {
-    title: '5. Using the vehicle',
+    title: '5. Cancellations and refunds',
     body:
-      '• Follow Nigerian traffic laws\n• No smoking, pets or illegal activity in any vehicle\n• You are responsible for damage during your trip\n• Return the car in the condition you received it\n• Late returns may cost extra',
+      '• 24 hours or more before pick-up: full refund\n• 12 to 24 hours: 50% refund\n• 2 to 12 hours: 25% refund\n• Less than 2 hours: no refund\n• If the vendor or Escardia cancels, you get a full refund\nRefunds go to your Escardia wallet straight away.',
   },
   {
-    title: '6. Contact us',
-    body: 'Questions about these terms? Email support@escardia.com.',
+    title: '6. During your trip',
+    body:
+      '• Follow Nigerian law and the driver’s reasonable safety instructions\n• No smoking, pets or illegal activity in any vehicle\n• You are responsible for damage you or your passengers cause\n• Treat drivers and security personnel with respect\n• Trips that run past the booked time may cost extra',
+  },
+  {
+    title: '7. If something goes wrong',
+    body: 'Report a problem from the trip screen during your trip or within 24 hours after it ends. Escardia holds the vendor’s payment while we review it and may refund you all or part of what you paid.',
+  },
+  {
+    title: '8. Your account',
+    body: 'You can delete your account at any time from Profile. We may pause or close an account for false information, unsafe or abusive behaviour, or fraud.',
+  },
+  {
+    title: '9. Contact us',
+    body: `Questions about these terms? Email ${CONTACT.email}. The full terms are at escardia.app/terms.`,
   },
 ];
 

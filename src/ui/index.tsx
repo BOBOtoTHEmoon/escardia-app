@@ -175,6 +175,14 @@ export const TextField = forwardRef<
 >(({ label, icon, error, hint, isPassword, containerStyle, onFocus, onBlur, ...props }, ref) => {
   const [focused, setFocused] = useState(false);
   const [visible, setVisible] = useState(false);
+  // Keep our own handle on the input so a tap anywhere on the box (icon, padding) opens the keyboard,
+  // while still passing the input to any parent that asked for the ref.
+  const inner = useRef<TextInput | null>(null);
+  const setRef = (node: TextInput | null) => {
+    inner.current = node;
+    if (typeof ref === 'function') ref(node);
+    else if (ref) ref.current = node;
+  };
   return (
     <View style={[{ marginBottom: space.lg }, containerStyle]}>
       {label && (
@@ -182,7 +190,9 @@ export const TextField = forwardRef<
           {label}
         </AppText>
       )}
-      <View
+      <Pressable
+        onPress={() => inner.current?.focus()}
+        accessible={false}
         style={[
           styles.field,
           focused && styles.fieldFocused,
@@ -191,7 +201,7 @@ export const TextField = forwardRef<
       >
         {icon && <Feather name={icon} size={18} color={focused ? color.primary : color.subtle} style={{ marginRight: 10 }} />}
         <TextInput
-          ref={ref}
+          ref={setRef}
           placeholderTextColor={color.subtle}
           keyboardAppearance={isDark() ? 'dark' : 'light'}
           secureTextEntry={isPassword && !visible}
@@ -211,7 +221,7 @@ export const TextField = forwardRef<
             <Feather name={visible ? 'eye-off' : 'eye'} size={18} color={color.subtle} />
           </Pressable>
         )}
-      </View>
+      </Pressable>
       {!!error && (
         <View style={styles.fieldMessage}>
           <Feather name="alert-circle" size={13} color={color.danger} />

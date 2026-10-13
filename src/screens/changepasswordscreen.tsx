@@ -51,8 +51,8 @@ export const ChangePasswordScreen: React.FC<ChangePasswordScreenProps> = ({ onNa
             value={next}
             onChangeText={setNext}
             isPassword
-            autoComplete="new-password"
-            textContentType="newPassword"
+            autoComplete="off"
+            textContentType="oneTimeCode"
             containerStyle={{ marginBottom: 10 }}
           />
           <View style={{ gap: 6, marginBottom: 18 }}>
@@ -68,7 +68,7 @@ export const ChangePasswordScreen: React.FC<ChangePasswordScreenProps> = ({ onNa
               );
             })}
           </View>
-          <TextField label="Confirm new password" icon="lock" value={again} onChangeText={setAgain} isPassword autoComplete="new-password" textContentType="newPassword" containerStyle={{ marginBottom: 24 }} />
+          <TextField label="Confirm new password" icon="lock" value={again} onChangeText={setAgain} isPassword autoComplete="off" textContentType="oneTimeCode" containerStyle={{ marginBottom: 24 }} />
           <Button title="Update password" onPress={save} loading={saving} />
         </ScrollView>
       </KeyboardAvoidingView>

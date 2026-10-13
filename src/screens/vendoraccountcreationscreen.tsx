@@ -175,8 +175,8 @@ export const VendorAccountCreationScreen: React.FC<VendorAccountCreationScreenPr
         value={password}
         onChangeText={(v) => (setPassword(v), clear('password'))}
         isPassword
-        autoComplete="new-password"
-        textContentType="newPassword"
+        autoComplete="off"
+        textContentType="oneTimeCode"
         returnKeyType="next"
         onSubmitEditing={() => confirmRef.current?.focus()}
         error={errors.password}
@@ -204,8 +204,8 @@ export const VendorAccountCreationScreen: React.FC<VendorAccountCreationScreenPr
         value={confirm}
         onChangeText={(v) => (setConfirm(v), clear('confirm'))}
         isPassword
-        autoComplete="new-password"
-        textContentType="newPassword"
+        autoComplete="off"
+        textContentType="oneTimeCode"
         returnKeyType="done"
         onSubmitEditing={submit}
         error={errors.confirm}

@@ -127,8 +127,8 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ init
             setError('');
           }}
           isPassword
-          autoComplete="new-password"
-          textContentType="newPassword"
+          autoComplete="off"
+          textContentType="oneTimeCode"
         />
         <TextField
           label="Confirm new password"
@@ -140,8 +140,8 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({ init
             setError('');
           }}
           isPassword
-          autoComplete="new-password"
-          textContentType="newPassword"
+          autoComplete="off"
+          textContentType="oneTimeCode"
           containerStyle={{ marginBottom: 24 }}
         />
         <Button title="Update password" onPress={reset} loading={loading} />

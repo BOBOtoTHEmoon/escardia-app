@@ -12,6 +12,7 @@ import { AppText, Button, IconButton, TextField } from '../ui';
 import { naira } from '../ui/CarCard';
 import { MenuGroup, MenuRow } from '../ui/Menu';
 import { AppearanceRow } from '../ui/Appearance';
+import { DeleteAccountRow } from '../ui/DeleteAccount';
 import { Avatar } from '../ui/Avatar';
 import { TabBar, TAB_BAR_SPACE } from '../ui/TabBar';
 import { brand, color, gutter, radius, themed } from '../theme';
@@ -218,7 +219,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </MenuGroup>
 
           <MenuGroup>
-            <MenuRow icon="log-out" label="Log out" danger onPress={logout} right={<View />} last />
+            <MenuRow icon="log-out" label="Log out" danger onPress={logout} right={<View />} />
+            <DeleteAccountRow onDeleted={onNavigateToWelcome} last />
           </MenuGroup>
 
           <AppText variant="small" color={color.subtle} center style={{ marginTop: 20 }}>
