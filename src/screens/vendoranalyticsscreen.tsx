@@ -1,5 +1,6 @@
 // Vendor performance: bookings, cancellations, ratings and the cars that earn the most.
 import React, { useEffect, useMemo, useState } from 'react';
+import { BlocksSkeleton } from '../ui/Skeleton';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -65,9 +66,7 @@ export const VendorAnalyticsScreen: React.FC<VendorAnalyticsScreenProps> = ({ on
       <StatusBar style={statusBarStyle()} />
       <ScreenHeader title="Performance" onBack={onNavigateBack} />
       {loading ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={color.primary} />
-        </View>
+        <BlocksSkeleton heights={[110, 230, 160]} />
       ) : (
         <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
           <Segmented

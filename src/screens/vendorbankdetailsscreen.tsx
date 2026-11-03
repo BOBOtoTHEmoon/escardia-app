@@ -1,5 +1,6 @@
 // Payout account: the bank confirms the account name before it is saved.
 import React, { useEffect, useRef, useState } from 'react';
+import { FormSkeleton } from '../ui/Skeleton';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -71,9 +72,7 @@ export const VendorBankDetailsScreen: React.FC<VendorBankDetailsScreenProps> = (
       <StatusBar style={statusBarStyle()} />
       <ScreenHeader title="Payout account" subtitle="Where your withdrawals are sent" onBack={onNavigateBack} />
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={color.primary} />
-        </View>
+        <FormSkeleton fields={3} card={false} />
       ) : (
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 140 }} keyboardShouldPersistTaps="handled">

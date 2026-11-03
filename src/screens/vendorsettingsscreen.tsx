@@ -1,5 +1,6 @@
 // Business details: contact person, business name and the number customers see. Plus password.
 import React, { useEffect, useState } from 'react';
+import { FormSkeleton } from '../ui/Skeleton';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { auth } from '../config/supabase';
@@ -75,9 +76,7 @@ export const VendorSettingsScreen: React.FC<VendorSettingsScreenProps> = ({ onNa
       <StatusBar style={statusBarStyle()} />
       <ScreenHeader title="Business details" onBack={onNavigateBack} />
       {loading ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={color.primary} />
-        </View>
+        <FormSkeleton fields={4} card={false} />
       ) : (
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 140 }} keyboardShouldPersistTaps="handled">

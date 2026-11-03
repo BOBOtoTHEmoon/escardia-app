@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { rentalLabel } from '../utils/rental';
 import { Animated, Image, Linking, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -88,8 +89,7 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
                 {t.car.brand} {t.car.model}
               </AppText>
               <AppText variant="small" color={color.muted}>
-                {t.car.year} · {t.duration} {t.durationType}
-                {t.duration > 1 ? 's' : ''} with driver
+                {t.car.year} · {rentalLabel(t)} with driver
               </AppText>
               <View style={styles.timeline}>
                 <View style={{ flex: 1 }}>
@@ -108,8 +108,8 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
                   <AppText variant="small">{t.stopTime}</AppText>
                 </View>
               </View>
-              <InfoRow icon={t.pickupMethod === 'delivery' ? 'truck' : 'map-pin'} label={t.pickupMethod === 'delivery' ? 'Delivery to' : 'Meet at'} value={t.pickupLocation} />
-              <InfoRow icon="shield" label="Security" value={security || 'None'} />
+              <InfoRow icon="map-pin" label={t.pickupMethod === 'delivery' ? 'Pick-up address' : 'Meet at'} value={t.pickupLocation} />
+              {!!security && <InfoRow icon="shield" label="Security" value={security} />}
               <InfoRow icon="credit-card" label="Paid with" value={METHOD[paymentMethod] ?? paymentMethod} />
             </View>
           </Panel>
@@ -143,8 +143,8 @@ export const BookingConfirmationScreen: React.FC<BookingConfirmationScreenProps>
             {[
               { icon: 'bell' as const, text: 'Your trip is in My Trips. We will notify you as it starts and ends.' },
               {
-                icon: t.pickupMethod === 'delivery' ? ('truck' as const) : ('map-pin' as const),
-                text: t.pickupMethod === 'delivery' ? 'Your driver brings the car to your address at pick-up time.' : 'Meet your driver at the vendor location at pick-up time.',
+                icon: 'map-pin' as const,
+                text: t.pickupMethod === 'delivery' ? 'Your driver brings the car and picks you up at your address at pick-up time.' : 'Meet your driver at the vendor location at pick-up time.',
               },
               { icon: 'alert-circle' as const, text: 'Something wrong during or after the trip? Report it from My Trips within 24 hours.' },
             ].map((s, i) => (

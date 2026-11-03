@@ -1,6 +1,7 @@
 // Add a car / Edit a car: one form for both.
 // Photos, make and model, prices (with the vendor's take-home shown live), details and location.
 import React, { useEffect, useMemo, useState } from 'react';
+import { FormSkeleton } from '../ui/Skeleton';
 import { ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -168,9 +169,7 @@ export const CarFormScreen: React.FC<CarFormScreenProps> = ({ carId, onNavigateB
     return (
       <Screen>
         <ScreenHeader title={editing ? 'Edit car' : 'Add a car'} onBack={onNavigateBack} />
-        <View style={styles.center}>
-          <ActivityIndicator color={color.primary} />
-        </View>
+        <FormSkeleton fields={5} />
       </Screen>
     );
   }
@@ -270,7 +269,7 @@ export const CarFormScreen: React.FC<CarFormScreenProps> = ({ carId, onNavigateB
           {!!errors.type && <FieldError text={errors.type} />}
 
           {/* Prices */}
-          <Section title="Prices" hint="Customers pay Escardia's service fee and any security on top of your price." />
+          <Section title="Prices" hint="Customers pay Escardia's service fee on top of your price." />
           <View style={{ flexDirection: 'row', gap: 12 }}>
             <MoneyField
               label="Per day"

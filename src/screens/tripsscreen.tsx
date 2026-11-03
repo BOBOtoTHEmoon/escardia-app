@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { TripCardSkeleton } from '../ui/Skeleton';
 import { Alert, FlatList, Image, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -121,7 +122,7 @@ export const TripsScreen: React.FC<TripsScreenProps> = ({ onNavigateToHome, onNa
           loading ? (
             <View>
               {[0, 1].map((i) => (
-                <View key={i} style={styles.skeleton} />
+                <TripCardSkeleton key={i} />
               ))}
             </View>
           ) : (

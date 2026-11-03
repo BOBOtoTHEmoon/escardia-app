@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { CarCardSkeleton } from '../ui/Skeleton';
 import { Dimensions, Image, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -13,13 +14,14 @@ import { Avatar } from '../ui/Avatar';
 import { CarGridCard, CarLike } from '../ui/CarCard';
 import { TabBar, TAB_BAR_SPACE, CustomerTab } from '../ui/TabBar';
 import { brand, color, gutter, radius, shadow, themed } from '../theme';
+import { FEATURES } from '../config/features';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = (SCREEN_WIDTH - gutter * 2 - 12) / 2;
 const PROMO_WIDTH = SCREEN_WIDTH - gutter * 2;
 
 // What Escardia offers. No made-up discounts.
-const PROMOS: { icon: IconName; eyebrow: string; title: string; body: string; colors: [string, string] }[] = [
+const ALL_PROMOS: { icon: IconName; eyebrow: string; title: string; body: string; colors: [string, string] }[] = [
   {
     icon: 'shield',
     eyebrow: 'Security',
@@ -28,10 +30,10 @@ const PROMOS: { icon: IconName; eyebrow: string; title: string; body: string; co
     colors: [brand[700], brand[950]],
   },
   {
-    icon: 'truck',
-    eyebrow: 'Delivery',
-    title: 'Brought to your door',
-    body: 'Have the car delivered to your home, hotel or office.',
+    icon: 'map-pin',
+    eyebrow: 'Pick-up',
+    title: 'Your driver comes to you',
+    body: 'Get picked up at your home, hotel or office at no extra cost.',
     colors: ['#1F2A44', '#0B1220'],
   },
   {
@@ -57,6 +59,7 @@ interface HomeScreenProps {
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({ userName = 'there', avatarUrl, onNavigateToProfile, onNavigateToCarDetails, onNavigateToCars, onNavigateToTrips, onNavigateToNotifications }) => {
   const insets = useSafeAreaInsets();
+  const PROMOS = ALL_PROMOS.filter((p) => FEATURES.security || p.eyebrow !== 'Security');
   const [location, setLocation] = useState('Victoria Island, Lagos');
   const [showLocation, setShowLocation] = useState(false);
   const [cars, setCars] = useState<CarLike[]>([]);
@@ -227,7 +230,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ userName = 'there', avat
         <SectionHeader title="Popular right now" action="See all" onAction={() => onNavigateToCars()} />
         <View style={styles.grid}>
           {loading ? (
-            Array.from({ length: 4 }).map((_, i) => <View key={i} style={[styles.skeleton, { width: CARD_WIDTH, height: CARD_WIDTH * 0.72 + 92 }]} />)
+            Array.from({ length: 4 }).map((_, i) => <CarCardSkeleton key={i} compact width={CARD_WIDTH} imageHeight={CARD_WIDTH * 0.72} style={{ height: CARD_WIDTH * 0.72 + 92 }} />)
           ) : popular.length === 0 ? (
             <View style={styles.empty}>
               <Feather name="search" size={22} color={color.subtle} />

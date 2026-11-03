@@ -1,5 +1,6 @@
 // Vendor documents: see what Escardia has on file and add or replace a photo.
 import React, { useCallback, useEffect, useState } from 'react';
+import { BlocksSkeleton } from '../ui/Skeleton';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -50,9 +51,7 @@ export const VendorDocumentsScreen: React.FC<VendorDocumentsScreenProps> = ({ on
       <StatusBar style={statusBarStyle()} />
       <ScreenHeader title="Documents" subtitle="Only Escardia's review team can see these" onBack={onNavigateBack} />
       {loading ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={color.primary} />
-        </View>
+        <BlocksSkeleton heights={[88, 88, 88]} />
       ) : (
         <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }}>
           <View style={styles.idCard}>

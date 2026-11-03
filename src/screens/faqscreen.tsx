@@ -18,11 +18,11 @@ const FAQS: { group: string; items: { q: string; a: string }[] }[] = [
     items: [
       {
         q: 'How do I book a car?',
-        a: 'Find a car on the Cars tab, tap Book now, choose your dates and how you want to get the car, add security if you need it, then pay. Your trip shows up in My Trips straight away.',
+        a: 'Find a car on the Cars tab, tap Book now, choose your dates and enter your pick-up address, then pay. Your trip shows up in My Trips straight away.',
       },
       {
         q: 'Does every car come with a driver?',
-        a: 'Yes. Every Escardia trip includes a professional driver supplied by the vendor. Self-drive is coming later.',
+        a: 'Yes. Every Escardia trip includes a professional driver supplied by the vendor.',
       },
       {
         q: 'How far ahead do I need to book?',
@@ -30,11 +30,7 @@ const FAQS: { group: string; items: { q: string; a: string }[] }[] = [
       },
       {
         q: 'Can the car come to me?',
-        a: 'Yes. Choose Deliver to me when booking and enter your address. A delivery fee is added and shown before you pay.',
-      },
-      {
-        q: 'Can I add security?',
-        a: 'Yes. On the Security step you can add LEGION or PRIVATE personnel. Teams of 3 or more need a Hilux backup vehicle, which the app adds for you. Security is priced per person, per day.',
+        a: 'Yes. Your driver brings the car and picks you up at the address you enter when booking. There is no extra charge for this.',
       },
     ],
   },

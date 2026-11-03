@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { CarDetailSkeleton } from '../ui/Skeleton';
 import { ActivityIndicator, Dimensions, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -47,9 +48,9 @@ export const CarDetailsScreen: React.FC<CarDetailsScreenProps> = ({ carId, onNav
 
   if (loading) {
     return (
-      <View style={[styles.root, styles.center]}>
+      <View style={styles.root}>
         <StatusBar style={statusBarStyle()} />
-        <ActivityIndicator color={color.primary} />
+        <CarDetailSkeleton photoHeight={PHOTO_HEIGHT} />
       </View>
     );
   }
@@ -230,7 +231,7 @@ export const CarDetailsScreen: React.FC<CarDetailsScreenProps> = ({ carId, onNav
             <View style={[styles.inline, { marginTop: 12 }]}>
               <Feather name="info" size={13} color={color.muted} />
               <AppText variant="small" color={color.muted} style={{ flex: 1 }}>
-                Delivery, security and the service fee are added when you book.
+                Escardia's service fee is added when you book.
               </AppText>
             </View>
           </View>

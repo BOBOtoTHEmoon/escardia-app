@@ -29,7 +29,8 @@ export const toLegacyStatus = (s: string): string => {
   }
 };
 
-export const BOOKING_SELECT = '*, customer:profiles!bookings_customer_id_fkey(first_name, last_name, phone, email), driver:drivers(id, name, phone, photo_url)';
+export const BOOKING_SELECT =
+  '*, customer:profiles!bookings_customer_id_fkey(first_name, last_name, phone, email, avatar_url), vendor:vendors!bookings_vendor_id_fkey(business_name, logo_url), driver:drivers(id, name, phone, photo_url)';
 
 /** Database row -> app shape */
 export const mapBooking = (r: any) => {
@@ -61,12 +62,14 @@ export const mapBooking = (r: any) => {
       pricePerHour: Number(snap.pricePerHour ?? 0),
       location: snap.location ?? '',
       vendorId: r.vendor_id,
-      vendorName: snap.vendorName ?? '',
+      vendorName: snap.vendorName || r.vendor?.business_name || '',
       vendorPhone: snap.vendorPhone ?? '',
     },
     customerName: customerName || 'Customer',
     customerPhone: r.customer?.phone ?? '',
     customerEmail: r.customer?.email ?? '',
+    customerAvatar: (r.customer?.avatar_url as string | null) ?? null,
+    vendorLogo: (r.vendor?.logo_url as string | null) ?? null,
     driver: r.driver ?? null,
     pickupLocation: r.pickup_location ?? '',
     pickupMethod: r.pickup_method,
@@ -80,6 +83,7 @@ export const mapBooking = (r: any) => {
     stopTime: fmtTime(end),
     duration: r.duration,
     durationType: r.duration_type,
+    extraHours: Number(r.extra_hours ?? 0),
     escort: escorts.length ? escorts : null,
     escortCount: (r.legion_count ?? 0) + (r.private_count ?? 0),
     hiluxCount: r.hilux_count ?? 0,
@@ -122,8 +126,8 @@ interface TripInput {
     pickupLocation?: string;
     startDate: string;
     startTime: string;
-    duration: number;
-    durationType: 'day' | 'hour';
+    endDate: string;
+    stopTime: string;
   };
   escortData?: {
     escorts?: Array<{ type: 'legion' | 'private'; count: number }> | null;
@@ -148,14 +152,14 @@ export const createBookingFromTrip = async (input: TripInput): Promise<{ success
   try {
     const t = input.tripData;
     const start = parseDateTime(t.startDate, t.startTime);
+    const end = parseDateTime(t.endDate, t.stopTime);
     const counts = escortCounts(input.escortData);
     const deliveryAddress = t.pickupMethod === 'delivery' ? (t.deliveryAddress || t.pickupLocation || null) : null;
 
     const { data, error } = await supabase.rpc('create_booking', {
       p_car_id: t.car.id,
       p_start_at: start.toISOString(),
-      p_duration: t.duration,
-      p_duration_type: t.durationType,
+      p_end_at: end.toISOString(),
       p_pickup_method: t.pickupMethod,
       p_delivery_address: deliveryAddress,
       p_legion: counts.legion,
@@ -179,8 +183,8 @@ export const createBooking = async (b: any) =>
       pickupLocation: b.pickupLocation,
       startDate: b.startDate,
       startTime: b.startTime,
-      duration: b.duration,
-      durationType: b.durationType,
+      endDate: b.endDate,
+      stopTime: b.stopTime,
     },
     escortData: { escorts: b.escort ?? null, hiluxCount: b.hiluxCount ?? 0 },
   });
@@ -191,8 +195,8 @@ export const quoteBooking = async (input: TripInput) => {
   const counts = escortCounts(input.escortData);
   const { data, error } = await supabase.rpc('quote_booking', {
     p_car_id: t.car.id,
-    p_duration: t.duration,
-    p_duration_type: t.durationType,
+    p_start_at: parseDateTime(t.startDate, t.startTime).toISOString(),
+    p_end_at: parseDateTime(t.endDate, t.stopTime).toISOString(),
     p_pickup_method: t.pickupMethod,
     p_legion: counts.legion,
     p_private: counts.private,
@@ -202,6 +206,7 @@ export const quoteBooking = async (input: TripInput) => {
   return data as {
     baseRental: number; deliveryFee: number; escortFee: number; hiluxCount: number; hiluxFee: number;
     serviceFee: number; total: number; vendorAmount: number; commissionAmount: number; escortDays: number;
+    duration: number; durationType: 'day' | 'hour'; extraHours: number;
   };
 };
 

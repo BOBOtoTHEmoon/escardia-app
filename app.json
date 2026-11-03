@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Escardia",
-    "slug": "Escardiaapp",
+    "slug": "escardia",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,17 +13,23 @@
       "backgroundColor": "#0D1A3F"
     },
     "ios": {
-      "supportsTablet": true,
+      "bundleIdentifier": "app.escardia",
+      "supportsTablet": false,
+      "userInterfaceStyle": "automatic",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "We need your location to show nearby cars and set pickup points."
-      },
-      "userInterfaceStyle": "automatic"
+      }
     },
     "android": {
+      "package": "app.escardia",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B1530"
       },
+      "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
@@ -54,7 +60,16 @@
         "expo-image-picker",
         {
           "photosPermission": "Escardia uses your photos so you can add a profile picture and car photos.",
-          "cameraPermission": "Escardia uses your camera so you can take a profile picture and car photos."
+          "cameraPermission": "Escardia uses your camera so you can take a profile picture and car photos.",
+          "microphonePermission": false
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-status-bar",
+      [
+        "react-native-maps",
+        {
+          "androidGoogleMapsApiKey": "AIzaSyBVsDFJQlUTcFZmV__w-UtX0a9tlKe4FFc"
         }
       ]
     ],
@@ -62,6 +77,7 @@
       "eas": {
         "projectId": "778aa0c7-92ea-41d1-a06f-60f0b2fb15eb"
       }
-    }
+    },
+    "scheme": "escardia"
   }
 }

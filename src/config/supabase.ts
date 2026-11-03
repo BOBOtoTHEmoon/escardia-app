@@ -10,7 +10,22 @@ export const SUPABASE_URL = 'https://twmojaxvuuptezskdwbj.supabase.co';
 // Publishable key: safe to ship in the app. Never put a secret key here.
 export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_latNs_LJxwyPvPcdlkgTVA_12YWVaL0';
 
+/**
+ * Every request gives up after a while instead of spinning forever when the
+ * network is bad or Supabase cannot be reached. Photo uploads get longer.
+ */
+const fetchWithTimeout: typeof fetch = (input, init) => {
+  const url = typeof input === 'string' ? input : (input as Request).url ?? String(input);
+  const ms = /\/storage\/v1\/object/.test(url) ? 90000 : 20000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  // Respect a signal the caller passed in as well.
+  init?.signal?.addEventListener?.('abort', () => controller.abort());
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+};
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  global: { fetch: fetchWithTimeout },
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: true,
@@ -78,6 +93,7 @@ export const friendlyError = (error: unknown, fallback = 'Something went wrong. 
   if (/Token has expired|invalid/i.test(msg) && /otp|token/i.test(msg)) return 'That code is wrong or has expired';
   if (/rate limit|too many/i.test(msg)) return 'Too many attempts. Please wait a minute and try again.';
   if (/Network request failed|fetch/i.test(msg)) return 'No internet connection. Please try again.';
+  if (/abort/i.test(msg)) return 'Escardia is taking too long to respond. Check your connection and try again.';
   return msg;
 };
 

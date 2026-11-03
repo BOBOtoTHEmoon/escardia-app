@@ -5,10 +5,11 @@ import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText, Button } from '../ui';
 import { brand, color, gutter, themed, statusBarStyle } from '../theme';
+import { FEATURES } from '../config/features';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const SLIDES = [
+const ALL_SLIDES = [
   {
     id: '1',
     title: 'Ride in style, anytime',
@@ -42,6 +43,7 @@ interface OnboardingScreenProps {
 }
 
 export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete, onNavigateToSignIn, onNavigateToVendorOnboarding }) => {
+  const SLIDES = React.useMemo(() => ALL_SLIDES.filter((s) => FEATURES.security || s.id !== '4'), []);
   const insets = useSafeAreaInsets();
   const [index, setIndex] = useState(0);
   const listRef = useRef<FlatList>(null);

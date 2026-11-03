@@ -1,5 +1,7 @@
 // One booking from the vendor's side: payout, trip, driver assignment, customer contact and actions.
 import React, { useCallback, useEffect, useState } from 'react';
+import { rentalLabel } from '../utils/rental';
+import { BlocksSkeleton } from '../ui/Skeleton';
 import { ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -58,9 +60,7 @@ export const VendorBookingDetailScreen: React.FC<VendorBookingDetailScreenProps>
     return (
       <Screen>
         <ScreenHeader title="Booking" onBack={onNavigateBack} />
-        <View style={styles.center}>
-          <ActivityIndicator color={color.primary} />
-        </View>
+        <BlocksSkeleton heights={[150, 200, 140]} />
       </Screen>
     );
   }
@@ -143,7 +143,7 @@ export const VendorBookingDetailScreen: React.FC<VendorBookingDetailScreenProps>
               {b.car.brand} {b.car.model}
             </AppText>
             <AppText variant="small" color={color.muted}>
-              {[b.car.year, `${b.duration} ${b.durationType}${b.duration === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}
+              {[b.car.year, rentalLabel(b)].filter(Boolean).join(' · ')}
             </AppText>
           </View>
         </View>
@@ -199,7 +199,7 @@ export const VendorBookingDetailScreen: React.FC<VendorBookingDetailScreenProps>
           <TimelineRow icon="log-in" label="Return" date={b.endDate} time={b.stopTime} />
         </View>
         <Panel style={{ marginTop: 10 }}>
-          <InfoRow icon={b.pickupMethod === 'delivery' ? 'truck' : 'map-pin'} label={b.pickupMethod === 'delivery' ? 'Deliver to' : 'Customer collects from'} value={b.deliveryAddress || b.pickupLocation || b.car.location || 'Your location'} />
+          <InfoRow icon="map-pin" label={b.pickupMethod === 'delivery' ? 'Pick up the customer at' : 'Customer collects from'} value={b.deliveryAddress || b.pickupLocation || b.car.location || 'Your location'} />
           {security.length > 0 && <InfoRow icon="shield" label="Security" value={security.join(', ')} />}
         </Panel>
         {security.length > 0 && (
@@ -209,7 +209,7 @@ export const VendorBookingDetailScreen: React.FC<VendorBookingDetailScreenProps>
         )}
         {b.pickupMethod === 'delivery' && !!(b.deliveryAddress || b.pickupLocation) && (
           <View style={styles.map}>
-            <TripMap address={(b.deliveryAddress || b.pickupLocation)!} label="Delivery" height={180} />
+            <TripMap address={(b.deliveryAddress || b.pickupLocation)!} label="Pick-up" height={180} />
           </View>
         )}
 
@@ -253,7 +253,7 @@ export const VendorBookingDetailScreen: React.FC<VendorBookingDetailScreenProps>
           Customer
         </AppText>
         <View style={styles.person}>
-          <Avatar name={b.customerName} size={44} background={color.navySoft} ring="transparent" />
+          <Avatar uri={b.customerAvatar} name={b.customerName} size={44} background={color.navySoft} ring="transparent" />
           <View style={{ flex: 1 }}>
             <AppText variant="bodyMedium">{b.customerName}</AppText>
             <AppText variant="small" color={color.muted}>

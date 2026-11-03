@@ -53,7 +53,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onN
     else if (!RULES.every((r) => r.test(password))) next.password = 'Your password needs everything in the list below';
     if (!confirmPassword) next.confirmPassword = 'Type your password again';
     else if (password !== confirmPassword) next.confirmPassword = 'Passwords do not match';
-    if (!agreed) next.terms = 'Please accept the terms to continue';
+    if (!agreed) next.terms = 'Please confirm you are 18 or older and accept the terms';
     setErrors(next);
     setFormError('');
     if (Object.keys(next).length) return;
@@ -72,7 +72,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onN
   return (
     <AuthLayout
       title="Create your account"
-      subtitle="Book premium cars and security across Lagos in minutes."
+      subtitle="Book premium cars with professional drivers across Lagos in minutes."
       onBack={onNavigateBack}
       footer={
         <AppText variant="body" color={color.muted}>
@@ -196,7 +196,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onN
           }}
         >
           <AppText variant="small" color={color.text} style={{ lineHeight: 20 }}>
-            I agree to Escardia&apos;s{' '}
+            I am 18 or older and I agree to Escardia&apos;s{' '}
             <LinkText style={{ fontSize: 13 }} onPress={() => setShowTerms(true)}>
               Terms and Conditions
             </LinkText>{' '}
@@ -244,7 +244,7 @@ const TERMS: { title: string; body: string }[] = [
   {
     title: '4. Bookings and payments',
     body:
-      '• Every booking depends on the car being available\n• Every trip includes a driver supplied by the vendor\n• You pay in full before the trip starts\n• The price on the Review and pay screen includes the car, any delivery, security and Hilux fees, and Escardia’s service fee. It does not change after you pay',
+      '• Every booking depends on the car being available\n• Every trip includes a driver supplied by the vendor\n• You pay in full before the trip starts\n• The price on the Review and pay screen includes the car, any delivery fee and Escardia’s service fee. It does not change after you pay',
   },
   {
     title: '5. Cancellations and refunds',
@@ -254,7 +254,7 @@ const TERMS: { title: string; body: string }[] = [
   {
     title: '6. During your trip',
     body:
-      '• Follow Nigerian law and the driver’s reasonable safety instructions\n• No smoking, pets or illegal activity in any vehicle\n• You are responsible for damage you or your passengers cause\n• Treat drivers and security personnel with respect\n• Trips that run past the booked time may cost extra',
+      '• Follow Nigerian law and the driver’s reasonable safety instructions\n• No smoking, pets or illegal activity in any vehicle\n• You are responsible for damage you or your passengers cause\n• Treat drivers with respect\n• Trips that run past the booked time may cost extra',
   },
   {
     title: '7. If something goes wrong',

@@ -1,5 +1,6 @@
 // Vendor fleet: every car with its review state, filterable, plus add a car.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { CarCardSkeleton } from '../ui/Skeleton';
 import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -99,8 +100,8 @@ export const MyFleetScreen: React.FC<MyFleetScreenProps> = ({ onTab, onAddCar, o
         ListEmptyComponent={
           loading ? (
             <View>
-              <Skeleton height={260} />
-              <Skeleton height={260} />
+              <CarCardSkeleton imageHeight={160} style={{ marginBottom: 12 }} />
+              <CarCardSkeleton imageHeight={160} style={{ marginBottom: 12 }} />
             </View>
           ) : error ? (
             <EmptyState icon="wifi-off" title="Could not load your cars" body={error} action={<Button title="Try again" size="md" variant="secondary" onPress={load} />} />

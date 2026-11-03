@@ -28,7 +28,7 @@ export const vendorAgreement = (s: AppSettings): Section[] => [
   },
   {
     title: '4. Pricing and commission',
-    body: `You set your daily and hourly prices. Escardia keeps a ${pct(s.commissionRate)} commission on the car rental and any delivery fee. Customers also pay Escardia a service fee and any security escort fees on top; these do not come out of your share.`,
+    body: `You set your daily and hourly prices. Escardia keeps a ${pct(s.commissionRate)} commission on the car rental and any delivery fee. Customers also pay Escardia a service fee on top; this does not come out of your share.`,
   },
   {
     title: '5. Getting paid',

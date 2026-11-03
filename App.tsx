@@ -18,6 +18,11 @@ import { ProfileScreen } from './src/screens/profilescreen';
 import { CarDetailsScreen } from './src/screens/cardetailsscreen';
 import { useEffect, useState } from 'react';
 import { auth, onAuthStateChanged, supabase } from './src/config/supabase';
+import { FEATURES, loadFeatures } from './src/config/features';
+
+/** Gives up on a slow network call so the app never hangs on the blue screen. */
+const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+  Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))]);
 import { getUserProfile } from './src/services/authservice';
 import { TripDetailScreen } from './src/screens/tripdetailsscreen';
 import { RideModeScreen } from './src/screens/ridemodescreen';
@@ -69,7 +74,9 @@ import { AddMoneyScreen } from './src/screens/addmoneyscreen';
 import { WalletPaymentScreen } from './src/screens/WalletPaymentScreen';
 
 export default function App() {
-  const [fontsLoaded] = useFonts({ Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold });
+  const [poppinsLoaded, fontError] = useFonts({ Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold });
+  // If the fonts fail to load, carry on with the system font rather than sitting on the blue screen.
+  const fontsLoaded = poppinsLoaded || !!fontError;
 
   // ---- Light / dark mode ----
   // Follows the phone unless the user picked Light or Dark in Appearance (saved on the phone).
@@ -192,10 +199,15 @@ export default function App() {
   /** On launch: go straight in if already signed in, otherwise the welcome screen. */
   const handleSplashDone = async () => {
     try {
-      const { data } = await supabase.auth.getSession();
+      await loadFeatures();
+    } catch {
+      // Features stay off.
+    }
+    try {
+      const { data } = await withTimeout(supabase.auth.getSession(), 6000);
       const uid = data.session?.user.id;
       if (uid) {
-        const { data: p } = await supabase.from('profiles').select('role').eq('id', uid).maybeSingle();
+        const { data: p } = await withTimeout(Promise.resolve(supabase.from('profiles').select('role').eq('id', uid).maybeSingle()), 8000);
         if (p?.role === 'vendor') return handleVendorSignedIn();
         if (p?.role === 'customer') return handleSignInSuccess();
       }
@@ -328,7 +340,8 @@ export default function App() {
   const handleContinueToRideMode = (tripData: any) => {
     console.log('Trip data:', tripData);
     setBookingData({ tripData: tripData, escortData: null });
-    setCurrentScreen('rideMode');
+    // Security step is skipped while FEATURES.security is off.
+    setCurrentScreen(FEATURES.security ? 'rideMode' : 'payment');
   };
 
   const handleMakePayment = async () => {
@@ -428,6 +441,7 @@ export default function App() {
         paymentMethod: selectedPaymentMethod,
         durationType: bookingData.tripData.durationType,
         duration: bookingData.tripData.duration,
+        extraHours: bookingData.tripData.extraHours || 0,
       };
 
       const result = await createBooking(booking);
@@ -630,7 +644,7 @@ const handleContinueToPayment = (rideModeData: any) => {
 )}
       {currentScreen === 'payment' && (
         <PaymentDetailsScreen
-          onNavigateBack={() => setCurrentScreen('rideMode')}
+          onNavigateBack={() => setCurrentScreen(FEATURES.security ? 'rideMode' : 'tripBooking')}
           onNavigateToCardPayment={(amount) => {
             setPaymentAmount(amount);
             setSelectedPaymentMethod('card');

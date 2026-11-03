@@ -36,7 +36,7 @@ export const RideModeScreen: React.FC<RideModeScreenProps> = ({ onNavigateBack, 
 
   const trip = tripData?.tripData;
   // Escorts are charged per day; hourly trips round up to whole days.
-  const days = trip ? (trip.durationType === 'hour' ? Math.max(1, Math.ceil(trip.duration / 24)) : trip.duration) : 1;
+  const days = trip ? (trip.durationType === 'hour' ? Math.max(1, Math.ceil(trip.duration / 24)) : trip.duration + (trip.extraHours ? 1 : 0)) : 1;
 
   const persons = counts.legion + counts.private;
   const required = requiredHilux(persons);

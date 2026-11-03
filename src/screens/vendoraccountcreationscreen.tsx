@@ -214,7 +214,7 @@ export const VendorAccountCreationScreen: React.FC<VendorAccountCreationScreenPr
       <View style={{ marginBottom: 24 }}>
         <Checkbox checked={agreed} onPress={() => (setAgreed(!agreed), clear('terms'))}>
           <AppText variant="small" color={color.text} style={{ lineHeight: 20 }}>
-            I agree to the{' '}
+            I am 18 or older and I agree to the{' '}
             <LinkText style={{ fontSize: 13 }} onPress={() => setDoc('terms')}>
               Vendor Agreement
             </LinkText>{' '}

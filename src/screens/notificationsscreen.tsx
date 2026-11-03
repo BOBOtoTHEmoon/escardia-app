@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ListSkeleton } from '../ui/Skeleton';
 import { ActivityIndicator, Pressable, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -100,9 +101,7 @@ export const NotificationsScreen: React.FC<NotificationsScreenProps> = ({ onNavi
         }
       />
       {loading ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={color.primary} />
-        </View>
+        <ListSkeleton />
       ) : (
         <SectionList
           sections={sections}

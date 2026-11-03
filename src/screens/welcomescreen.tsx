@@ -21,7 +21,7 @@ const CAR_WIDTH = Math.min(width * 0.8, height * (height < 760 ? 0.24 : 0.3) * C
 
 const PERKS: { icon: IconName; label: string }[] = [
   { icon: 'check-circle', label: 'Vetted vendors' },
-  { icon: 'shield', label: 'Security' },
+  { icon: 'user-check', label: 'Pro drivers' },
   { icon: 'lock', label: 'Safe payments' },
 ];
 
@@ -44,7 +44,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onGetStarted }) =>
           Premium cars,{'\n'}whenever you{'\n'}need them.
         </AppText>
         <AppText variant="body" color={color.onDarkMuted} style={{ marginTop: 12, maxWidth: 300 }}>
-          Luxury rides, professional drivers and security escorts across Lagos, booked in a few taps.
+          Luxury cars with professional drivers across Lagos, booked in a few taps.
         </AppText>
 
         <View style={styles.carWrap}>

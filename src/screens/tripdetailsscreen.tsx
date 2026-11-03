@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { rentalLabel } from '../utils/rental';
 import { Alert, Image, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -13,6 +14,7 @@ import { InfoRow, Panel, SectionTitle } from '../ui/Booking';
 import { naira } from '../ui/CarCard';
 import { StatusPill, relativeTime } from '../ui/Status';
 import { color, font, gutter, radius, themed, statusBarStyle, isDark } from '../theme';
+import { FEATURES } from '../config/features';
 
 interface TripDetailScreenProps {
   tripData: Booking;
@@ -22,7 +24,7 @@ interface TripDetailScreenProps {
 
 const PAID_WITH: Record<string, string> = { wallet: 'Escardia wallet', card: 'Card', bank: 'Bank transfer', bank_transfer: 'Bank transfer', ussd: 'USSD' };
 
-const REASONS = ['The car was not as described', 'Problem with the driver', 'The car was late or did not come', 'Security did not show up', 'Something else'];
+const reasons = () => ['The car was not as described', 'Problem with the driver', 'The car was late or did not come', ...(FEATURES.security ? ['Security did not show up'] : []), 'Something else'];
 
 /** Same tiers as the database: 24h+ full, 12h+ half, 2h+ quarter, else nothing. */
 const refundPercent = (startAt: string) => {
@@ -140,8 +142,7 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({ tripData, on
                   {trip.car.brand} {trip.car.model}
                 </AppText>
                 <AppText variant="small" color={color.muted}>
-                  {trip.car.year} · {trip.duration} {trip.durationType}
-                  {trip.duration > 1 ? 's' : ''} with driver
+                  {trip.car.year} · {rentalLabel(trip)} with driver
                 </AppText>
               </View>
               <StatusPill status={s} />
@@ -181,11 +182,11 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({ tripData, on
         )}
 
         {/* Where */}
-        <SectionTitle title={trip.pickupMethod === 'delivery' ? 'Delivery address' : 'Where to meet'} />
+        <SectionTitle title={trip.pickupMethod === 'delivery' ? 'Pick-up address' : 'Where to meet'} />
         <Panel style={{ padding: 0, overflow: 'hidden' }}>
-          <TripMap address={trip.pickupLocation || trip.car.location || 'Lagos'} label={trip.pickupMethod === 'delivery' ? 'Delivery' : 'Pick-up'} height={210} />
+          <TripMap address={trip.pickupLocation || trip.car.location || 'Lagos'} label="Pick-up" height={210} />
           <View style={styles.place}>
-            <Feather name={trip.pickupMethod === 'delivery' ? 'truck' : 'map-pin'} size={16} color={color.primary} />
+            <Feather name="map-pin" size={16} color={color.primary} />
             <AppText variant="bodyMedium" style={{ flex: 1 }}>
               {trip.pickupLocation || trip.car.location || 'The vendor will share the address'}
             </AppText>
@@ -203,20 +204,20 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({ tripData, on
             photo={driver?.photo_url}
           />
           <View style={styles.divider} />
-          <Person label="Vendor" name={trip.car.vendorName || 'Escardia vendor'} sub={vendorPhone} phone={vendorPhone} />
+          <Person label="Vendor" name={trip.car.vendorName || 'Escardia vendor'} sub={vendorPhone} phone={vendorPhone} photo={trip.vendorLogo ?? undefined} />
         </Panel>
 
         {/* Details */}
         <SectionTitle title="Payment" />
         <Panel>
-          <InfoRow label={`Car rental (${trip.duration} ${trip.durationType}${trip.duration > 1 ? 's' : ''})`} value={naira(trip.baseRental)} />
+          <InfoRow label={`Car rental (${rentalLabel(trip)})`} value={naira(trip.baseRental)} />
           {trip.deliveryFee > 0 && <InfoRow label="Delivery" value={naira(trip.deliveryFee)} />}
           {trip.escortFee > 0 && <InfoRow label="Security" value={naira(trip.escortFee)} />}
           {trip.hiluxFee > 0 && <InfoRow label="Hilux" value={naira(trip.hiluxFee)} />}
           <InfoRow label="Service fee" value={naira(trip.serviceFee)} />
           <View style={styles.divider} />
           <InfoRow label="Total paid" value={naira(trip.totalPrice)} strong />
-          <InfoRow icon="shield" label="Security" value={security || 'None'} />
+          {!!security && <InfoRow icon="shield" label="Security" value={security} />}
           <InfoRow icon="credit-card" label="Paid with" value={PAID_WITH[trip.paymentMethod ?? ''] ?? 'Paystack'} />
         </Panel>
 
@@ -302,7 +303,7 @@ const ReportSheet = ({ visible, busy, onClose, onSubmit }: { visible: boolean; b
             <IconButton icon="x" size={36} onPress={onClose} accessibilityLabel="Close" />
           </View>
           <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: 14 }} keyboardShouldPersistTaps="handled">
-            {REASONS.map((r) => (
+            {reasons().map((r) => (
               <Pressable key={r} onPress={() => setChoice(r)} style={[styles.reason, choice === r && styles.reasonOn]}>
                 <AppText variant="bodyMedium" style={{ flex: 1 }}>
                   {r}

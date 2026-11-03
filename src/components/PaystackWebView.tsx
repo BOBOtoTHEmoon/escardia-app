@@ -10,7 +10,7 @@
 //
 // ============================================
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -45,25 +45,31 @@ export const PaystackWebView: React.FC<PaystackWebViewProps> = ({
 }) => {
   const [loading, setLoading] = useState(true);
   const webViewRef = useRef<WebView>(null);
+  // Report only the first outcome. A paid booking must never be cancelled by a later "close" URL.
+  const doneRef = useRef(false);
+  // A new payment page (for example a retry) starts fresh.
+  useEffect(() => {
+    if (visible) doneRef.current = false;
+  }, [authorizationUrl, visible]);
+  const finish = (paid: boolean) => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    if (paid) onSuccess(reference);
+    else onCancel();
+  };
 
   // Handle navigation state change to detect success/failure
   const handleNavigationStateChange = (navState: any) => {
-    const { url } = navState;
+    const { url } = navState as { url: string };
 
-    // Check if redirected to callback URL (payment completed)
+    // Redirected to the callback URL, or Paystack's close page.
     if (url.includes('callback') || url.includes('paystack.co/close')) {
-      // Check for success indicators in URL
-      if (url.includes('trxref=') || url.includes('reference=')) {
-        onSuccess(reference);
-      } else {
-        onCancel();
-      }
+      // A reference in the URL means the payment went through. The server still verifies it.
+      finish(url.includes('trxref=') || url.includes('reference='));
+      return;
     }
 
-    // Check for cancel
-    if (url.includes('cancel') || url.includes('close')) {
-      onCancel();
-    }
+    if (url.includes('cancel') || url.includes('close')) finish(false);
   };
 
   // Handle messages from Paystack
@@ -72,9 +78,9 @@ export const PaystackWebView: React.FC<PaystackWebViewProps> = ({
       const data = JSON.parse(event.nativeEvent.data);
       
       if (data.event === 'successful' || data.event === 'success') {
-        onSuccess(reference);
+        finish(true);
       } else if (data.event === 'cancelled' || data.event === 'close') {
-        onCancel();
+        finish(false);
       }
     } catch (e) {
       // Not a JSON message, ignore
@@ -106,12 +112,12 @@ export const PaystackWebView: React.FC<PaystackWebViewProps> = ({
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={onCancel}
+      onRequestClose={() => finish(false)}
     >
       <SafeAreaView style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={onCancel} style={styles.closeButton}>
+          <TouchableOpacity onPress={() => finish(false)} style={styles.closeButton}>
             <Feather name="x" size={18} color={color.ink} />
           </TouchableOpacity>
           <View style={{ alignItems: 'center' }}>
@@ -209,7 +215,7 @@ const styles = themed(() => StyleSheet.create({
     flex: 1,
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: color.surface,
     justifyContent: 'center',
     alignItems: 'center',

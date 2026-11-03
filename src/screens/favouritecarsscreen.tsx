@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { CarCardSkeleton } from '../ui/Skeleton';
 import { ActivityIndicator, FlatList, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,8 +41,9 @@ export const FavoriteCarsScreen: React.FC<FavoriteCarsScreenProps> = ({ onNaviga
       <StatusBar style={statusBarStyle()} />
       <ScreenHeader title="Saved cars" subtitle={loading ? undefined : `${cars.length} saved`} onBack={onNavigateBack} />
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={color.primary} />
+        <View style={{ paddingHorizontal: gutter, paddingTop: 8 }}>
+          <CarCardSkeleton style={{ marginBottom: 16 }} />
+          <CarCardSkeleton style={{ marginBottom: 16 }} />
         </View>
       ) : (
         <FlatList

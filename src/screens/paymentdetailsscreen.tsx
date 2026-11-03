@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
+import { rentalLabel } from '../utils/rental';
+import { BlocksSkeleton } from '../ui/Skeleton';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { auth } from '../config/supabase';
-import { calculateTripPrice, getServerTripPrice } from '../services/pricingservice';
+import { getServerTripPrice } from '../services/pricingservice';
+import { EmptyState } from '../ui/Kit';
 import { getWalletBalance } from '../services/walletService';
 import { AppText, Button, Screen, ScreenHeader } from '../ui';
 import { BookingSteps, BottomBar, InfoRow, OptionCard, Panel, SectionTitle } from '../ui/Booking';
@@ -29,41 +32,43 @@ const PaymentDetailsScreen: React.FC<PaymentDetailsScreenProps> = ({
 }) => {
   const [method, setMethod] = useState<Method>('card');
   const [pricing, setPricing] = useState<any>(null);
-  const [confirmed, setConfirmed] = useState(false);
+  const [priceError, setPriceError] = useState('');
+  const [attempt, setAttempt] = useState(0);
   const [balance, setBalance] = useState<number | null>(null);
 
   useEffect(() => {
     const t = bookingData?.tripData;
     if (!t?.car) return;
-    // Quick estimate first, then the real price from the server.
-    setPricing(
-      calculateTripPrice({
-        car: { pricePerDay: t.car.pricePerDay, pricePerHour: t.car.pricePerHour },
-        tripDetails: { durationType: t.durationType, duration: t.duration, pickupMethod: t.pickupMethod, rideMode: t.rideMode },
-        escorts: bookingData.escortData?.escorts || null,
-        hiluxCount: bookingData.escortData?.hiluxCount || 0,
-        hiluxCost: bookingData.escortData?.hiluxCost || 0,
-      })
-    );
+    // Only ever show the price the server will charge. The skeleton shows while it loads.
+    setPricing(null);
+    setPriceError('');
     getServerTripPrice(bookingData)
-      .then((p) => {
-        setPricing(p);
-        setConfirmed(true);
-      })
-      .catch(() => setConfirmed(false));
+      .then(setPricing)
+      .catch((e: Error) => setPriceError(e?.message || 'We could not get the price. Check your connection and try again.'));
 
     const uid = auth.currentUser?.uid;
     if (uid) getWalletBalance(uid).then(setBalance).catch(() => setBalance(null));
-  }, [bookingData]);
+  }, [bookingData, attempt]);
 
   const t = bookingData?.tripData;
+  if (t && priceError) {
+    return (
+      <Screen>
+        <ScreenHeader title="Review and pay" onBack={onNavigateBack} />
+        <EmptyState
+          icon="alert-circle"
+          title="Could not get the price"
+          body={priceError}
+          action={<Button title="Try again" size="md" variant="secondary" onPress={() => setAttempt((n) => n + 1)} />}
+        />
+      </Screen>
+    );
+  }
   if (!t || !pricing) {
     return (
       <Screen>
         <ScreenHeader title="Review and pay" onBack={onNavigateBack} />
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={color.primary} />
-        </View>
+        <BlocksSkeleton heights={[56, 120, 180, 140]} />
       </Screen>
     );
   }
@@ -102,8 +107,7 @@ const PaymentDetailsScreen: React.FC<PaymentDetailsScreenProps> = ({
                 {t.car.brand} {t.car.model}
               </AppText>
               <AppText variant="small" color={color.muted}>
-                {t.duration} {t.durationType}
-                {t.duration > 1 ? 's' : ''} · With driver
+                {rentalLabel(t)} · With driver
               </AppText>
             </View>
           </View>
@@ -113,8 +117,8 @@ const PaymentDetailsScreen: React.FC<PaymentDetailsScreenProps> = ({
             <TimePoint label="Return" date={t.endDate} time={t.stopTime} right />
           </View>
           <View style={{ paddingHorizontal: 16, paddingBottom: 6 }}>
-            <InfoRow icon={t.pickupMethod === 'delivery' ? 'truck' : 'map-pin'} label={t.pickupMethod === 'delivery' ? 'Delivery' : 'Pick-up'} value={t.pickupLocation} />
-            <InfoRow icon="shield" label="Security" value={security || 'None'} />
+            <InfoRow icon="map-pin" label={t.pickupMethod === 'delivery' ? 'Pick-up address' : 'Meet at'} value={t.pickupLocation} />
+            {!!security && <InfoRow icon="shield" label="Security" value={security} />}
           </View>
         </Panel>
 
@@ -127,9 +131,9 @@ const PaymentDetailsScreen: React.FC<PaymentDetailsScreenProps> = ({
           <View style={styles.divider} />
           <InfoRow label="Total" value={naira(total)} strong />
           <View style={styles.priceNote}>
-            <Feather name={confirmed ? 'check-circle' : 'info'} size={13} color={confirmed ? color.success : color.muted} />
-            <AppText variant="small" color={confirmed ? color.success : color.muted}>
-              {confirmed ? 'Price confirmed by Escardia' : 'Estimate. The final price is confirmed when you pay.'}
+            <Feather name="check-circle" size={13} color={color.success} />
+            <AppText variant="small" color={color.success}>
+              Price confirmed by Escardia
             </AppText>
           </View>
         </Panel>

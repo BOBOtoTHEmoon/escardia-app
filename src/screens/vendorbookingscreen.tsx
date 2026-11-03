@@ -1,5 +1,6 @@
 // Vendor bookings: upcoming, on the road and past, with what each one pays.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { TripCardSkeleton } from '../ui/Skeleton';
 import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -98,8 +99,8 @@ export const VendorBookingsScreen: React.FC<VendorBookingsScreenProps> = ({ onTa
         ListEmptyComponent={
           loading ? (
             <View>
-              <Skeleton height={170} />
-              <Skeleton height={170} />
+              <TripCardSkeleton />
+              <TripCardSkeleton />
             </View>
           ) : error ? (
             <EmptyState icon="wifi-off" title={error} action={<Button title="Try again" size="md" variant="secondary" onPress={load} />} />

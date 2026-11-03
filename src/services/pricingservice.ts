@@ -1,3 +1,5 @@
+import { FEATURES } from '../config/features';
+import { rentalLabel } from '../utils/rental';
 interface PricingInput {
   car: {
     pricePerDay: number;
@@ -6,6 +8,7 @@ interface PricingInput {
   tripDetails: {
     durationType: 'day' | 'hour';
     duration: number;
+    extraHours?: number;
     pickupMethod: 'vendor' | 'delivery';
     rideMode: 'self-drive' | 'with-driver';
   };
@@ -37,7 +40,7 @@ interface PricingBreakdown {
 }
 
 // Constants
-const DELIVERY_FEE = 5000; // ₦5,000 flat fee for delivery
+const DELIVERY_FEE = 5000; // ₦5,000 flat fee for delivery (self-drive only; with a driver, pick-up is free)
 const SERVICE_FEE = 2000; // ₦2,000 flat service fee
 
 /**Calculate complete trip pricing breakdown*/
@@ -49,9 +52,12 @@ export const calculateTripPrice = (input: PricingInput): PricingBreakdown => {
   } else {
     baseRental = input.car.pricePerHour * input.tripDetails.duration;
   }
+  // Hours past the last full day, at the hourly price (never more than one more day).
+  const extraHours = input.tripDetails.durationType === 'day' ? Number(input.tripDetails.extraHours ?? 0) : 0;
+  if (extraHours > 0) baseRental += Math.min(extraHours * input.car.pricePerHour, input.car.pricePerDay);
 
   // 2. Calculate delivery fee
-  const deliveryFee = input.tripDetails.pickupMethod === 'delivery' ? DELIVERY_FEE : 0;
+  const deliveryFee = input.tripDetails.pickupMethod === 'delivery' && FEATURES.selfDrive ? DELIVERY_FEE : 0;
 
   // 3. Calculate escort fees (per day basis, even if hourly rental)
   let escortFeesBreakdown = {
@@ -65,7 +71,7 @@ export const calculateTripPrice = (input: PricingInput): PricingBreakdown => {
     // Convert hours to days for escort calculation (minimum 1 day)
     const daysForEscort = input.tripDetails.durationType === 'hour'
       ? Math.ceil(input.tripDetails.duration / 24) // Round up hours to days
-      : input.tripDetails.duration;
+      : input.tripDetails.duration + (input.tripDetails.extraHours ? 1 : 0);
 
     input.escorts.forEach(escort => {
       const escortCost = escort.pricePerPerson * escort.count * daysForEscort;
@@ -166,7 +172,7 @@ export const getQuickPrice = (
 ): number => {
   let total = pricePerDay * days;
   
-  if (hasDelivery) {
+  if (hasDelivery && FEATURES.selfDrive) {
     total += DELIVERY_FEE;
   }
   
@@ -195,7 +201,7 @@ export const getServerTripPrice = async (bookingData: any): Promise<PricingBreak
   const persons = legionCount + privateCount;
 
   const breakdown: Array<{ label: string; amount: number }> = [
-    { label: `Car Rental (${t.duration} ${t.durationType}${t.duration > 1 ? 's' : ''})`, amount: Number(q.baseRental) },
+    { label: `Car Rental (${rentalLabel(t)})`, amount: Number(q.baseRental) },
   ];
   if (Number(q.deliveryFee) > 0) breakdown.push({ label: 'Delivery Fee', amount: Number(q.deliveryFee) });
   if (Number(q.escortFee) > 0) breakdown.push({ label: `Security (${persons} personnel)`, amount: Number(q.escortFee) });

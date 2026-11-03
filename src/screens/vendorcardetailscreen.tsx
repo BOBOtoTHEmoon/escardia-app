@@ -1,5 +1,6 @@
 // One car in the vendor's fleet: photos, review state, availability switch, earnings, details and upcoming trips.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { CarDetailSkeleton } from '../ui/Skeleton';
 import { ActivityIndicator, Alert, Dimensions, Image, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -60,8 +61,8 @@ export const VendorCarDetailScreen: React.FC<VendorCarDetailScreenProps> = ({ ca
 
   if (loading) {
     return (
-      <View style={[styles.root, styles.center]}>
-        <ActivityIndicator color={color.primary} />
+      <View style={styles.root}>
+        <CarDetailSkeleton photoHeight={PHOTO_HEIGHT} />
       </View>
     );
   }

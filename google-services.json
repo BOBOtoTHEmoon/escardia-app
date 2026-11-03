@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "677526716731",
+    "project_id": "escardia-app",
+    "storage_bucket": "escardia-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:677526716731:android:8999d8a6f585a76cdab71e",
+        "android_client_info": {
+          "package_name": "app.escardia"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCODZ1we-t4Ed_lenvdSp7V-FK97pqQh4I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

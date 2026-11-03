@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ListSkeleton } from '../ui/Skeleton';
 import { ActivityIndicator, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -62,9 +63,7 @@ export const TransactionsScreen: React.FC<TransactionsScreenProps> = ({ onNaviga
       <StatusBar style={statusBarStyle()} />
       <ScreenHeader title="Activity" onBack={onNavigateBack} />
       {loading ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={color.primary} />
-        </View>
+        <ListSkeleton />
       ) : (
         <SectionList
           sections={sections}

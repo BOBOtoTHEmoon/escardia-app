@@ -67,7 +67,7 @@ export const VendorHelpAndSupportScreen: React.FC<VendorHelpAndSupportScreenProp
       items: [
         {
           q: 'How much does Escardia keep?',
-          a: `${pct} of the car rental and any delivery fee. The customer’s service fee and security fees go to Escardia on top of your price, not out of your share.`,
+          a: `${pct} of the car rental and any delivery fee. The customer’s service fee goes to Escardia on top of your price, not out of your share.`,
         },
         {
           q: 'When can I withdraw?',

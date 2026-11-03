@@ -1,5 +1,6 @@
 // Withdraw: choose an amount, see the fee, send the request. Escardia reviews it and the server pays out.
 import React, { useCallback, useEffect, useState } from 'react';
+import { FormSkeleton } from '../ui/Skeleton';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -97,9 +98,7 @@ export const WithdrawFundsScreen: React.FC<WithdrawFundsScreenProps> = ({ onNavi
       <StatusBar style={statusBarStyle()} />
       <ScreenHeader title="Withdraw" subtitle={loading ? undefined : `Available ${naira(available)}`} onBack={onNavigateBack} />
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={color.primary} />
-        </View>
+        <FormSkeleton fields={2} />
       ) : (
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 140 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>

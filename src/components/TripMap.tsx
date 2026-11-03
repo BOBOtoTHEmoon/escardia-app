@@ -134,7 +134,7 @@ export const TripMap = ({ address, label = 'Pick-up', height = 200 }: { address:
         rotateEnabled={false}
         pitchEnabled={false}
         toolbarEnabled={false}
-        showsPointsOfInterest={false}
+        showsPointsOfInterests={false}
         showsCompass={false}
         onPress={() => openDirections(coords, address)}
       >
@@ -206,7 +206,7 @@ const styles = themed(() => StyleSheet.create({
     borderTopColor: brand[600],
   },
   tag: { position: 'absolute', top: 12, left: 12, paddingHorizontal: 10, height: 26, borderRadius: 13, backgroundColor: color.surface, justifyContent: 'center', ...shadow.sm },
-  loading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark() ? 'rgba(9,13,24,0.6)' : 'rgba(238,242,248,0.6)' },
+  loading: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark() ? 'rgba(9,13,24,0.6)' : 'rgba(238,242,248,0.6)' },
   directions: {
     position: 'absolute',
     right: 12,

@@ -100,9 +100,8 @@ export const EmptyState = ({ icon, title, body, action }: { icon: IconName; titl
   </View>
 );
 
-export const Skeleton = ({ height = 120, style }: { height?: number; style?: StyleProp<ViewStyle> }) => (
-  <View style={[{ height, borderRadius: radius.xl, backgroundColor: color.sunken, marginBottom: 12 }, style]} />
-);
+// Pulsing version lives in Skeleton.tsx.
+export { Skeleton } from './Skeleton';
 
 /* ------------------------------------------------------------------ */
 /* Stat tile                                                           */

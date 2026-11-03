@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CarCardSkeleton } from '../ui/Skeleton';
 import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -152,7 +153,7 @@ export const CarsScreen: React.FC<CarsScreenProps> = ({ onNavigateToCarDetails, 
           loading ? (
             <View>
               {[0, 1].map((i) => (
-                <View key={i} style={styles.skeleton} />
+                <CarCardSkeleton key={i} imageHeight={190} style={{ height: 290, marginBottom: 16 }} />
               ))}
             </View>
           ) : (

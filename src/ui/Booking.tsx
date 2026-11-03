@@ -6,14 +6,17 @@ import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText, Button, IconName } from './index';
 import { color, gutter, radius, shadow, themed, isDark } from '../theme';
+import { FEATURES } from '../config/features';
 
 /* ------------------------------------------------------------------ */
 /* Steps: Trip > Security > Payment                                    */
 /* ------------------------------------------------------------------ */
 
-const STEPS = ['Trip', 'Security', 'Payment'];
-
-export const BookingSteps = ({ current }: { current: 1 | 2 | 3 }) => (
+export const BookingSteps = ({ current: step }: { current: 1 | 2 | 3 }) => {
+  const STEPS = FEATURES.security ? ['Trip', 'Security', 'Payment'] : ['Trip', 'Payment'];
+  // Screens pass 1, 2 or 3. With security off, Payment (3) is step 2.
+  const current = !FEATURES.security && step === 3 ? 2 : step;
+  return (
   <View style={styles.steps}>
     {STEPS.map((label, i) => {
       const n = i + 1;
@@ -40,7 +43,8 @@ export const BookingSteps = ({ current }: { current: 1 | 2 | 3 }) => (
       );
     })}
   </View>
-);
+  );
+};
 
 /* ------------------------------------------------------------------ */
 /* Section title                                                       */

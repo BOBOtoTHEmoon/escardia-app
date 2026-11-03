@@ -35,7 +35,7 @@ const POLICIES: Record<Key, { title: string; paragraphs: string[] }> = {
   payment: {
     title: 'Payment and refund policy',
     paragraphs: [
-      'You pay for your trip in full before it starts, by card, bank transfer or USSD through Paystack, or from your Escardia wallet. The price shown on the Review and pay screen is confirmed by Escardia and does not change after you pay. It includes the car rental, any delivery, security and Hilux fees, and Escardia’s service fee.',
+      'You pay for your trip in full before it starts, by card, bank transfer or USSD through Paystack, or from your Escardia wallet. The price shown on the Review and pay screen is confirmed by Escardia and does not change after you pay. It includes the car rental, any delivery fee and Escardia’s service fee.',
       'If you cancel, your refund depends on how long is left before pick-up: 24 hours or more, a full refund; 12 to 24 hours, 50%; 2 to 12 hours, 25%; less than 2 hours, no refund. If the vendor or Escardia cancels your trip, you get a full refund. Refunds are added to your Escardia wallet straight away.',
       'If something goes wrong, report it from the trip screen during the trip or within 24 hours after it ends. Escardia holds the vendor’s payment while we review it and may refund you all or part of what you paid. We tell both you and the vendor the outcome.',
       'Wallet money can be used for bookings on Escardia. For questions about a payment or your balance, contact support.',

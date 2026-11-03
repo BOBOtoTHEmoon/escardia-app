@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { priceRental, rentalLabel } from '../utils/rental';
 import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
@@ -8,6 +9,7 @@ import { BookingSteps, BottomBar, DateTimeField, OptionCard, Panel, SectionTitle
 import { naira } from '../ui/CarCard';
 import { Chip } from '../components/filtermodal';
 import { color, font, gutter, radius, themed, statusBarStyle, isDark } from '../theme';
+import { FEATURES } from '../config/features';
 
 interface TripBookingScreenProps {
   carData: {
@@ -39,6 +41,7 @@ interface TripData {
   stopTime: string;
   duration: number;
   durationType: 'day' | 'hour';
+  extraHours: number;
 }
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -72,25 +75,25 @@ export const TripBookingScreen: React.FC<TripBookingScreenProps> = ({ carData, o
   const offersHourly = Number(carData.pricePerHour) > 0;
 
   const initialStart = savedFormData?.startDate ? new Date(savedFormData.startDate) : earliestStart(3);
-  const [rateType, setRateType] = useState<'day' | 'hour'>(offersHourly && savedFormData?.rateType === 'hour' ? 'hour' : 'day');
-  const [pickupMethod, setPickupMethod] = useState<'vendor' | 'delivery'>(savedFormData?.pickupMethod || 'vendor');
+  // Every trip has a driver, so the driver comes to the customer. The choice between
+  // meeting at the vendor and delivery only returns with self-drive.
+  const driverComes = !FEATURES.selfDrive;
+  const [pickupMethod, setPickupMethod] = useState<'vendor' | 'delivery'>(driverComes ? 'delivery' : savedFormData?.pickupMethod || 'vendor');
   const [deliveryAddress, setDeliveryAddress] = useState<string>(savedFormData?.deliveryAddress || '');
   const [startDate, setStartDate] = useState<Date>(initialStart);
   const [startTime, setStartTime] = useState<Date>(savedFormData?.startTime ? new Date(savedFormData.startTime) : initialStart);
   const [endDate, setEndDate] = useState<Date>(() => {
     const saved = savedFormData?.endDate ? new Date(savedFormData.endDate) : null;
-    return saved && midnight(saved) > midnight(initialStart) ? saved : new Date(initialStart.getTime() + DAY);
+    return saved && midnight(saved) >= midnight(initialStart) ? saved : new Date(initialStart.getTime() + DAY);
   });
-  const [stopTime, setStopTime] = useState<Date>(() =>
-    savedFormData?.stopTime ? new Date(savedFormData.stopTime) : new Date(initialStart.getTime() + 2 * 3600 * 1000)
-  );
+  // Return time defaults to the pick-up time, so a new booking starts as exactly one day.
+  const [stopTime, setStopTime] = useState<Date>(() => (savedFormData?.stopTime ? new Date(savedFormData.stopTime) : initialStart));
   const [checking, setChecking] = useState(false);
 
   // Remember the form if the customer goes back and forth.
   useEffect(() => {
     onFormDataChange?.({
       pickupMethod,
-      rateType,
       deliveryAddress,
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
@@ -98,25 +101,29 @@ export const TripBookingScreen: React.FC<TripBookingScreenProps> = ({ carData, o
       stopTime: stopTime.toISOString(),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pickupMethod, rateType, deliveryAddress, startDate, endDate, startTime, stopTime]);
+  }, [pickupMethod, deliveryAddress, startDate, endDate, startTime, stopTime]);
 
   const start = at(startDate, startTime);
+  const end = at(endDate, stopTime);
+  // Same rules the server uses (see utils/rental.ts and quote_booking).
+  const trip = priceRental(start, end, carData.pricePerDay, carData.pricePerHour);
+  const rental = trip.base;
 
-  // Daily trips end at the same time of day as they start (that is how the server prices them).
-  const end = useMemo(() => {
-    if (rateType === 'day') return at(endDate, startTime);
-    const e = at(startDate, stopTime);
-    if (e <= start) e.setDate(e.getDate() + 1);
-    return e;
-  }, [rateType, endDate, startDate, startTime, stopTime, start]);
+  const returnError = useMemo(() => {
+    if (end <= start) return 'The return time must be after the pick-up time.';
+    if (trip.hours > 90 * 24) return 'Bookings can be up to 90 days.';
+    return null;
+  }, [start, end, trip.hours]);
 
-  const duration =
-    rateType === 'day'
-      ? Math.max(1, Math.round((midnight(endDate).getTime() - midnight(startDate).getTime()) / DAY))
-      : Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (3600 * 1000)));
-
-  const unitPrice = rateType === 'day' ? carData.pricePerDay : carData.pricePerHour;
-  const rental = unitPrice * duration;
+  // Explains how the time is charged, under the dates.
+  const priceNote =
+    trip.durationType === 'hour'
+      ? `Charged by the hour at ${naira(carData.pricePerHour)} per hour.`
+      : trip.extraHours > 0
+        ? `${trip.extraHours} extra hour${trip.extraHours === 1 ? '' : 's'} at ${naira(carData.pricePerHour)} per hour.`
+        : offersHourly
+          ? `Returning after ${formatTime(start)} adds ${naira(carData.pricePerHour)} per extra hour.`
+          : `This car is priced by the day. Returning after ${formatTime(start)} counts as another day.`;
 
   const timeError = useMemo(() => {
     const min = new Date(Date.now() + minHours * 3600 * 1000);
@@ -127,20 +134,23 @@ export const TripBookingScreen: React.FC<TripBookingScreenProps> = ({ carData, o
 
   const changeStartDate = (d: Date) => {
     setStartDate(d);
-    if (midnight(endDate) <= midnight(d)) setEndDate(new Date(midnight(d).getTime() + DAY));
+    if (midnight(endDate) < midnight(d)) setEndDate(new Date(midnight(d).getTime() + DAY));
   };
 
   const handleContinue = async () => {
     if (pickupMethod === 'delivery' && !deliveryAddress.trim()) {
-      Alert.alert('Where should we bring it?', 'Enter the delivery address.');
+      Alert.alert(
+        driverComes ? 'Where should your driver pick you up?' : 'Where should we bring it?',
+        driverComes ? 'Enter your pick-up address.' : 'Enter the delivery address.'
+      );
       return;
     }
     if (timeError) {
       Alert.alert('Choose another time', timeError);
       return;
     }
-    if (rateType === 'day' && midnight(endDate) <= midnight(startDate)) {
-      Alert.alert('Check your dates', 'The return date must be after the pick-up date.');
+    if (returnError) {
+      Alert.alert('Check your return time', returnError);
       return;
     }
 
@@ -173,12 +183,11 @@ export const TripBookingScreen: React.FC<TripBookingScreenProps> = ({ carData, o
       endDate: formatDate(end),
       startTime: formatTime(start),
       stopTime: formatTime(end),
-      duration,
-      durationType: rateType,
+      duration: trip.duration,
+      durationType: trip.durationType,
+      extraHours: trip.extraHours,
     });
   };
-
-  const unit = rateType === 'day' ? 'day' : 'hour';
 
   return (
     <Screen>
@@ -206,27 +215,12 @@ export const TripBookingScreen: React.FC<TripBookingScreenProps> = ({ carData, o
               </AppText>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
-              <AppText variant="subheading">{naira(unitPrice)}</AppText>
+              <AppText variant="subheading">{naira(carData.pricePerDay)}</AppText>
               <AppText variant="small" color={color.muted}>
-                per {unit}
+                {offersHourly ? `per day · ${naira(carData.pricePerHour)}/hr` : 'per day'}
               </AppText>
             </View>
           </Panel>
-
-          {/* Rate */}
-          <SectionTitle title="How long do you need it?" />
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Chip label="By the day" active={rateType === 'day'} onPress={() => setRateType('day')} />
-            {offersHourly ? (
-              <Chip label="By the hour" active={rateType === 'hour'} onPress={() => setRateType('hour')} />
-            ) : (
-              <View style={styles.dailyOnly}>
-                <AppText variant="small" color={color.muted}>
-                  This car is daily only
-                </AppText>
-              </View>
-            )}
-          </View>
 
           {/* When */}
           <SectionTitle title="When?" hint={`Book at least ${minHours} hours ahead so the vendor can prepare the car.`} />
@@ -245,49 +239,47 @@ export const TripBookingScreen: React.FC<TripBookingScreenProps> = ({ carData, o
             <AppText variant="caption" color={color.muted} style={{ marginBottom: 8 }}>
               Return
             </AppText>
-            {rateType === 'day' ? (
-              <View style={styles.dtRow}>
-                <DateTimeField
-                  label="Date"
-                  mode="date"
-                  value={endDate}
-                  display={shortDay(endDate)}
-                  minimumDate={new Date(midnight(startDate).getTime() + DAY)}
-                  onChange={setEndDate}
-                />
-                <View style={styles.dtFixed}>
-                  <AppText variant="small" color={color.muted} style={{ fontSize: 12 }}>
-                    Time
-                  </AppText>
-                  <AppText variant="bodyMedium" color={color.muted} style={{ marginTop: 2 }}>
-                    {formatTime(startTime)}
-                  </AppText>
-                </View>
-              </View>
-            ) : (
-              <View style={styles.dtRow}>
-                <DateTimeField label="Time" mode="time" value={stopTime} display={formatTime(stopTime)} onChange={setStopTime} />
-                <View style={styles.dtFixed}>
-                  <AppText variant="small" color={color.muted} style={{ fontSize: 12 }}>
-                    Date
-                  </AppText>
-                  <AppText variant="bodyMedium" color={color.muted} style={{ marginTop: 2 }}>
-                    {shortDay(end)}
-                  </AppText>
-                </View>
-              </View>
+            <View style={styles.dtRow}>
+              <DateTimeField label="Date" mode="date" value={endDate} display={shortDay(endDate)} minimumDate={midnight(startDate)} onChange={setEndDate} error={!!returnError} />
+              <DateTimeField label="Time" mode="time" value={stopTime} display={formatTime(stopTime)} onChange={setStopTime} error={!!returnError} />
+            </View>
+            {!!returnError && (
+              <AppText variant="small" color={color.danger} style={{ marginTop: 8 }}>
+                {returnError}
+              </AppText>
             )}
 
             <View style={styles.duration}>
               <Feather name="clock" size={15} color={color.primary} />
-              <AppText variant="smallMedium" color={color.primary}>
-                {duration} {unit}
-                {duration > 1 ? 's' : ''} · {shortDay(start)} to {shortDay(end)}
+              <AppText variant="smallMedium" color={color.primary} style={{ flex: 1 }}>
+                {rentalLabel(trip)} · {shortDay(start)} to {shortDay(end)}
               </AppText>
             </View>
+            {!returnError && (
+              <AppText variant="small" color={color.muted} style={{ marginTop: 10 }}>
+                {priceNote}
+              </AppText>
+            )}
           </Panel>
 
           {/* Pick-up */}
+          {driverComes ? (
+            <>
+              <SectionTitle title="Pick-up address" hint="Your driver brings the car and picks you up here." />
+              <Panel>
+                <TextInput
+                  keyboardAppearance={isDark() ? 'dark' : 'light'}
+                  value={deliveryAddress}
+                  onChangeText={setDeliveryAddress}
+                  placeholder="House number, street and area"
+                  placeholderTextColor={color.subtle}
+                  multiline
+                  style={[styles.address, { marginTop: 0 }]}
+                />
+              </Panel>
+            </>
+          ) : (
+          <>
           <SectionTitle title="Getting the car" />
           <OptionCard
             icon="map-pin"
@@ -315,31 +307,27 @@ export const TripBookingScreen: React.FC<TripBookingScreenProps> = ({ carData, o
               />
             )}
           </OptionCard>
+          </>
+          )}
 
           {/* Driver */}
           <SectionTitle title="Driver" />
           <OptionCard icon="user-check" title="Professional driver included" subtitle="Every Escardia trip comes with a vetted driver." selected />
-          <OptionCard
-            icon="key"
-            title="Self-drive"
-            subtitle="Coming soon"
-            selected={false}
-            disabled
-            right={
-              <View style={styles.soon}>
-                <AppText variant="smallMedium" color={color.muted} style={{ fontSize: 11 }}>
-                  Soon
-                </AppText>
-              </View>
-            }
-          />
+          {FEATURES.selfDrive && (
+            <OptionCard
+              icon="key"
+              title="Self-drive"
+              subtitle="Rent the car and drive it yourself."
+              selected={false}
+            />
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
 
       <BottomBar
         label="Car rental"
         amount={naira(rental)}
-        note={`${duration} ${unit}${duration > 1 ? 's' : ''}`}
+        note={rentalLabel(trip)}
         button={<Button title="Continue" iconRight="arrow-right" onPress={handleContinue} loading={checking} />}
       />
     </Screen>
