@@ -89,7 +89,7 @@ export const WalletPaymentScreen: React.FC<WalletPaymentScreenProps> = ({ onNavi
 
         {balance !== null && !enough && (
           <View style={{ marginTop: 16 }}>
-            <Banner text={`You need ${naira(total - balance)} more. Pay by card or bank transfer instead, or top up your wallet from your profile.`} />
+            <Banner text={`You need ${naira(total - balance)} more. Go back and pay by card or bank transfer instead.`} />
           </View>
         )}
 

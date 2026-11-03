@@ -179,7 +179,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
 
         <View style={{ paddingHorizontal: gutter }}>
           <MenuGroup title="Account">
-            <MenuRow icon="pocket" label="Wallet" hint="Top up and see your activity" onPress={onNavigateToWallet} />
+            <MenuRow icon="pocket" label="Wallet" hint="Your balance and activity" onPress={onNavigateToWallet} />
             <MenuRow icon="heart" label="Saved cars" onPress={onNavigateToFavorites} />
             {onNavigateToNotifications && (
               <MenuRow

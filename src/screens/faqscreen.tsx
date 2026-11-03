@@ -54,8 +54,8 @@ const FAQS: { group: string; items: { q: string; a: string }[] }[] = [
         a: 'Paid trips cannot be edited in the app because the price and availability would change. Cancel and book again, or contact support and we will help.',
       },
       {
-        q: 'How do I top up my wallet?',
-        a: 'Go to Profile, then Wallet, then Add money. Pay with Paystack and the money is added as soon as it clears.',
+        q: 'What is my Escardia wallet for?',
+        a: 'Refunds from cancelled trips go to your wallet straight away. You can use that balance to pay for your next booking. Go to Profile, then Wallet, to see it.',
       },
     ],
   },

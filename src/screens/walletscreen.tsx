@@ -78,13 +78,16 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onNavigateBack, onNa
               {naira(wallet.pending)} on hold
             </AppText>
           )}
-          <Button title="Add money" variant="white" icon="plus" size="md" onPress={onNavigateToAddMoney} style={{ marginTop: 20, alignSelf: 'flex-start' }} />
+          {/* Top-ups are off for launch: the balance only holds refunds and credits from Escardia. */}
+          <AppText variant="small" color={color.onDarkMuted} style={{ marginTop: 16 }}>
+            Refunds from cancelled trips are added here. Use them to pay for your next trip.
+          </AppText>
         </View>
 
         <View style={styles.tips}>
           {[
-            { icon: 'zap' as const, title: 'Pay instantly', body: 'Book without a card or bank app.' },
             { icon: 'rotate-ccw' as const, title: 'Refunds land here', body: 'Cancelled trips are refunded to your wallet.' },
+            { icon: 'zap' as const, title: 'Pay instantly', body: 'Use your balance on your next booking.' },
           ].map((t) => (
             <View key={t.title} style={styles.tip}>
               <View style={styles.tipIcon}>
