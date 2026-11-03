@@ -126,9 +126,14 @@ export const TripBookingScreen: React.FC<TripBookingScreenProps> = ({ carData, o
   }, [start, end, trip.hours]);
 
   // Explains how the time is charged, under the dates.
+  // Short trips never cost more than one day. Say so when the cap kicks in, so the price makes sense.
+  const hourlyTotal = trip.durationType === 'hour' ? trip.duration * Number(carData.pricePerHour || 0) : 0;
+  const dayCap = trip.durationType === 'hour' && Number(carData.pricePerDay) > 0 && hourlyTotal > Number(carData.pricePerDay);
   const priceNote =
     trip.durationType === 'hour'
-      ? `Charged by the hour at ${naira(carData.pricePerHour)} per hour.`
+      ? dayCap
+        ? `${trip.duration} hours at ${naira(carData.pricePerHour)} would be ${naira(hourlyTotal)}, so you pay the full-day price of ${naira(carData.pricePerDay)} instead.`
+        : `Charged by the hour at ${naira(carData.pricePerHour)} per hour.`
       : trip.extraHours > 0
         ? `${trip.extraHours} extra hour${trip.extraHours === 1 ? '' : 's'} at ${naira(extraHourPrice(carData.pricePerDay))} per hour (the day price split by 24).`
         : `Returning after ${formatTime(start)} adds ${naira(extraHourPrice(carData.pricePerDay))} per extra hour.`;
