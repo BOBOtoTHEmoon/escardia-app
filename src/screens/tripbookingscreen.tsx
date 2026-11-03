@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { priceRental, rentalLabel } from '../utils/rental';
-import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { MapPicker } from '../components/MapPicker';
+import { TripMap } from '../components/TripMap';
+import { extraHourPrice, priceRental, rentalLabel } from '../utils/rental';
+import { Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { useAppSettings } from '../hooks/useAppSettings';
@@ -42,6 +44,8 @@ interface TripData {
   duration: number;
   durationType: 'day' | 'hour';
   extraHours: number;
+  pickupLat?: number | null;
+  pickupLng?: number | null;
 }
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -80,6 +84,10 @@ export const TripBookingScreen: React.FC<TripBookingScreenProps> = ({ carData, o
   const driverComes = !FEATURES.selfDrive;
   const [pickupMethod, setPickupMethod] = useState<'vendor' | 'delivery'>(driverComes ? 'delivery' : savedFormData?.pickupMethod || 'vendor');
   const [deliveryAddress, setDeliveryAddress] = useState<string>(savedFormData?.deliveryAddress || '');
+  // Exact pick-up point chosen on the map, plus optional directions for the driver.
+  const [pickupCoords, setPickupCoords] = useState<{ latitude: number; longitude: number } | null>(savedFormData?.pickupCoords ?? null);
+  const [pickupNote, setPickupNote] = useState<string>(savedFormData?.pickupNote || '');
+  const [picking, setPicking] = useState(false);
   const [startDate, setStartDate] = useState<Date>(initialStart);
   const [startTime, setStartTime] = useState<Date>(savedFormData?.startTime ? new Date(savedFormData.startTime) : initialStart);
   const [endDate, setEndDate] = useState<Date>(() => {
@@ -95,13 +103,15 @@ export const TripBookingScreen: React.FC<TripBookingScreenProps> = ({ carData, o
     onFormDataChange?.({
       pickupMethod,
       deliveryAddress,
+      pickupCoords,
+      pickupNote,
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
       startTime: startTime.toISOString(),
       stopTime: stopTime.toISOString(),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pickupMethod, deliveryAddress, startDate, endDate, startTime, stopTime]);
+  }, [pickupMethod, deliveryAddress, pickupCoords, pickupNote, startDate, endDate, startTime, stopTime]);
 
   const start = at(startDate, startTime);
   const end = at(endDate, stopTime);
@@ -120,10 +130,8 @@ export const TripBookingScreen: React.FC<TripBookingScreenProps> = ({ carData, o
     trip.durationType === 'hour'
       ? `Charged by the hour at ${naira(carData.pricePerHour)} per hour.`
       : trip.extraHours > 0
-        ? `${trip.extraHours} extra hour${trip.extraHours === 1 ? '' : 's'} at ${naira(carData.pricePerHour)} per hour.`
-        : offersHourly
-          ? `Returning after ${formatTime(start)} adds ${naira(carData.pricePerHour)} per extra hour.`
-          : `This car is priced by the day. Returning after ${formatTime(start)} counts as another day.`;
+        ? `${trip.extraHours} extra hour${trip.extraHours === 1 ? '' : 's'} at ${naira(extraHourPrice(carData.pricePerDay))} per hour (the day price split by 24).`
+        : `Returning after ${formatTime(start)} adds ${naira(extraHourPrice(carData.pricePerDay))} per extra hour.`;
 
   const timeError = useMemo(() => {
     const min = new Date(Date.now() + minHours * 3600 * 1000);
@@ -138,6 +146,10 @@ export const TripBookingScreen: React.FC<TripBookingScreenProps> = ({ carData, o
   };
 
   const handleContinue = async () => {
+    if (driverComes && !pickupCoords) {
+      Alert.alert('Where should your driver pick you up?', 'Choose your pick-up point on the map.');
+      return;
+    }
     if (pickupMethod === 'delivery' && !deliveryAddress.trim()) {
       Alert.alert(
         driverComes ? 'Where should your driver pick you up?' : 'Where should we bring it?',
@@ -173,10 +185,14 @@ export const TripBookingScreen: React.FC<TripBookingScreenProps> = ({ carData, o
       setChecking(false);
     }
 
+    // The address from the map, plus the customer's own directions for the driver.
+    const fullAddress = [deliveryAddress.trim(), pickupNote.trim()].filter(Boolean).join(' · ');
     onContinue({
       car: carData,
-      pickupLocation: pickupMethod === 'vendor' ? carData.location || 'Vendor location' : deliveryAddress.trim(),
-      deliveryAddress: pickupMethod === 'delivery' ? deliveryAddress.trim() : undefined,
+      pickupLocation: pickupMethod === 'vendor' ? carData.location || 'Vendor location' : fullAddress,
+      deliveryAddress: pickupMethod === 'delivery' ? fullAddress : undefined,
+      pickupLat: pickupMethod === 'delivery' ? pickupCoords?.latitude ?? null : null,
+      pickupLng: pickupMethod === 'delivery' ? pickupCoords?.longitude ?? null : null,
       pickupMethod,
       rideMode: 'with-driver',
       startDate: formatDate(start),
@@ -265,18 +281,53 @@ export const TripBookingScreen: React.FC<TripBookingScreenProps> = ({ carData, o
           {/* Pick-up */}
           {driverComes ? (
             <>
-              <SectionTitle title="Pick-up address" hint="Your driver brings the car and picks you up here." />
-              <Panel>
-                <TextInput
-                  keyboardAppearance={isDark() ? 'dark' : 'light'}
-                  value={deliveryAddress}
-                  onChangeText={setDeliveryAddress}
-                  placeholder="House number, street and area"
-                  placeholderTextColor={color.subtle}
-                  multiline
-                  style={[styles.address, { marginTop: 0 }]}
-                />
-              </Panel>
+              <SectionTitle title="Pick-up point" hint="Your driver brings the car and picks you up here." />
+              {pickupCoords ? (
+                <Panel style={{ padding: 0, overflow: 'hidden' }}>
+                  <TripMap coords={pickupCoords} address={deliveryAddress} label="Pick-up" height={150} showDirections={false} onPress={() => setPicking(true)} />
+                  <Pressable onPress={() => setPicking(true)} style={styles.pickRow}>
+                    <Feather name="map-pin" size={16} color={color.primary} />
+                    <AppText variant="bodyMedium" numberOfLines={2} style={{ flex: 1 }}>
+                      {deliveryAddress}
+                    </AppText>
+                    <AppText variant="smallMedium" color={color.primary}>
+                      Change
+                    </AppText>
+                  </Pressable>
+                </Panel>
+              ) : (
+                <Pressable onPress={() => setPicking(true)} style={({ pressed }) => [styles.choose, pressed && { opacity: 0.85 }]}>
+                  <View style={styles.chooseIcon}>
+                    <Feather name="map" size={18} color={color.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <AppText variant="subheading">Choose on map</AppText>
+                    <AppText variant="small" color={color.muted}>
+                      Search or drag the pin to your exact spot
+                    </AppText>
+                  </View>
+                  <Feather name="chevron-right" size={18} color={color.muted} />
+                </Pressable>
+              )}
+              <TextInput
+                keyboardAppearance={isDark() ? 'dark' : 'light'}
+                value={pickupNote}
+                onChangeText={setPickupNote}
+                placeholder="House number, gate colour or a landmark (optional)"
+                placeholderTextColor={color.subtle}
+                multiline
+                style={styles.address}
+              />
+              <MapPicker
+                visible={picking}
+                initial={pickupCoords}
+                onClose={() => setPicking(false)}
+                onConfirm={(p) => {
+                  setPickupCoords({ latitude: p.latitude, longitude: p.longitude });
+                  setDeliveryAddress(p.address);
+                  setPicking(false);
+                }}
+              />
             </>
           ) : (
           <>
@@ -370,5 +421,17 @@ const styles = themed(() => StyleSheet.create({
     color: color.ink,
     textAlignVertical: 'top',
   },
+  pickRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 },
+  choose: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: color.border,
+    backgroundColor: color.surface,
+  },
+  chooseIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: color.primarySoft, alignItems: 'center', justifyContent: 'center' },
   soon: { paddingHorizontal: 8, height: 22, borderRadius: 11, backgroundColor: color.sunken, justifyContent: 'center' },
 }));

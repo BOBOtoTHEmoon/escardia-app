@@ -74,6 +74,8 @@ export const mapBooking = (r: any) => {
     pickupLocation: r.pickup_location ?? '',
     pickupMethod: r.pickup_method,
     deliveryAddress: r.delivery_address ?? undefined,
+    pickupLat: r.pickup_lat == null ? null : Number(r.pickup_lat),
+    pickupLng: r.pickup_lng == null ? null : Number(r.pickup_lng),
     rideMode: r.ride_mode,
     startAt: r.start_at,
     endAt: r.end_at,
@@ -128,6 +130,8 @@ interface TripInput {
     startTime: string;
     endDate: string;
     stopTime: string;
+    pickupLat?: number | null;
+    pickupLng?: number | null;
   };
   escortData?: {
     escorts?: Array<{ type: 'legion' | 'private'; count: number }> | null;
@@ -165,6 +169,8 @@ export const createBookingFromTrip = async (input: TripInput): Promise<{ success
       p_legion: counts.legion,
       p_private: counts.private,
       p_hilux: counts.hilux,
+      p_pickup_lat: t.pickupLat ?? null,
+      p_pickup_lng: t.pickupLng ?? null,
     });
     if (error) return { success: false, error: error.message };
     return { success: true, id: data.id, booking: mapBooking(data) };

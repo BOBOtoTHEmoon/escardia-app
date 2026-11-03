@@ -62,7 +62,7 @@ export const LocationSelector: React.FC<LocationSelectorProps> = ({ visible, cur
         Alert.alert('Location is off', 'Allow Escardia to use your location in your phone settings, or pick your area from the list.');
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       const { latitude, longitude } = pos.coords;
       const [addr] = await Location.reverseGeocodeAsync({ latitude, longitude });
       pick(addr ? formatAddress(addr) : 'Current location', { latitude, longitude });

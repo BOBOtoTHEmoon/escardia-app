@@ -71,7 +71,7 @@ export const openDirections = (coords: Coords | null, label: string) => {
 };
 
 // Quiet, light map so the blue pin stands out (Google Maps on Android).
-const MAP_STYLE = [
+export const MAP_STYLE = [
   { elementType: 'geometry', stylers: [{ color: '#f3f5f9' }] },
   { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
   { elementType: 'labels.text.fill', stylers: [{ color: '#64748b' }] },
@@ -85,7 +85,7 @@ const MAP_STYLE = [
 ];
 
 // Dark version for dark mode (Google Maps on Android; iPhone uses Apple's own dark map).
-const DARK_MAP_STYLE = [
+export const DARK_MAP_STYLE = [
   { elementType: 'geometry', stylers: [{ color: '#121828' }] },
   { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
   { elementType: 'labels.text.fill', stylers: [{ color: '#8A97B5' }] },
@@ -97,12 +97,34 @@ const DARK_MAP_STYLE = [
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0B1430' }] },
 ];
 
-export const TripMap = ({ address, label = 'Pick-up', height = 200 }: { address: string; label?: string; height?: number }) => {
-  const [coords, setCoords] = useState<Coords | null>(() => fromKnown(address));
-  const [loading, setLoading] = useState(true);
+export const TripMap = ({
+  address,
+  label = 'Pick-up',
+  height = 200,
+  coords: exact,
+  onPress,
+  showDirections = true,
+}: {
+  address: string;
+  label?: string;
+  height?: number;
+  /** Exact point chosen on the map. When given, no address lookup is needed. */
+  coords?: Coords | null;
+  /** Tapping the map. Defaults to opening directions. */
+  onPress?: () => void;
+  showDirections?: boolean;
+}) => {
+  const [coords, setCoords] = useState<Coords | null>(() => exact ?? fromKnown(address));
+  const [loading, setLoading] = useState(!exact);
   const map = useRef<MapView>(null);
 
   useEffect(() => {
+    if (exact) {
+      setCoords(exact);
+      setLoading(false);
+      map.current?.animateToRegion({ ...exact, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 300);
+      return;
+    }
     let alive = true;
     setLoading(true);
     geocode(address).then((c) => {
@@ -116,9 +138,12 @@ export const TripMap = ({ address, label = 'Pick-up', height = 200 }: { address:
     return () => {
       alive = false;
     };
-  }, [address]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, exact?.latitude, exact?.longitude]);
 
   const center = coords ?? LAGOS;
+  const zoom = exact ? 0.01 : coords ? 0.02 : 0.25;
+  const press = onPress ?? (() => openDirections(coords, address));
   const approximate = !loading && !coords;
 
   return (
@@ -126,7 +151,7 @@ export const TripMap = ({ address, label = 'Pick-up', height = 200 }: { address:
       <MapView
         ref={map}
         style={StyleSheet.absoluteFill}
-        initialRegion={{ ...center, latitudeDelta: coords ? 0.02 : 0.25, longitudeDelta: coords ? 0.02 : 0.25 }}
+        initialRegion={{ ...center, latitudeDelta: zoom, longitudeDelta: zoom }}
         customMapStyle={isDark() ? DARK_MAP_STYLE : MAP_STYLE}
         userInterfaceStyle={isDark() ? 'dark' : 'light'}
         scrollEnabled={false}
@@ -136,7 +161,7 @@ export const TripMap = ({ address, label = 'Pick-up', height = 200 }: { address:
         toolbarEnabled={false}
         showsPointsOfInterests={false}
         showsCompass={false}
-        onPress={() => openDirections(coords, address)}
+        onPress={press}
       >
         {coords && (
           <Marker coordinate={coords} anchor={{ x: 0.5, y: 1 }} tracksViewChanges={false}>
@@ -162,12 +187,14 @@ export const TripMap = ({ address, label = 'Pick-up', height = 200 }: { address:
         </View>
       )}
 
-      <Pressable onPress={() => openDirections(coords, address)} style={[styles.directions, shadow.md]} accessibilityLabel="Get directions">
-        <Feather name="navigation" size={14} color="#FFFFFF" />
-        <AppText variant="smallMedium" color="#FFFFFF">
-          Directions
-        </AppText>
-      </Pressable>
+      {showDirections && (
+        <Pressable onPress={() => openDirections(coords, address)} style={[styles.directions, shadow.md]} accessibilityLabel="Get directions">
+          <Feather name="navigation" size={14} color="#FFFFFF" />
+          <AppText variant="smallMedium" color="#FFFFFF">
+            Directions
+          </AppText>
+        </Pressable>
+      )}
 
       {approximate && (
         <View style={styles.approx}>

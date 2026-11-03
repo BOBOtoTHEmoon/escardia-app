@@ -209,7 +209,7 @@ export const VendorBookingDetailScreen: React.FC<VendorBookingDetailScreenProps>
         )}
         {b.pickupMethod === 'delivery' && !!(b.deliveryAddress || b.pickupLocation) && (
           <View style={styles.map}>
-            <TripMap address={(b.deliveryAddress || b.pickupLocation)!} label="Pick-up" height={180} />
+            <TripMap address={(b.deliveryAddress || b.pickupLocation)!} coords={b.pickupLat != null && b.pickupLng != null ? { latitude: b.pickupLat, longitude: b.pickupLng } : null} label="Pick-up" height={180} />
           </View>
         )}
 

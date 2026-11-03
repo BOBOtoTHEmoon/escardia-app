@@ -85,7 +85,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onN
       <View style={{ flexDirection: 'row', gap: 12 }}>
         <TextField
           label="First name"
-          placeholder="Nifemi"
+          placeholder="First name"
           value={firstName}
           onChangeText={(v) => {
             setFirstName(v);
@@ -102,7 +102,7 @@ export const SignUpScreen: React.FC<SignUpScreenProps> = ({ onSignUpSuccess, onN
         <TextField
           ref={lastRef}
           label="Last name"
-          placeholder="Idowu"
+          placeholder="Last name"
           value={lastName}
           onChangeText={(v) => {
             setLastName(v);

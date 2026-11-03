@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import * as Location from 'expo-location';
+import { formatPlace } from '../components/MapPicker';
 import { CarCardSkeleton } from '../ui/Skeleton';
 import { Dimensions, Image, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -60,7 +62,7 @@ interface HomeScreenProps {
 export const HomeScreen: React.FC<HomeScreenProps> = ({ userName = 'there', avatarUrl, onNavigateToProfile, onNavigateToCarDetails, onNavigateToCars, onNavigateToTrips, onNavigateToNotifications }) => {
   const insets = useSafeAreaInsets();
   const PROMOS = ALL_PROMOS.filter((p) => FEATURES.security || p.eyebrow !== 'Security');
-  const [location, setLocation] = useState('Victoria Island, Lagos');
+  const [location, setLocation] = useState<string | null>(null);
   const [showLocation, setShowLocation] = useState(false);
   const [cars, setCars] = useState<CarLike[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,7 +82,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ userName = 'there', avat
 
   useEffect(() => {
     load();
-    loadUserLocation().then((saved) => saved && setLocation(saved.name));
+    loadUserLocation().then(async (saved) => {
+      if (saved) return setLocation(saved.name);
+      // First open: use the phone's real location if the customer allows it. Otherwise ask them to set it.
+      try {
+        let { status, canAskAgain } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted' && canAskAgain) status = (await Location.requestForegroundPermissionsAsync()).status;
+        if (status !== 'granted') return;
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+        const [a] = await Location.reverseGeocodeAsync(coords);
+        const name = a ? formatPlace(a) : 'Current location';
+        setLocation(name);
+        saveUserLocation(name, coords);
+      } catch {
+        // Leave it as "Set your location".
+      }
+    });
     import('../services/notificationService').then(({ getUnreadNotificationCount }) => getUnreadNotificationCount().then(setUnread).catch(() => {}));
   }, [load]);
 
@@ -135,7 +153,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ userName = 'there', avat
                 </AppText>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <AppText variant="smallMedium" color="#FFFFFF" numberOfLines={1} style={{ fontSize: 14, maxWidth: SCREEN_WIDTH - 220 }}>
-                    {location}
+                    {location ?? 'Set your location'}
                   </AppText>
                   <Feather name="chevron-down" size={14} color="#FFFFFF" />
                 </View>
@@ -260,7 +278,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ userName = 'there', avat
 
       <LocationSelector
         visible={showLocation}
-        currentLocation={location}
+        currentLocation={location ?? ''}
         onClose={() => setShowLocation(false)}
         onSelectLocation={async (name, coords) => {
           setLocation(name);

@@ -108,7 +108,7 @@ export const VendorAccountCreationScreen: React.FC<VendorAccountCreationScreenPr
       <View style={{ flexDirection: 'row', gap: 12 }}>
         <TextField
           label="First name"
-          placeholder="Tunde"
+          placeholder="First name"
           value={firstName}
           onChangeText={(v) => (setFirstName(v), clear('firstName'))}
           autoCapitalize="words"
@@ -122,7 +122,7 @@ export const VendorAccountCreationScreen: React.FC<VendorAccountCreationScreenPr
         <TextField
           ref={lastRef}
           label="Last name"
-          placeholder="Bakare"
+          placeholder="Last name"
           value={lastName}
           onChangeText={(v) => (setLastName(v), clear('lastName'))}
           autoCapitalize="words"

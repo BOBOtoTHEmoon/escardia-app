@@ -184,7 +184,7 @@ export const TripDetailScreen: React.FC<TripDetailScreenProps> = ({ tripData, on
         {/* Where */}
         <SectionTitle title={trip.pickupMethod === 'delivery' ? 'Pick-up address' : 'Where to meet'} />
         <Panel style={{ padding: 0, overflow: 'hidden' }}>
-          <TripMap address={trip.pickupLocation || trip.car.location || 'Lagos'} label="Pick-up" height={210} />
+          <TripMap address={trip.pickupLocation || trip.car.location || 'Lagos'} coords={trip.pickupLat != null && trip.pickupLng != null ? { latitude: trip.pickupLat, longitude: trip.pickupLng } : null} label="Pick-up" height={210} />
           <View style={styles.place}>
             <Feather name="map-pin" size={16} color={color.primary} />
             <AppText variant="bodyMedium" style={{ flex: 1 }}>

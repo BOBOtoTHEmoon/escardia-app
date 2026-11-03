@@ -154,7 +154,7 @@ const notificationKind = (t: string | null): AppNotification['type'] => {
   if (v.includes('cancel') || v.includes('refund')) return 'cancellation';
   if (v.includes('approval') || v.includes('vendor_status')) return 'approval';
   if (v.includes('wallet') || v.includes('earning') || v.includes('payment')) return 'payment';
-  if (v.includes('booking') || v.includes('trip') || v.includes('dispute')) return 'booking';
+  if (v.includes('booking') || v.includes('trip') || v.includes('dispute') || v.includes('driver')) return 'booking';
   return 'general';
 };
 

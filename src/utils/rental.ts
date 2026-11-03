@@ -3,15 +3,15 @@
 // Keep this in step with quote_booking in the database.
 //
 //  - Under 24 hours on a car with an hourly price: charged by the hour (never more than one day).
-//  - Otherwise: full days, plus any extra hours at the hourly price (never more than one more day).
-//  - Daily-only cars: any time past the pick-up time counts as another day.
+//  - Under 24 hours on a daily-only car: one day.
+//  - 24 hours or more: full days, plus any extra hours at the day price split by 24.
 // ============================================
 
 export interface RentalTime {
   durationType: 'day' | 'hour';
   /** Days for a daily trip, hours for an hourly trip. */
   duration: number;
-  /** Hours past the last full day (daily trips on cars with an hourly price). */
+  /** Hours past the last full day (daily trips). */
   extraHours: number;
   /** Total hours, rounded up. */
   hours: number;
@@ -36,15 +36,15 @@ export const priceRental = (start: Date, end: Date, pricePerDay: number, pricePe
     days = 1;
     extra = 0;
   }
-  if (extra > 0 && hourly <= 0) {
-    days += 1;
-    extra = 0;
-  }
-  const extraCost = extra > 0 ? Math.min(extra * hourly, day) : 0;
+  // Extra hours on a longer trip cost the day price split by 24, not the short-trip hourly price.
+  const extraCost = Math.round((extra * day) / 24);
   return { durationType: 'day', duration: days, extraHours: extra, hours, base: day * days + extraCost };
 };
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** The hourly price used for extra hours on trips of a day or more. */
+export const extraHourPrice = (pricePerDay: number) => Math.round((Number(pricePerDay) || 0) / 24);
 
 /** "3 hours", "2 days" or "2 days 4 hours". */
 export const rentalLabel = (r: { duration: number; durationType: string; extraHours?: number | null }) => {

@@ -52,9 +52,9 @@ export const calculateTripPrice = (input: PricingInput): PricingBreakdown => {
   } else {
     baseRental = input.car.pricePerHour * input.tripDetails.duration;
   }
-  // Hours past the last full day, at the hourly price (never more than one more day).
+  // Hours past the last full day, at the day price split by 24.
   const extraHours = input.tripDetails.durationType === 'day' ? Number(input.tripDetails.extraHours ?? 0) : 0;
-  if (extraHours > 0) baseRental += Math.min(extraHours * input.car.pricePerHour, input.car.pricePerDay);
+  if (extraHours > 0) baseRental += Math.round((extraHours * input.car.pricePerDay) / 24);
 
   // 2. Calculate delivery fee
   const deliveryFee = input.tripDetails.pickupMethod === 'delivery' && FEATURES.selfDrive ? DELIVERY_FEE : 0;
