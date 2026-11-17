@@ -55,7 +55,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onGetStarted }) =>
           {PERKS.map((p) => (
             <View key={p.label} style={styles.perk}>
               <Feather name={p.icon} size={PILL_FONT} color={brand[300]} />
-              <AppText variant="smallMedium" color={color.onDark} numberOfLines={1} style={{ fontSize: PILL_FONT, lineHeight: 14 }}>
+              <AppText variant="smallMedium" color={color.onDark} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ fontSize: PILL_FONT, lineHeight: 14, flexShrink: 1 }}>
                 {p.label}
               </AppText>
             </View>

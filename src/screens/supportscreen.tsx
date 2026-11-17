@@ -2,7 +2,7 @@ import React from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
-import { AppText, IconName, Screen, ScreenHeader } from '../ui';
+import { AppText, bottomSpace, IconName, Screen, ScreenHeader } from '../ui';
 import { MenuGroup, MenuRow } from '../ui/Menu';
 import { CONTACT } from './contactusscreen';
 import { brand, color, gutter, radius, themed, statusBarStyle } from '../theme';
@@ -24,7 +24,7 @@ export const SupportScreen: React.FC<SupportScreenProps> = ({ onNavigateBack, on
     <Screen>
       <StatusBar style={statusBarStyle()} />
       <ScreenHeader title="Help and support" onBack={onNavigateBack} />
-      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: bottomSpace() }} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
           <View style={styles.glow} />
           <AppText variant="heading" color="#FFFFFF">

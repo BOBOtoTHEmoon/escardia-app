@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { auth } from '../config/supabase';
 import { getOrCreateWallet, getRecentTransactions, getTransactionTitle, Transaction, Wallet } from '../services/walletService';
-import { AppText, Button, Screen, ScreenHeader } from '../ui';
+import { AppText, bottomSpace, Button, Screen, ScreenHeader } from '../ui';
 import { Panel } from '../ui/Booking';
 import { naira } from '../ui/CarCard';
 import { TransactionRow } from '../ui/Status';
@@ -45,7 +45,7 @@ export const WalletScreen: React.FC<WalletScreenProps> = ({ onNavigateBack, onNa
       <StatusBar style={statusBarStyle()} />
       <ScreenHeader title="Wallet" onBack={onNavigateBack} />
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }}
+        contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: bottomSpace() }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

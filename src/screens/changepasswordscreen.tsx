@@ -3,7 +3,7 @@ import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-n
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { changePassword } from '../services/authservice';
-import { AppText, Banner, Button, Screen, ScreenHeader, TextField } from '../ui';
+import { AppText, bottomSpace, Banner, Button, Screen, ScreenHeader, TextField } from '../ui';
 import { color, gutter, statusBarStyle } from '../theme';
 
 interface ChangePasswordScreenProps {
@@ -42,7 +42,7 @@ export const ChangePasswordScreen: React.FC<ChangePasswordScreenProps> = ({ onNa
       <StatusBar style={statusBarStyle()} />
       <ScreenHeader title="Change password" onBack={onNavigateBack} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: 8, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: 8, paddingBottom: bottomSpace() }} keyboardShouldPersistTaps="handled">
           {!!error && <Banner text={error} />}
           <TextField label="Current password" icon="lock" value={current} onChangeText={setCurrent} isPassword autoComplete="password" textContentType="password" />
           <TextField

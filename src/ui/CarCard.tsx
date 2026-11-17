@@ -151,16 +151,16 @@ export const CarListCard = ({
       <View style={styles.specs}>
         {!!car.seats && <Spec icon="users" label={`${car.seats} seats`} />}
         {!!car.transmission && <Spec icon="settings" label={car.transmission} />}
-        {!!car.location && <Spec icon="map-pin" label={car.location} />}
+        {!!car.location && <Spec icon="map-pin" label={car.location} shrink />}
       </View>
     </View>
   </Pressable>
 );
 
-const Spec = ({ icon, label }: { icon: React.ComponentProps<typeof Feather>['name']; label: string }) => (
-  <View style={styles.spec}>
+const Spec = ({ icon, label, shrink }: { icon: React.ComponentProps<typeof Feather>['name']; label: string; shrink?: boolean }) => (
+  <View style={[styles.spec, shrink ? { flexShrink: 1, minWidth: 0 } : { flexShrink: 0 }]}>
     <Feather name={icon} size={12} color={color.muted} />
-    <AppText variant="small" color={color.text} numberOfLines={1} style={{ fontSize: 12, textTransform: 'capitalize', maxWidth: 140 }}>
+    <AppText variant="small" color={color.text} numberOfLines={1} style={{ fontSize: 12, textTransform: 'capitalize', maxWidth: 140, flexShrink: 1 }}>
       {label}
     </AppText>
   </View>
@@ -195,6 +195,6 @@ const styles = themed(() => StyleSheet.create({
     borderRadius: 6,
     backgroundColor: 'rgba(15,23,42,0.6)',
   },
-  specs: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
+  specs: { flexDirection: 'row', flexWrap: 'nowrap', gap: 6, marginTop: 12 },
   spec: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, height: 26, borderRadius: 8, backgroundColor: color.sunken },
 }));

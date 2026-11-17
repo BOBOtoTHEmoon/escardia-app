@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { LayoutAnimation, Platform, Pressable, ScrollView, StyleSheet, UIManager, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
-import { AppText, Screen, ScreenHeader } from '../ui';
+import { AppText, bottomSpace, Screen, ScreenHeader } from '../ui';
 import { color, gutter, radius, themed, statusBarStyle } from '../theme';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -88,7 +88,7 @@ export const FAQScreen: React.FC<FAQScreenProps> = ({ onNavigateBack }) => {
     <Screen>
       <StatusBar style={statusBarStyle()} />
       <ScreenHeader title="FAQs" onBack={onNavigateBack} />
-      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: bottomSpace() }} showsVerticalScrollIndicator={false}>
         {FAQS.map((g) => (
           <View key={g.group} style={{ marginTop: 18 }}>
             <AppText variant="caption" color={color.muted} style={{ marginBottom: 8, marginLeft: 4 }}>

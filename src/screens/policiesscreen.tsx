@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Chip } from '../components/filtermodal';
-import { AppText, Screen, ScreenHeader } from '../ui';
+import { AppText, bottomSpace, Screen, ScreenHeader } from '../ui';
 import { color, gutter, radius, themed, statusBarStyle } from '../theme';
 
 interface PoliciesScreenProps {
@@ -68,7 +68,7 @@ export const PoliciesScreen: React.FC<PoliciesScreenProps> = ({ onNavigateBack }
           <Chip label="Driver conduct" active={tab === 'conduct'} onPress={() => setTab('conduct')} />
         </ScrollView>
       </View>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: bottomSpace() }}>
         <View style={styles.doc}>
           <AppText variant="heading">{p.title}</AppText>
           <AppText variant="small" color={color.subtle} style={{ marginTop: 2, marginBottom: 8 }}>

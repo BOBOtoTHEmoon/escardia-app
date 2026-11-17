@@ -4,7 +4,7 @@ import { ScrollView, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { vendorAgreement, vendorPrivacy, AGREEMENT_UPDATED } from '../content/vendorAgreement';
 import { useAppSettings } from '../hooks/useAppSettings';
-import { AppText, Screen, ScreenHeader } from '../ui';
+import { AppText, bottomSpace, Screen, ScreenHeader } from '../ui';
 import { Segmented } from '../ui/Kit';
 import { color, gutter, radius, statusBarStyle } from '../theme';
 
@@ -30,7 +30,7 @@ export const VendorTermsAndPrivacyScreen: React.FC<VendorTermsAndPrivacyScreenPr
         onChange={setTab}
         style={{ marginHorizontal: gutter, marginBottom: 12 }}
       />
-      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: bottomSpace() }}>
         {sections.map((s) => (
           <View key={s.title} style={{ padding: 16, marginBottom: 10, borderRadius: radius.xl, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border }}>
             <AppText variant="subheading" style={{ marginBottom: 6 }}>

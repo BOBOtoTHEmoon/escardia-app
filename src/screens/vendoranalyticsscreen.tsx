@@ -6,7 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase, auth } from '../config/supabase';
 import { getVendorBookings, Booking } from '../services/bookingService';
-import { AppText, Screen, ScreenHeader } from '../ui';
+import { AppText, bottomSpace, Screen, ScreenHeader } from '../ui';
 import { naira } from '../ui/CarCard';
 import { Segmented, StatTile } from '../ui/Kit';
 import { color, gutter, radius, themed, statusBarStyle } from '../theme';
@@ -68,7 +68,7 @@ export const VendorAnalyticsScreen: React.FC<VendorAnalyticsScreenProps> = ({ on
       {loading ? (
         <BlocksSkeleton heights={[110, 230, 160]} />
       ) : (
-        <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: bottomSpace() }} showsVerticalScrollIndicator={false}>
           <Segmented
             options={[
               { key: '30', label: '30 days' },

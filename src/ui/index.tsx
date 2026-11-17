@@ -17,7 +17,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { initialWindowMetrics, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { brand, color, font, radius, shadow, space, themed, isDark } from '../theme';
 
 export type IconName = React.ComponentProps<typeof Feather>['name'];
@@ -40,6 +40,15 @@ const VARIANTS = {
 
 export type TextVariant = keyof typeof VARIANTS;
 
+/**
+ * Largest text size we allow when the phone's font size setting is turned up.
+ * Without a cap, big phone font settings push words out of buttons and tabs.
+ */
+export const MAX_FONT_SCALE = 1.15;
+
+/** Bottom padding for scroll screens, plus room for the phone's own navigation bar. */
+export const bottomSpace = (extra = 40) => extra + (initialWindowMetrics?.insets.bottom ?? 0);
+
 export const AppText = ({
   variant = 'body',
   color: c = color.ink,
@@ -48,7 +57,7 @@ export const AppText = ({
   children,
   ...rest
 }: TextProps & { variant?: TextVariant; color?: string; center?: boolean }) => (
-  <Text {...rest} style={[VARIANTS[variant], { color: c }, center && { textAlign: 'center' }, style]}>
+  <Text maxFontSizeMultiplier={MAX_FONT_SCALE} {...rest} style={[VARIANTS[variant], { color: c }, center && { textAlign: 'center' }, style]}>
     {children}
   </Text>
 );
@@ -116,6 +125,7 @@ export const Button = ({
             numberOfLines={1}
             adjustsFontSizeToFit
             minimumFontScale={0.7}
+            maxFontSizeMultiplier={MAX_FONT_SCALE}
             style={[styles.buttonText, { color: v.text }]}
           >
             {title}
@@ -168,7 +178,7 @@ export const IconButton = ({
 
 /** Text-only link. */
 export const LinkText = ({ children, onPress, style }: { children: ReactNode; onPress?: () => void; style?: StyleProp<TextStyle> }) => (
-  <Text onPress={onPress} style={[{ fontFamily: font.semibold, fontSize: 14, color: color.primary }, style]} suppressHighlighting>
+  <Text onPress={onPress} maxFontSizeMultiplier={MAX_FONT_SCALE} style={[{ fontFamily: font.semibold, fontSize: 14, color: color.primary }, style]} suppressHighlighting>
     {children}
   </Text>
 );
@@ -210,6 +220,7 @@ export const TextField = forwardRef<
         {icon && <Feather name={icon} size={18} color={focused ? color.primary : color.subtle} style={{ marginRight: 10 }} />}
         <TextInput
           ref={setRef}
+          maxFontSizeMultiplier={MAX_FONT_SCALE}
           placeholderTextColor={color.subtle}
           keyboardAppearance={isDark() ? 'dark' : 'light'}
           secureTextEntry={isPassword && !visible}
@@ -301,7 +312,7 @@ export const OtpInput = ({
               error && styles.otpBoxError,
             ]}
           >
-            <Text style={styles.otpText}>{ch ?? ''}</Text>
+            <Text maxFontSizeMultiplier={MAX_FONT_SCALE} style={styles.otpText}>{ch ?? ''}</Text>
           </View>
         );
       })}

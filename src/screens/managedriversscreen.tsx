@@ -6,7 +6,7 @@ import { Feather } from '@expo/vector-icons';
 import { auth } from '../config/supabase';
 import { getVendorBookings, Booking } from '../services/bookingService';
 import { addDriver, deleteDriver, getDrivers, updateDriver, Driver } from '../services/vendorService';
-import { AppText, Button, Screen, ScreenHeader, TextField } from '../ui';
+import { AppText, bottomSpace, Button, Screen, ScreenHeader, TextField } from '../ui';
 import { Avatar } from '../ui/Avatar';
 import { BottomSheet, EmptyState, Pill, PhotoSourceSheet, Skeleton, pickImage } from '../ui/Kit';
 import { color, gutter, radius, themed, statusBarStyle } from '../theme';
@@ -87,7 +87,7 @@ export const ManageDriversScreen: React.FC<ManageDriversScreenProps> = ({ onNavi
       <FlatList
         data={loading ? [] : drivers}
         keyExtractor={(d) => d.id}
-        contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40, flexGrow: 1 }}
+        contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: bottomSpace(), flexGrow: 1 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

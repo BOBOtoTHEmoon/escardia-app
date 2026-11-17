@@ -2,7 +2,7 @@ import React from 'react';
 import { ScrollView } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { auth } from '../config/supabase';
-import { AppText, Screen, ScreenHeader } from '../ui';
+import { AppText, bottomSpace, Screen, ScreenHeader } from '../ui';
 import { MenuGroup, MenuRow } from '../ui/Menu';
 import { color, gutter, statusBarStyle } from '../theme';
 
@@ -16,7 +16,7 @@ export const SecurityLoginSafetyScreen: React.FC<SecurityLoginSafetyScreenProps>
   <Screen>
     <StatusBar style={statusBarStyle()} />
     <ScreenHeader title="Password and safety" onBack={onNavigateBack} />
-    <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }}>
+    <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: bottomSpace() }}>
       <MenuGroup title="Sign in">
         <MenuRow icon="mail" label="Email" hint={auth.currentUser?.email ?? ''} />
         <MenuRow icon="lock" label="Change password" hint="Use a strong password you don't use elsewhere" onPress={onNavigateToChangePassword} last />

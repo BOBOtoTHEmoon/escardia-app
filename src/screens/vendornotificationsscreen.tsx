@@ -5,7 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { auth } from '../config/supabase';
 import { getNotificationPermissionStatus, savePushToken } from '../services/notificationService';
-import { AppText, Button, IconName, Screen, ScreenHeader } from '../ui';
+import { AppText, bottomSpace, Button, IconName, Screen, ScreenHeader } from '../ui';
 import { color, gutter, radius, themed, statusBarStyle } from '../theme';
 
 interface VendorNotificationPreferencesScreenProps {
@@ -52,7 +52,7 @@ export const VendorNotificationPreferencesScreen: React.FC<VendorNotificationPre
     <Screen>
       <StatusBar style={statusBarStyle()} />
       <ScreenHeader title="Push notifications" onBack={onNavigateBack} />
-      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: bottomSpace() }}>
         <View style={[styles.status, { backgroundColor: on ? color.successSoft : color.warningSoft }]}>
           {status === null ? (
             <ActivityIndicator color={color.primary} />

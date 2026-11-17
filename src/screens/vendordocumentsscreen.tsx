@@ -5,7 +5,7 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-na
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { getDocuments, replaceDocument, DocKey, VendorDocs } from '../services/vendorService';
-import { AppText, Screen, ScreenHeader } from '../ui';
+import { AppText, bottomSpace, Screen, ScreenHeader } from '../ui';
 import { UploadBox } from '../ui/Kit';
 import { color, gutter, radius, themed, statusBarStyle } from '../theme';
 
@@ -53,7 +53,7 @@ export const VendorDocumentsScreen: React.FC<VendorDocumentsScreenProps> = ({ on
       {loading ? (
         <BlocksSkeleton heights={[88, 88, 88]} />
       ) : (
-        <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }}>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: bottomSpace() }}>
           <View style={styles.idCard}>
             <View style={styles.idIcon}>
               <Feather name="credit-card" size={18} color={color.primary} />

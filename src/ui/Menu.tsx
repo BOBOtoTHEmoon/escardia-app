@@ -44,7 +44,7 @@ export const MenuRow = ({
       <Feather name={icon} size={17} color={danger ? color.danger : color.primary} />
     </View>
     <View style={{ flex: 1 }}>
-      <AppText variant="bodyMedium" color={danger ? color.danger : color.ink}>
+      <AppText variant="bodyMedium" color={danger ? color.danger : color.ink} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
         {label}
       </AppText>
       {!!hint && (

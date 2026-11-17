@@ -89,7 +89,7 @@ export const TripsScreen: React.FC<TripsScreenProps> = ({ onNavigateToHome, onNa
           const n = count(t);
           return (
             <Pressable key={t} onPress={() => setTab(t)} style={[styles.tab, on && styles.tabOn]}>
-              <AppText variant="smallMedium" color={on ? color.ink : color.muted} style={{ fontSize: 14 }}>
+              <AppText variant="smallMedium" color={on ? color.ink : color.muted} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{ fontSize: 14, flexShrink: 1 }}>
                 {t === 'ongoing' ? 'On the road' : t === 'upcoming' ? 'Upcoming' : 'Past'}
               </AppText>
               {n > 0 && t !== 'past' && (
@@ -226,7 +226,7 @@ const styles = themed(() => StyleSheet.create({
   root: { flex: 1, backgroundColor: color.bg },
   header: { paddingHorizontal: gutter, paddingTop: 16, paddingBottom: 14 },
   tabs: { flexDirection: 'row', marginHorizontal: gutter, padding: 4, borderRadius: radius.lg, backgroundColor: color.sunken, marginBottom: 8 },
-  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 38, borderRadius: radius.md },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 38, paddingHorizontal: 6, borderRadius: radius.md },
   tabOn: { backgroundColor: color.surface, ...shadow.sm },
   count: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 5, backgroundColor: color.border, alignItems: 'center', justifyContent: 'center' },
   card: { backgroundColor: color.surface, borderRadius: radius.xl, borderWidth: 1, borderColor: color.border, padding: 14, marginBottom: 12 },

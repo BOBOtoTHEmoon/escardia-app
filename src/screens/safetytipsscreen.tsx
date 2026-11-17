@@ -2,7 +2,7 @@ import React from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
-import { AppText, IconName, Screen, ScreenHeader } from '../ui';
+import { AppText, bottomSpace, IconName, Screen, ScreenHeader } from '../ui';
 import { color, gutter, radius, themed, statusBarStyle } from '../theme';
 
 interface SafetyTipsScreenProps {
@@ -22,7 +22,7 @@ export const SafetyTipsScreen: React.FC<SafetyTipsScreenProps> = ({ onNavigateBa
   <Screen>
     <StatusBar style={statusBarStyle()} />
     <ScreenHeader title="Safety tips" onBack={onNavigateBack} />
-    <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }}>
+    <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: bottomSpace() }}>
       {TIPS.map((t) => (
         <View key={t.title} style={styles.tip}>
           <View style={styles.icon}>

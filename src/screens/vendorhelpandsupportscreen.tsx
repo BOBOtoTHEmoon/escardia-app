@@ -5,7 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { CONTACT } from './contactusscreen';
 import { useAppSettings } from '../hooks/useAppSettings';
-import { AppText, Screen, ScreenHeader } from '../ui';
+import { AppText, bottomSpace, Screen, ScreenHeader } from '../ui';
 import { naira } from '../ui/CarCard';
 import { MenuGroup, MenuRow } from '../ui/Menu';
 import { color, gutter, radius, themed, statusBarStyle } from '../theme';
@@ -94,7 +94,7 @@ export const VendorHelpAndSupportScreen: React.FC<VendorHelpAndSupportScreenProp
     <Screen>
       <StatusBar style={statusBarStyle()} />
       <ScreenHeader title="Help and support" onBack={onNavigateBack} />
-      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: bottomSpace() }} showsVerticalScrollIndicator={false}>
         <MenuGroup title="Talk to us">
           <MenuRow icon="message-circle" label="WhatsApp" hint="Fastest way to reach the vendor team" onPress={() => open(CONTACT.whatsapp)} />
           <MenuRow icon="phone" label="Call us" hint={CONTACT.phoneDisplay} onPress={() => open(`tel:${CONTACT.phone}`)} />

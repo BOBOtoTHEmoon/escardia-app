@@ -1,7 +1,7 @@
 import React from 'react';
 import { Linking, ScrollView } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { AppText, Screen, ScreenHeader } from '../ui';
+import { AppText, bottomSpace, Screen, ScreenHeader } from '../ui';
 import { MenuGroup, MenuRow } from '../ui/Menu';
 import { color, gutter, statusBarStyle } from '../theme';
 
@@ -30,7 +30,7 @@ export const ContactUsScreen: React.FC<ContactUsScreenProps> = ({ onNavigateBack
   <Screen>
     <StatusBar style={statusBarStyle()} />
     <ScreenHeader title="Contact us" onBack={onNavigateBack} />
-    <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: 40 }}>
+    <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingBottom: bottomSpace() }}>
       <AppText variant="body" color={color.muted} style={{ marginTop: 4 }}>
         Reach us any way you like. We reply fastest on WhatsApp.
       </AppText>
