@@ -111,7 +111,15 @@ export const Button = ({
       ) : (
         <>
           {icon && <Feather name={icon} size={18} color={v.text} />}
-          <Text style={[styles.buttonText, { color: v.text }]}>{title}</Text>
+          <Text
+            // One line always: the text shrinks a little on narrow screens instead of wrapping.
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
+            style={[styles.buttonText, { color: v.text }]}
+          >
+            {title}
+          </Text>
           {iconRight && <Feather name={iconRight} size={18} color={v.text} />}
         </>
       )}
@@ -382,7 +390,7 @@ const styles = themed(() => StyleSheet.create({
   },
   buttonLg: { height: 56, paddingHorizontal: 24 },
   buttonMd: { height: 46, paddingHorizontal: 18 },
-  buttonText: { fontFamily: font.semibold, fontSize: 16 },
+  buttonText: { fontFamily: font.semibold, fontSize: 16, flexShrink: 1, textAlign: 'center' },
 
   field: {
     flexDirection: 'row',

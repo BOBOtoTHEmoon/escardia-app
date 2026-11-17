@@ -2,7 +2,7 @@
   "expo": {
     "name": "Escardia",
     "slug": "escardia",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -66,8 +66,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Escardia uses your photos so you can add a profile picture and car photos.",
-          "cameraPermission": "Escardia uses your camera so you can take a profile picture and car photos.",
+          "photosPermission": "Escardia uses your photos so you can add a profile picture, car photos and verification documents.",
+          "cameraPermission": "Escardia uses your camera so you can take a profile picture, car photos and photos of verification documents.",
           "microphonePermission": false
         }
       ],
@@ -77,6 +77,15 @@
         "react-native-maps",
         {
           "androidGoogleMapsApiKey": "AIzaSyBVsDFJQlUTcFZmV__w-UtX0a9tlKe4FFc"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
         }
       ]
     ],
