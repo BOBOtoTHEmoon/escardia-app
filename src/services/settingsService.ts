@@ -14,7 +14,7 @@ export interface AppSettings {
   minHoursBeforeStart: number;
   paymentWindowMinutes: number;
   // Vendor rules
-  commissionRate: number; // 0.13 means 13%
+  commissionRate: number; // 0.07 means 7%
   payoutHoldHours: number;
   withdrawalFee: number;
   minWithdrawal: number;
@@ -29,7 +29,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   hiluxPerDay: 80000,
   minHoursBeforeStart: 3,
   paymentWindowMinutes: 30,
-  commissionRate: 0.13,
+  commissionRate: 0.07,
   payoutHoldHours: 24,
   withdrawalFee: 50,
   minWithdrawal: 1000,

@@ -35,7 +35,7 @@ export const koboToNaira = (kobo: number): number => kobo / 100;
 
 /** Display only. The real split is calculated by the database. */
 export const calculatePaymentSplit = (totalAmount: number) => {
-  const rate = 0.13;
+  const rate = 0.07;
   const escardiaCommission = Math.round(totalAmount * rate);
   return { totalAmount, escardiaCommission, vendorAmount: totalAmount - escardiaCommission, commissionRate: rate * 100 };
 };

@@ -2,7 +2,7 @@
 // Photos, make and model, prices (with the vendor's take-home shown live), details and location.
 import React, { useEffect, useMemo, useState } from 'react';
 import { FormSkeleton } from '../ui/Skeleton';
-import { ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, FlatList, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,7 +19,16 @@ import { BottomSheet, ChoiceChips, EmptyState, PhotoSourceSheet, SearchPicker, p
 import { MenuGroup, MenuRow } from '../ui/Menu';
 import { brand as brandColor, color, font, gutter, radius, themed, statusBarStyle, isDark } from '../theme';
 
-const MAX_PHOTOS = 8;
+/** The five views every car must have, in this order. The front photo is the cover. */
+const REQUIRED_VIEWS: { label: string; hint: string }[] = [
+  { label: 'Front', hint: 'The whole front of the car' },
+  { label: 'Back', hint: 'The whole back of the car' },
+  { label: 'Side', hint: 'Full side, front to back' },
+  { label: 'Interior front', hint: 'Dashboard and front seats' },
+  { label: 'Interior back', hint: 'The back seats' },
+];
+const MAX_EXTRA = 3;
+const MAX_PHOTOS = REQUIRED_VIEWS.length + MAX_EXTRA;
 const THIS_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: THIS_YEAR + 1 - 2005 + 1 }, (_, i) => String(THIS_YEAR + 1 - i));
 
@@ -44,7 +53,10 @@ export const CarFormScreen: React.FC<CarFormScreenProps> = ({ carId, onNavigateB
   const [blocked, setBlocked] = useState<string | null>(null);
   const [original, setOriginal] = useState<Car | null>(null);
 
-  const [photos, setPhotos] = useState<string[]>([]);
+  // The five required views (null until taken) and any extra photos.
+  const [views, setViews] = useState<(string | null)[]>(REQUIRED_VIEWS.map(() => null));
+  const [extras, setExtras] = useState<string[]>([]);
+  const photos = useMemo(() => [...views.filter((v): v is string => !!v), ...extras], [views, extras]);
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
   const [year, setYear] = useState('');
@@ -61,8 +73,9 @@ export const CarFormScreen: React.FC<CarFormScreenProps> = ({ carId, onNavigateB
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [photoSheet, setPhotoSheet] = useState(false);
-  const [photoMenu, setPhotoMenu] = useState<number | null>(null);
+  /** Which photo the source sheet is for: a required view (0 to 4) or 'extra'. */
+  const [photoSheet, setPhotoSheet] = useState<number | 'extra' | null>(null);
+  const [photoMenu, setPhotoMenu] = useState<{ kind: 'view' | 'extra'; i: number } | null>(null);
   const [picker, setPicker] = useState<'brand' | 'model' | 'year' | null>(null);
 
   useEffect(() => {
@@ -81,7 +94,10 @@ export const CarFormScreen: React.FC<CarFormScreenProps> = ({ carId, onNavigateB
         if (r.success && r.car) {
           const c = r.car;
           setOriginal(c);
-          setPhotos(c.photos ?? []);
+          // Saved cars keep their photos in order: the five views first, then extras.
+          const saved = c.photos ?? [];
+          setViews(REQUIRED_VIEWS.map((_, i) => saved[i] ?? null));
+          setExtras(saved.slice(REQUIRED_VIEWS.length, MAX_PHOTOS));
           setBrand(c.brand);
           setModel(c.model);
           setYear(String(c.year ?? ''));
@@ -118,19 +134,27 @@ export const CarFormScreen: React.FC<CarFormScreenProps> = ({ carId, onNavigateB
     );
   }, [original, brand, model, year, photos]);
 
+  const missingViews = REQUIRED_VIEWS.filter((_, i) => !views[i]).map((v) => v.label.toLowerCase());
+
   const addPhotos = async (source: 'camera' | 'library') => {
-    const room = MAX_PHOTOS - photos.length;
-    const picked = await pickImage(source, { aspect: [16, 10], quality: 0.7, multiple: room });
-    setPhotoSheet(false);
+    const target = photoSheet;
+    setPhotoSheet(null);
+    if (target === null) return;
+    if (target === 'extra') {
+      const picked = await pickImage(source, { aspect: [16, 10], quality: 0.7, multiple: MAX_EXTRA - extras.length });
+      if (picked?.length) setExtras((p) => [...p, ...picked].slice(0, MAX_EXTRA));
+      return;
+    }
+    const picked = await pickImage(source, { aspect: [16, 10], quality: 0.7 });
     if (picked?.length) {
-      setPhotos((p) => [...p, ...picked].slice(0, MAX_PHOTOS));
-      clear('photos');
+      setViews((v) => v.map((x, i) => (i === target ? picked[0] : x)));
+      if (missingViews.length <= 1) clear('photos');
     }
   };
 
   const submit = async () => {
     const next: Errors = {};
-    if (!photos.length) next.photos = 'Add at least one photo. Three or more works best.';
+    if (missingViews.length) next.photos = `Add the ${missingViews.length === 1 ? 'missing photo' : `${missingViews.length} missing photos`}: ${missingViews.join(', ')}.`;
     if (!brand.trim()) next.brand = 'Choose the make';
     if (!model.trim()) next.model = 'Choose the model';
     if (!year) next.year = 'Choose the year';
@@ -216,38 +240,72 @@ export const CarFormScreen: React.FC<CarFormScreenProps> = ({ carId, onNavigateB
           {original?.approvalStatus === 'rejected' && !!original.rejectionReason && <Banner text={`Escardia asked for changes: ${original.rejectionReason}`} />}
 
           {/* Photos */}
-          <Section title="Photos" hint={`Up to ${MAX_PHOTOS}. The first photo is the cover customers see first.`} />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
-            {photos.map((p, i) => (
-              <Pressable key={p + i} onPress={() => setPhotoMenu(i)} style={styles.photo} accessibilityLabel={`Photo ${i + 1}`}>
-                <Image source={{ uri: p }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-                {i === 0 && (
-                  <View style={styles.cover}>
-                    <AppText variant="smallMedium" color="#FFFFFF" style={{ fontSize: 11 }}>
-                      Cover
-                    </AppText>
-                  </View>
-                )}
+          <Section title="Photos" hint="Take these 5 photos so customers can see every part of the car. The front photo is the cover." />
+          <View style={styles.photoGrid}>
+            {REQUIRED_VIEWS.map((v, i) => {
+              const uri = views[i];
+              const missing = !uri && !!errors.photos;
+              return (
+                <Pressable
+                  key={v.label}
+                  onPress={() => (uri ? setPhotoMenu({ kind: 'view', i }) : setPhotoSheet(i))}
+                  style={[styles.tile, !uri && styles.addPhoto, missing && { borderColor: color.danger }]}
+                  accessibilityLabel={uri ? `${v.label} photo` : `Add ${v.label} photo`}
+                >
+                  {uri ? (
+                    <>
+                      <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                      <View style={styles.tileLabel}>
+                        <AppText variant="smallMedium" color="#FFFFFF" numberOfLines={1} style={{ fontSize: 11 }}>
+                          {i === 0 ? `${v.label} · Cover` : v.label}
+                        </AppText>
+                      </View>
+                      <View style={styles.photoMore}>
+                        <Feather name="more-horizontal" size={14} color="#FFFFFF" />
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <Feather name="camera" size={20} color={missing ? color.danger : color.primary} />
+                      <AppText variant="smallMedium" color={missing ? color.danger : color.primary} numberOfLines={1} style={{ marginTop: 6 }}>
+                        {v.label}
+                      </AppText>
+                      <AppText variant="small" color={color.muted} numberOfLines={1} center style={{ fontSize: 11, paddingHorizontal: 8 }}>
+                        {v.hint}
+                      </AppText>
+                    </>
+                  )}
+                </Pressable>
+              );
+            })}
+            {extras.map((uri, i) => (
+              <Pressable key={uri + i} onPress={() => setPhotoMenu({ kind: 'extra', i })} style={styles.tile} accessibilityLabel={`Extra photo ${i + 1}`}>
+                <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                <View style={styles.tileLabel}>
+                  <AppText variant="smallMedium" color="#FFFFFF" numberOfLines={1} style={{ fontSize: 11 }}>
+                    Extra
+                  </AppText>
+                </View>
                 <View style={styles.photoMore}>
                   <Feather name="more-horizontal" size={14} color="#FFFFFF" />
                 </View>
               </Pressable>
             ))}
-            {photos.length < MAX_PHOTOS && (
-              <Pressable onPress={() => setPhotoSheet(true)} style={[styles.photo, styles.addPhoto, !!errors.photos && { borderColor: color.danger }]} accessibilityLabel="Add photos">
-                <Feather name="camera" size={20} color={color.primary} />
-                <AppText variant="smallMedium" color={color.primary} style={{ marginTop: 6 }}>
-                  Add photos
+            {extras.length < MAX_EXTRA && (
+              <Pressable onPress={() => setPhotoSheet('extra')} style={[styles.tile, styles.addExtra]} accessibilityLabel="Add more photos">
+                <Feather name="plus" size={20} color={color.muted} />
+                <AppText variant="smallMedium" color={color.text} numberOfLines={1} style={{ marginTop: 6 }}>
+                  More photos
                 </AppText>
-                <AppText variant="small" color={color.muted} style={{ fontSize: 11 }}>
-                  {photos.length}/{MAX_PHOTOS}
+                <AppText variant="small" color={color.muted} numberOfLines={1} style={{ fontSize: 11 }}>
+                  Optional, up to {MAX_EXTRA}
                 </AppText>
               </Pressable>
             )}
-          </ScrollView>
+          </View>
           {!!errors.photos && <FieldError text={errors.photos} />}
           <AppText variant="small" color={color.muted} style={{ marginTop: 8 }}>
-            Tip: shoot in daylight from the front corner, the side, the back and the inside.
+            Tip: shoot in daylight, hold the phone sideways and fit the whole car in the frame.
           </AppText>
 
           {/* The car */}
@@ -385,18 +443,28 @@ export const CarFormScreen: React.FC<CarFormScreenProps> = ({ carId, onNavigateB
         }
       />
 
-      <PhotoSourceSheet visible={photoSheet} title="Add photos" subtitle="Clear, bright photos get more bookings." onClose={() => setPhotoSheet(false)} onPick={addPhotos} />
+      <PhotoSourceSheet
+        visible={photoSheet !== null}
+        title={typeof photoSheet === 'number' ? `${REQUIRED_VIEWS[photoSheet].label} photo` : 'More photos'}
+        subtitle={typeof photoSheet === 'number' ? REQUIRED_VIEWS[photoSheet].hint : 'Any other angle you want customers to see.'}
+        onClose={() => setPhotoSheet(null)}
+        onPick={addPhotos}
+      />
 
-      <BottomSheet visible={photoMenu !== null} onClose={() => setPhotoMenu(null)} title={photoMenu === 0 ? 'Cover photo' : `Photo ${(photoMenu ?? 0) + 1}`}>
+      <BottomSheet
+        visible={photoMenu !== null}
+        onClose={() => setPhotoMenu(null)}
+        title={photoMenu?.kind === 'view' ? `${REQUIRED_VIEWS[photoMenu.i].label} photo` : 'Extra photo'}
+      >
         <MenuGroup>
-          {photoMenu !== 0 && (
+          {photoMenu?.kind === 'view' && (
             <MenuRow
-              icon="star"
-              label="Make this the cover"
+              icon="camera"
+              label="Replace photo"
               onPress={() => {
-                const i = photoMenu!;
-                setPhotos((p) => [p[i], ...p.filter((_, j) => j !== i)]);
+                const i = photoMenu.i;
                 setPhotoMenu(null);
+                setTimeout(() => setPhotoSheet(i), 250);
               }}
             />
           )}
@@ -407,8 +475,9 @@ export const CarFormScreen: React.FC<CarFormScreenProps> = ({ carId, onNavigateB
             right={<View />}
             last
             onPress={() => {
-              const i = photoMenu!;
-              setPhotos((p) => p.filter((_, j) => j !== i));
+              const m = photoMenu!;
+              if (m.kind === 'view') setViews((v) => v.map((x, i) => (i === m.i ? null : x)));
+              else setExtras((p) => p.filter((_, j) => j !== m.i));
               setPhotoMenu(null);
             }}
           />
@@ -528,11 +597,17 @@ const MoneyField = ({ label, value, onChange, optional, error }: { label: string
 );
 
 const PHOTO = 112;
+// Two photos per row.
+const TILE = Math.floor((Dimensions.get('window').width - gutter * 2 - 10) / 2);
 
 const styles = themed(() => StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   photo: { width: PHOTO * 1.35, height: PHOTO, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: color.sunken },
   addPhoto: { alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderStyle: 'dashed', borderColor: color.primaryLine, backgroundColor: color.primarySoft },
+  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  tile: { width: TILE, height: Math.round(TILE * 0.68), borderRadius: radius.lg, overflow: 'hidden', backgroundColor: color.sunken, alignItems: 'center', justifyContent: 'center' },
+  addExtra: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: color.border },
+  tileLabel: { position: 'absolute', left: 8, bottom: 8, maxWidth: TILE - 16, paddingHorizontal: 8, height: 22, borderRadius: 11, backgroundColor: 'rgba(11,21,48,0.7)', justifyContent: 'center' },
   cover: { position: 'absolute', left: 8, top: 8, paddingHorizontal: 8, height: 22, borderRadius: 11, backgroundColor: color.primary, justifyContent: 'center' },
   photoMore: { position: 'absolute', right: 8, top: 8, width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(11,21,48,0.6)', alignItems: 'center', justifyContent: 'center' },
   pick: {
